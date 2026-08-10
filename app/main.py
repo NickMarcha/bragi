@@ -17,33 +17,37 @@ app.mount("/static", StaticFiles(directory=str(_app_dir / "static")), name="stat
 templates = Jinja2Templates(directory=str(_app_dir / "templates"))
 
 
-def _resolve_node_id(peer: peers_module.Peer, direction: str) -> int | None:
+def _resolve_node_id(nodes: list[pipewire.Node], peer: peers_module.Peer, direction: str) -> int | None:
     """direction: 'outgoing' (sagepi's mic, going to this peer) or
     'incoming' (this peer's audio, arriving at sagepi's headset)."""
     if peer.protocol == "roc":
         name = peer.outgoing_sink_name if direction == "outgoing" else peer.incoming_source_name
-        return pipewire.find_node_id(name) if name else None
+        return pipewire.find_node_id(nodes, name) if name else None
     if peer.protocol == "vban":
         # VBAN clients are always named literally "vban" - direction is the
         # only thing that distinguishes them, which only works cleanly with
         # a single VBAN peer. See README's "Known Limitations".
         wanted_class = "Stream/Input/Audio" if direction == "outgoing" else "Stream/Output/Audio"
-        for node in pipewire.list_nodes():
+        for node in nodes:
             if node.name == "vban" and node.media_class == wanted_class:
                 return node.id
     return None
 
 
-def _peer_view(peer: peers_module.Peer) -> dict:
-    nodes = pipewire.list_nodes()
-    out_id = _resolve_node_id(peer, "outgoing")
-    in_id = _resolve_node_id(peer, "incoming")
-    out_node = next((n for n in nodes if n.id == out_id), None) if out_id else None
-    in_node = next((n for n in nodes if n.id == in_id), None) if in_id else None
+def _direction_view(node_id: int | None) -> dict:
+    if node_id is None:
+        return {"id": None, "volume": None, "muted": False, "connected": False}
+    volume, muted = pipewire.get_volume_mute(node_id)
+    return {"id": node_id, "volume": volume, "muted": muted, "connected": volume is not None}
+
+
+def _peer_view(nodes: list[pipewire.Node], peer: peers_module.Peer) -> dict:
+    out_id = _resolve_node_id(nodes, peer, "outgoing")
+    in_id = _resolve_node_id(nodes, peer, "incoming")
     return {
         "peer": peer,
-        "outgoing": {"id": out_id, "volume": out_node.volume if out_node else None, "muted": out_node.muted if out_node else False, "connected": out_node is not None},
-        "incoming": {"id": in_id, "volume": in_node.volume if in_node else None, "muted": in_node.muted if in_node else False, "connected": in_node is not None},
+        "outgoing": _direction_view(out_id),
+        "incoming": _direction_view(in_id),
     }
 
 
@@ -56,34 +60,37 @@ def _get_peer(name: str) -> peers_module.Peer:
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
-    views = [_peer_view(p) for p in peers_module.load_peers()]
+    nodes = pipewire.list_nodes()
+    views = [_peer_view(nodes, p) for p in peers_module.load_peers()]
     return templates.TemplateResponse(request, "index.html", {"peers": views})
 
 
 @app.get("/peers/{name}/card", response_class=HTMLResponse)
 def peer_card(request: Request, name: str):
     peer = _get_peer(name)
-    return templates.TemplateResponse(request, "_peer_card.html", {"view": _peer_view(peer)})
+    nodes = pipewire.list_nodes()
+    return templates.TemplateResponse(request, "_peer_card.html", {"view": _peer_view(nodes, peer)})
 
 
 @app.post("/peers/{name}/volume/{direction}", response_class=HTMLResponse)
 def set_volume(request: Request, name: str, direction: str, value: float = Form(...)):
     peer = _get_peer(name)
-    node_id = _resolve_node_id(peer, direction)
+    nodes = pipewire.list_nodes()
+    node_id = _resolve_node_id(nodes, peer, direction)
     if node_id is not None:
         pipewire.set_volume(node_id, value)
-    return templates.TemplateResponse(request, "_peer_card.html", {"view": _peer_view(peer)})
+    return templates.TemplateResponse(request, "_peer_card.html", {"view": _peer_view(nodes, peer)})
 
 
 @app.post("/peers/{name}/mute/{direction}", response_class=HTMLResponse)
 def toggle_mute(request: Request, name: str, direction: str):
     peer = _get_peer(name)
-    node_id = _resolve_node_id(peer, direction)
+    nodes = pipewire.list_nodes()
+    node_id = _resolve_node_id(nodes, peer, direction)
     if node_id is not None:
-        nodes = pipewire.list_nodes()
-        current = next((n for n in nodes if n.id == node_id), None)
-        pipewire.set_mute(node_id, not (current.muted if current else False))
-    return templates.TemplateResponse(request, "_peer_card.html", {"view": _peer_view(peer)})
+        _, currently_muted = pipewire.get_volume_mute(node_id)
+        pipewire.set_mute(node_id, not currently_muted)
+    return templates.TemplateResponse(request, "_peer_card.html", {"view": _peer_view(nodes, peer)})
 
 
 @app.post("/peers", response_class=HTMLResponse)

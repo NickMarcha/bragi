@@ -42,12 +42,18 @@ class Node:
     name: str
     description: str
     media_class: str
-    volume: float | None = None
-    muted: bool = False
 
 
 def list_nodes() -> list[Node]:
-    """All Audio nodes currently in the PipeWire graph, with live volume."""
+    """All Audio nodes currently in the PipeWire graph.
+
+    Deliberately does NOT include volume/mute - that needs a separate
+    `wpctl get-volume` call per node (see get_volume_mute), and callers
+    should only pay that cost for the handful of nodes they actually care
+    about, not all of them. A page with N peers needs O(N) wpctl calls,
+    not O(N * total_graph_nodes) - the earlier version made that mistake
+    and took 6+ seconds to render on a Pi 4 with just 21 nodes in the graph.
+    """
     raw = _run(["pw-dump"])
     objects = json.loads(raw)
     nodes: list[Node] = []
@@ -56,20 +62,15 @@ def list_nodes() -> list[Node]:
             continue
         props = (obj.get("info") or {}).get("props") or {}
         media_class = props.get("media.class", "")
-        if not media_class.startswith("Audio/") and not media_class.startswith("Stream/"):
-            continue
         if "Audio" not in media_class:
             continue
         node_id = obj["id"]
-        volume, muted = _read_volume(node_id)
         nodes.append(
             Node(
                 id=node_id,
                 name=props.get("node.name", f"node-{node_id}"),
                 description=props.get("node.description", props.get("node.name", "")),
                 media_class=media_class,
-                volume=volume,
-                muted=muted,
             )
         )
     return nodes
@@ -78,7 +79,11 @@ def list_nodes() -> list[Node]:
 _VOLUME_RE = re.compile(r"Volume:\s*([0-9.]+)\s*(\[MUTED\])?")
 
 
-def _read_volume(node_id: int) -> tuple[float | None, bool]:
+def get_volume_mute(node_id: int) -> tuple[float | None, bool]:
+    """Volume/mute for a single node. Deliberately not batched - wpctl has
+    no bulk query, and pw-dump's raw Props volume uses a different (cubic)
+    scale than what wpctl reads/writes, so it can't be substituted here
+    without silently drifting from what `wpctl set-volume` actually does."""
     try:
         out = _run(["wpctl", "get-volume", str(node_id)])
     except PipewireError:
@@ -89,8 +94,8 @@ def _read_volume(node_id: int) -> tuple[float | None, bool]:
     return float(m.group(1)), bool(m.group(2))
 
 
-def find_node_id(name: str, media_class_prefix: str | None = None) -> int | None:
-    for node in list_nodes():
+def find_node_id(nodes: list[Node], name: str, media_class_prefix: str | None = None) -> int | None:
+    for node in nodes:
         if node.name == name:
             if media_class_prefix and not node.media_class.startswith(media_class_prefix):
                 continue
