@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bragi</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Bragi</h1>
+    <p class="subtitle">Network audio bridge — sagepi</p>
+  </header>
+
+  <main>
+    <section id="peers">
+      {% include "_peers_list.html" %}
+    </section>
+
+    <section id="add-peer">
+      <h2>Add peer</h2>
+      <form hx-post="/peers" hx-target="#peers" hx-swap="innerHTML">
+        <label>Name <input type="text" name="name" placeholder="e.g. sage-laptop" required /></label>
+        <label>Tailscale IP <input type="text" name="tailscale_ip" placeholder="100.x.x.x" required pattern="^100\.\d+\.\d+\.\d+$" /></label>
+        <button type="submit">Add (Roc)</button>
+      </form>
+      <p class="hint">VBAN peers (e.g. Windows machines) aren't addable from the UI yet — see README.</p>
+    </section>
+  </main>
+</body>
+</html>

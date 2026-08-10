@@ -1,0 +1,173 @@
+:root {
+  --bg: #12141a;
+  --panel: #1b1e27;
+  --border: #2a2e3a;
+  --text: #e6e8ee;
+  --muted: #8b91a3;
+  --accent: #5b8cff;
+  --danger: #ff5b6a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  padding: 1.5rem 1.5rem 0.5rem;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin: 0.25rem 0 0;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 3rem;
+}
+
+#peers {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.peer-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.peer-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.peer-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.badge {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--border);
+  color: var(--muted);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.muted-badge {
+  background: #3a2e1b;
+  color: #d8b16a;
+}
+
+.ip {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.15rem 0 0.75rem;
+}
+
+.direction {
+  margin-bottom: 0.65rem;
+}
+
+.direction label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.offline {
+  color: var(--danger);
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.slider-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.mute-btn, .remove-btn, button[type="submit"] {
+  background: var(--border);
+  color: var(--text);
+  border: none;
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.mute-btn.active {
+  background: var(--danger);
+  color: white;
+}
+
+.remove-btn {
+  margin-top: 0.5rem;
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+#add-peer {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+
+#add-peer h2 {
+  margin-top: 0;
+  font-size: 1rem;
+}
+
+#add-peer form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: end;
+}
+
+#add-peer label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  color: var(--muted);
+  gap: 0.3rem;
+}
+
+#add-peer input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0.75rem 0 0;
+}

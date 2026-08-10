@@ -1,0 +1,55 @@
+<article class="peer-card" id="peer-{{ view.peer.name }}">
+  <div class="peer-header">
+    <h3>{{ view.peer.name }}</h3>
+    <span class="badge">{{ view.peer.protocol }}</span>
+    {% if not view.peer.managed %}<span class="badge muted-badge" title="Configured outside Bragi">manual</span>{% endif %}
+  </div>
+  <p class="ip">{{ view.peer.tailscale_ip }}</p>
+
+  <div class="direction">
+    <label>Mic &rarr; {{ view.peer.name }} {% if not view.outgoing.connected %}<span class="offline">(offline)</span>{% endif %}</label>
+    <div class="slider-row">
+      <input type="range" min="0" max="1.5" step="0.05"
+             value="{{ view.outgoing.volume if view.outgoing.volume is not none else 1.0 }}"
+             hx-post="/peers/{{ view.peer.name }}/volume/outgoing"
+             hx-trigger="change"
+             hx-vals='js:{value: event.target.value}'
+             hx-target="#peer-{{ view.peer.name }}" hx-swap="outerHTML"
+             {% if not view.outgoing.connected %}disabled{% endif %} />
+      <button class="mute-btn {{ 'active' if view.outgoing.muted }}"
+              hx-post="/peers/{{ view.peer.name }}/mute/outgoing"
+              hx-target="#peer-{{ view.peer.name }}" hx-swap="outerHTML"
+              {% if not view.outgoing.connected %}disabled{% endif %}>
+        {{ "Muted" if view.outgoing.muted else "Mute" }}
+      </button>
+    </div>
+  </div>
+
+  <div class="direction">
+    <label>{{ view.peer.name }} &rarr; headset {% if not view.incoming.connected %}<span class="offline">(offline)</span>{% endif %}</label>
+    <div class="slider-row">
+      <input type="range" min="0" max="1.5" step="0.05"
+             value="{{ view.incoming.volume if view.incoming.volume is not none else 1.0 }}"
+             hx-post="/peers/{{ view.peer.name }}/volume/incoming"
+             hx-trigger="change"
+             hx-vals='js:{value: event.target.value}'
+             hx-target="#peer-{{ view.peer.name }}" hx-swap="outerHTML"
+             {% if not view.incoming.connected %}disabled{% endif %} />
+      <button class="mute-btn {{ 'active' if view.incoming.muted }}"
+              hx-post="/peers/{{ view.peer.name }}/mute/incoming"
+              hx-target="#peer-{{ view.peer.name }}" hx-swap="outerHTML"
+              {% if not view.incoming.connected %}disabled{% endif %}>
+        {{ "Muted" if view.incoming.muted else "Mute" }}
+      </button>
+    </div>
+  </div>
+
+  {% if view.peer.managed %}
+  <button class="remove-btn"
+          hx-post="/peers/{{ view.peer.name }}/delete"
+          hx-target="#peers" hx-swap="innerHTML"
+          hx-confirm="Remove {{ view.peer.name }}?">
+    Remove peer
+  </button>
+  {% endif %}
+</article>
