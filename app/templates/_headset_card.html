@@ -1,0 +1,58 @@
+<article class="peer-card headset-card" id="headset-{{ view.headset.key }}"
+         hx-get="/headsets/{{ view.headset.key }}/card"
+         hx-trigger="every 3s"
+         hx-swap="outerHTML">
+  <div class="peer-header">
+    <h3>{{ view.headset.label }}</h3>
+    <span class="badge">local headset</span>
+  </div>
+
+  <div class="direction">
+    <label>Speakers {% if not view.playback.connected %}<span class="offline">(disconnected)</span>{% endif %}</label>
+    <div class="slider-row">
+      <input type="range" min="0" max="1.5" step="0.05"
+             value="{{ view.playback.volume if view.playback.volume is not none else 1.0 }}"
+             hx-post="/headsets/{{ view.headset.key }}/volume/playback"
+             hx-trigger="change"
+             hx-vals='js:{value: event.target.value}'
+             hx-target="#headset-{{ view.headset.key }}" hx-swap="outerHTML"
+             {% if not view.playback.connected %}disabled{% endif %} />
+      <button class="mute-btn {{ 'active' if view.playback.muted }}"
+              hx-post="/headsets/{{ view.headset.key }}/mute/playback"
+              hx-target="#headset-{{ view.headset.key }}" hx-swap="outerHTML"
+              {% if not view.playback.connected %}disabled{% endif %}>
+        {{ "Muted" if view.playback.muted else "Mute" }}
+      </button>
+    </div>
+    <div class="balance-row">
+      <span class="balance-label">L</span>
+      <input type="range" class="balance-slider" min="-1" max="1" step="0.1"
+             value="{{ view.playback.balance }}"
+             hx-post="/headsets/{{ view.headset.key }}/balance/playback"
+             hx-trigger="change"
+             hx-vals='js:{value: event.target.value}'
+             hx-target="#headset-{{ view.headset.key }}" hx-swap="outerHTML"
+             {% if not view.playback.connected %}disabled{% endif %} />
+      <span class="balance-label">R</span>
+    </div>
+  </div>
+
+  <div class="direction">
+    <label>Mic {% if not view.capture.connected %}<span class="offline">(disconnected)</span>{% endif %}</label>
+    <div class="slider-row">
+      <input type="range" min="0" max="1.5" step="0.05"
+             value="{{ view.capture.volume if view.capture.volume is not none else 1.0 }}"
+             hx-post="/headsets/{{ view.headset.key }}/volume/capture"
+             hx-trigger="change"
+             hx-vals='js:{value: event.target.value}'
+             hx-target="#headset-{{ view.headset.key }}" hx-swap="outerHTML"
+             {% if not view.capture.connected %}disabled{% endif %} />
+      <button class="mute-btn {{ 'active' if view.capture.muted }}"
+              hx-post="/headsets/{{ view.headset.key }}/mute/capture"
+              hx-target="#headset-{{ view.headset.key }}" hx-swap="outerHTML"
+              {% if not view.capture.connected %}disabled{% endif %}>
+        {{ "Muted" if view.capture.muted else "Mute" }}
+      </button>
+    </div>
+  </div>
+</article>

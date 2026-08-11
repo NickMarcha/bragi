@@ -13,7 +13,8 @@ services:
       # Bragi-managed peers only land here (70-bragi-peers.conf); hand-written
       # config in this same host directory is left alone.
       - /home/sage/.config/pipewire/pipewire.conf.d:/host-pipewire-conf.d
-      # Peer registry (peers.yaml) - survives container recreate/redeploy.
+      # Peer registry (peers.yaml) + balance state (balance.yaml) - survives
+      # container recreate/redeploy.
       - /home/sage/.local/share/bragi/data:/app/data
     ports:
       - "127.0.0.1:8000:8000"

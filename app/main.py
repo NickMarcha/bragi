@@ -7,6 +7,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from . import audio_state
+from . import headsets as headsets_module
 from . import peers as peers_module
 from . import pipewire
 
@@ -34,11 +36,24 @@ def _resolve_node_id(nodes: list[pipewire.Node], peer: peers_module.Peer, direct
     return None
 
 
-def _direction_view(node_id: int | None) -> dict:
+def _direction_view(node_id: int | None, node_name: str | None = None) -> dict:
+    """node_name, when given, marks this direction as stereo/pannable -
+    only those directions get a balance slider (see pipewire.set_channel_volumes'
+    mono-node caveat: mic-direction nodes are typically mono, so they're
+    called with node_name=None and stay volume+mute only)."""
     if node_id is None:
-        return {"id": None, "volume": None, "muted": False, "connected": False}
+        return {"id": None, "volume": None, "muted": False, "connected": False, "balance": 0.0}
     volume, muted = pipewire.get_volume_mute(node_id)
-    return {"id": node_id, "volume": volume, "muted": muted, "connected": volume is not None}
+    view = {"id": node_id, "volume": volume, "muted": muted, "connected": volume is not None}
+    view["balance"] = audio_state.get_balance(node_name) if node_name else 0.0
+    return view
+
+
+def _peer_incoming_node_name(peer: peers_module.Peer) -> str:
+    # VBAN's incoming node is always literally named "vban" (see
+    # _resolve_node_id) - balance state would collide across multiple VBAN
+    # peers, same limitation the README already documents for VBAN peers.
+    return peer.incoming_source_name if peer.protocol == "roc" else "vban-incoming"
 
 
 def _peer_view(nodes: list[pipewire.Node], peer: peers_module.Peer) -> dict:
@@ -47,8 +62,23 @@ def _peer_view(nodes: list[pipewire.Node], peer: peers_module.Peer) -> dict:
     return {
         "peer": peer,
         "outgoing": _direction_view(out_id),
-        "incoming": _direction_view(in_id),
+        "incoming": _direction_view(in_id, _peer_incoming_node_name(peer)),
     }
+
+
+def _headset_view(hs: headsets_module.Headset) -> dict:
+    return {
+        "headset": hs,
+        "playback": _direction_view(hs.playback_node_id, hs.playback_node_name),
+        "capture": _direction_view(hs.capture_node_id),
+    }
+
+
+def _get_headset(key: str) -> headsets_module.Headset:
+    hs = next((h for h in headsets_module.list_headsets(pipewire.list_nodes()) if h.key == key), None)
+    if hs is None:
+        raise HTTPException(404, "unknown headset")
+    return hs
 
 
 def _get_peer(name: str) -> peers_module.Peer:
@@ -61,8 +91,9 @@ def _get_peer(name: str) -> peers_module.Peer:
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     nodes = pipewire.list_nodes()
-    views = [_peer_view(nodes, p) for p in peers_module.load_peers()]
-    return templates.TemplateResponse(request, "index.html", {"peers": views})
+    headset_views = [_headset_view(h) for h in headsets_module.list_headsets(nodes)]
+    peer_views = [_peer_view(nodes, p) for p in peers_module.load_peers()]
+    return templates.TemplateResponse(request, "index.html", {"headsets": headset_views, "peers": peer_views})
 
 
 @app.get("/peers/{name}/card", response_class=HTMLResponse)
@@ -78,7 +109,23 @@ def set_volume(request: Request, name: str, direction: str, value: float = Form(
     nodes = pipewire.list_nodes()
     node_id = _resolve_node_id(nodes, peer, direction)
     if node_id is not None:
-        pipewire.set_volume(node_id, value)
+        if direction == "incoming":
+            balance = audio_state.get_balance(_peer_incoming_node_name(peer))
+            pipewire.set_channel_volumes(node_id, value, balance)
+        else:
+            pipewire.set_volume(node_id, value)
+    return templates.TemplateResponse(request, "_peer_card.html", {"view": _peer_view(nodes, peer)})
+
+
+@app.post("/peers/{name}/balance/incoming", response_class=HTMLResponse)
+def set_peer_balance(request: Request, name: str, value: float = Form(...)):
+    peer = _get_peer(name)
+    nodes = pipewire.list_nodes()
+    node_id = _resolve_node_id(nodes, peer, "incoming")
+    if node_id is not None:
+        volume, _muted = pipewire.get_volume_mute(node_id)
+        pipewire.set_channel_volumes(node_id, volume if volume is not None else 1.0, value)
+        audio_state.set_balance(_peer_incoming_node_name(peer), value)
     return templates.TemplateResponse(request, "_peer_card.html", {"view": _peer_view(nodes, peer)})
 
 
@@ -93,6 +140,43 @@ def toggle_mute(request: Request, name: str, direction: str):
     return templates.TemplateResponse(request, "_peer_card.html", {"view": _peer_view(nodes, peer)})
 
 
+@app.get("/headsets/{key}/card", response_class=HTMLResponse)
+def headset_card(request: Request, key: str):
+    hs = _get_headset(key)
+    return templates.TemplateResponse(request, "_headset_card.html", {"view": _headset_view(hs)})
+
+
+@app.post("/headsets/{key}/volume/{direction}", response_class=HTMLResponse)
+def set_headset_volume(request: Request, key: str, direction: str, value: float = Form(...)):
+    hs = _get_headset(key)
+    if direction == "playback" and hs.playback_node_id is not None:
+        balance = audio_state.get_balance(hs.playback_node_name)
+        pipewire.set_channel_volumes(hs.playback_node_id, value, balance)
+    elif direction == "capture" and hs.capture_node_id is not None:
+        pipewire.set_volume(hs.capture_node_id, value)
+    return templates.TemplateResponse(request, "_headset_card.html", {"view": _headset_view(hs)})
+
+
+@app.post("/headsets/{key}/mute/{direction}", response_class=HTMLResponse)
+def toggle_headset_mute(request: Request, key: str, direction: str):
+    hs = _get_headset(key)
+    node_id = hs.playback_node_id if direction == "playback" else hs.capture_node_id
+    if node_id is not None:
+        _, currently_muted = pipewire.get_volume_mute(node_id)
+        pipewire.set_mute(node_id, not currently_muted)
+    return templates.TemplateResponse(request, "_headset_card.html", {"view": _headset_view(hs)})
+
+
+@app.post("/headsets/{key}/balance/playback", response_class=HTMLResponse)
+def set_headset_balance(request: Request, key: str, value: float = Form(...)):
+    hs = _get_headset(key)
+    if hs.playback_node_id is not None:
+        volume, _muted = pipewire.get_volume_mute(hs.playback_node_id)
+        pipewire.set_channel_volumes(hs.playback_node_id, volume if volume is not None else 1.0, value)
+        audio_state.set_balance(hs.playback_node_name, value)
+    return templates.TemplateResponse(request, "_headset_card.html", {"view": _headset_view(hs)})
+
+
 @app.post("/peers", response_class=HTMLResponse)
 def add_peer(request: Request, name: str = Form(...), tailscale_ip: str = Form(...)):
     name = name.strip().lower().replace(" ", "-")
@@ -102,7 +186,8 @@ def add_peer(request: Request, name: str = Form(...), tailscale_ip: str = Form(.
         raise HTTPException(400, str(exc)) from exc
     except peers_module.ConfigWriteError as exc:
         raise HTTPException(502, str(exc)) from exc
-    views = [_peer_view(p) for p in peers_module.load_peers()]
+    nodes = pipewire.list_nodes()
+    views = [_peer_view(nodes, p) for p in peers_module.load_peers()]
     return templates.TemplateResponse(request, "_peers_list.html", {"peers": views})
 
 
@@ -114,5 +199,6 @@ def delete_peer(request: Request, name: str):
         raise HTTPException(400, str(exc)) from exc
     except peers_module.ConfigWriteError as exc:
         raise HTTPException(502, str(exc)) from exc
-    views = [_peer_view(p) for p in peers_module.load_peers()]
+    nodes = pipewire.list_nodes()
+    views = [_peer_view(nodes, p) for p in peers_module.load_peers()]
     return templates.TemplateResponse(request, "_peers_list.html", {"peers": views})

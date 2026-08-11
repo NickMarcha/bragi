@@ -10,12 +10,21 @@ that pushes voices around a network.
 
 ## What it does
 
+- Auto-detects any USB headset physically plugged into `sagepi` (paired by
+  ALSA card id, no registry needed — whatever's plugged in *is* the list)
+  and shows a **Speakers** slider (+ mute + L/R balance) and a **Mic**
+  slider (+ mute) for it. This card polls itself every few seconds so it
+  stays in sync when the headset's own hardware volume knob is turned —
+  USB headsets report hardware volume changes straight through to
+  PipeWire, this just surfaces it in the UI.
 - Lists every configured peer (both hand-configured ones already running on
   `sagepi` and ones added through this UI) with two independent volume
   sliders + mute toggles per peer:
   - **Mic → peer** — how loud `sagepi`'s headset mic sounds to that peer.
   - **Peer → headset** — how loud that peer's incoming audio is in
-    `sagepi`'s own mixed headset output.
+    `sagepi`'s own mixed headset output, with an L/R balance slider too
+    (this direction is the stereo one — mic-direction audio is mono, so it
+    only gets volume + mute).
 - Add/remove **Roc** peers (Linux/`sagedeck`/`sage-dev`-style) from the UI.
   New peers are hot-loaded into the live PipeWire graph immediately *and*
   written to a dedicated config file, so they also survive a
@@ -23,6 +32,12 @@ that pushes voices around a network.
 - Existing hand-configured peers (seeded to match the current deployment —
   `sagedeck`, `sage-dev` via Roc; `sage` via VBAN) show up too, with working
   volume control, but can't be removed from the UI — see Known Limitations.
+
+Balance is implemented as raw per-channel PipeWire volume (`channelVolumes`
+via `pw-cli set-param`) since PipeWire has no native pan control — Bragi
+remembers each pannable node's intended balance in `data/balance.yaml`
+(keyed by node name) and reapplies it any time the plain volume slider
+changes too, so the two controls don't fight each other.
 
 ## Architecture
 

@@ -42,6 +42,17 @@
         {{ "Muted" if view.incoming.muted else "Mute" }}
       </button>
     </div>
+    <div class="balance-row">
+      <span class="balance-label">L</span>
+      <input type="range" class="balance-slider" min="-1" max="1" step="0.1"
+             value="{{ view.incoming.balance }}"
+             hx-post="/peers/{{ view.peer.name }}/balance/incoming"
+             hx-trigger="change"
+             hx-vals='js:{value: event.target.value}'
+             hx-target="#peer-{{ view.peer.name }}" hx-swap="outerHTML"
+             {% if not view.incoming.connected %}disabled{% endif %} />
+      <span class="balance-label">R</span>
+    </div>
   </div>
 
   {% if view.peer.managed %}

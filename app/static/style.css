@@ -109,6 +109,41 @@ main {
   accent-color: var(--accent);
 }
 
+.balance-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.balance-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--muted);
+}
+
+.balance-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  width: 1em;
+  text-align: center;
+}
+
+#headsets h2, #peers h2 {
+  font-size: 0.95rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 0.75rem;
+}
+
+#headsets {
+  margin-bottom: 2rem;
+}
+
+.headset-card {
+  border-color: var(--accent);
+}
+
 .mute-btn, .remove-btn, button[type="submit"] {
   background: var(--border);
   color: var(--text);

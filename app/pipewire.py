@@ -108,6 +108,26 @@ def set_volume(node_id: int, volume: float) -> None:
     _run(["wpctl", "set-volume", str(node_id), f"{volume:.2f}"])
 
 
+def set_channel_volumes(node_id: int, volume: float, balance: float) -> None:
+    """Apply volume + left/right balance together as raw stereo channel
+    volumes, since that's the only way PipeWire exposes panning - there's
+    no separate "balance" knob to set. balance is -1.0 (full left) to 1.0
+    (full right), 0.0 = center/flat (in which case this matches set_volume
+    exactly). Cubed to match wpctl's cubic display scale (see
+    get_volume_mute) so a centered balance doesn't silently shift the
+    perceived loudness that `set_volume` alone would have produced.
+
+    Only meaningful for genuinely stereo nodes - a mono node has one
+    channel and pw-cli will reject a 2-element channelVolumes array for it.
+    """
+    volume = max(0.0, min(1.5, volume))
+    balance = max(-1.0, min(1.0, balance))
+    left = volume * min(1.0, 1.0 - balance)
+    right = volume * min(1.0, 1.0 + balance)
+    props = json.dumps({"channelVolumes": [left**3, right**3]})
+    _run(["pw-cli", "set-param", str(node_id), "Props", props])
+
+
 def set_mute(node_id: int, muted: bool) -> None:
     _run(["wpctl", "set-mute", str(node_id), "1" if muted else "0"])
 
