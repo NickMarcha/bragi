@@ -19,6 +19,7 @@ public sealed class TrayIconManager : IDisposable
     private readonly TrayIcon _trayIcon;
     private readonly NativeMenuItem _statusItem;
     private readonly NativeMenuItem _toggleItem;
+    private readonly NativeMenuItem _autostartItem;
 
     private readonly WindowIcon _disabledIcon = LoadIcon("tray-disabled.png");
     private readonly WindowIcon _enabledIcon = LoadIcon("tray-enabled.png");
@@ -34,6 +35,18 @@ public sealed class TrayIconManager : IDisposable
 
         var checkForUpdatesItem = new NativeMenuItem { Header = "Check for Updates" };
         checkForUpdatesItem.Click += (_, _) => UpdateService.CheckForUpdatesInteractive();
+
+        _autostartItem = new NativeMenuItem
+        {
+            Header = "Start at Login",
+            ToggleType = MenuItemToggleType.CheckBox,
+            IsChecked = AutostartService.IsEnabled(),
+        };
+        _autostartItem.Click += (_, _) =>
+        {
+            AutostartService.SetEnabled(!_autostartItem.IsChecked);
+            _autostartItem.IsChecked = AutostartService.IsEnabled();
+        };
 
         var quitItem = new NativeMenuItem { Header = "Quit" };
         quitItem.Click += (_, _) =>
@@ -51,6 +64,7 @@ public sealed class TrayIconManager : IDisposable
             _toggleItem,
             new NativeMenuItemSeparator(),
             checkForUpdatesItem,
+            _autostartItem,
             new NativeMenuItemSeparator(),
             quitItem,
         };
