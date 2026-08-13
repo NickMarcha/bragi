@@ -1,65 +1,65 @@
-<article class="peer-card" id="peer-{{ view.peer.name }}">
+{% import "_fader.html" as f %}
+{% if view.client_connected is not none %}
+  {# Roc peer with a Bragi Client tray app - client_connected is real
+     reachability (a live WebSocket from that machine), which a loaded
+     PipeWire module can't prove on its own since Roc runs over UDP. #}
+  {% set peer_status = "online" if view.client_connected else "offline" %}
+  {% set peer_status_title = "Tray app connected" if view.client_connected else "Tray app not connected to sagepi" %}
+{% elif view.outgoing.connected and view.incoming.connected %}
+  {% set peer_status = "online" %}
+  {% set peer_status_title = "Both directions connected" %}
+{% elif not view.outgoing.connected and not view.incoming.connected %}
+  {% set peer_status = "offline" %}
+  {% set peer_status_title = "Both directions offline" %}
+{% else %}
+  {% set peer_status = "partial" %}
+  {% set peer_status_title = "Only one direction connected" %}
+{% endif %}
+<article class="peer-card" id="peer-{{ view.name }}" data-peer="{{ view.name }}" data-client-tracked="{{ 'true' if view.client_connected is not none else 'false' }}">
   <div class="peer-header">
-    <h3>{{ view.peer.name }}</h3>
-    <span class="badge">{{ view.peer.protocol }}</span>
-    {% if not view.peer.managed %}<span class="badge muted-badge" title="Configured outside Bragi">manual</span>{% endif %}
+    <span class="status-dot {{ peer_status }}" title="{{ peer_status_title }}"></span>
+    <h3>{{ view.name }}</h3>
+    <span class="badge">{{ view.protocol }}</span>
+    {% if not view.managed %}<span class="badge muted-badge" title="Configured outside Bragi">manual</span>{% endif %}
   </div>
-  <p class="ip">{{ view.peer.tailscale_ip }}</p>
+  <p class="ip">{{ view.tailscale_ip }}</p>
 
-  <div class="direction">
-    <label>Mic &rarr; {{ view.peer.name }} {% if not view.outgoing.connected %}<span class="offline">(offline)</span>{% endif %}</label>
-    <div class="slider-row">
-      <input type="range" min="0" max="1.5" step="0.05"
-             value="{{ view.outgoing.volume if view.outgoing.volume is not none else 1.0 }}"
-             hx-post="/peers/{{ view.peer.name }}/volume/outgoing"
-             hx-trigger="change"
-             hx-vals='js:{value: event.target.value}'
-             hx-target="#peer-{{ view.peer.name }}" hx-swap="outerHTML"
-             {% if not view.outgoing.connected %}disabled{% endif %} />
-      <button class="mute-btn {{ 'active' if view.outgoing.muted }}"
-              hx-post="/peers/{{ view.peer.name }}/mute/outgoing"
-              hx-target="#peer-{{ view.peer.name }}" hx-swap="outerHTML"
-              {% if not view.outgoing.connected %}disabled{% endif %}>
-        {{ "Muted" if view.outgoing.muted else "Mute" }}
-      </button>
+  <div class="strips">
+    <div class="strip" data-direction="outgoing">
+      <div class="mix-row">
+        <span class="strip-label">Mic&rarr;{{ view.name }} <span class="offline" {% if view.outgoing.connected %}hidden{% endif %}>(off)</span></span>
+        <button class="mute-btn {{ 'active' if view.outgoing.muted }}"
+                data-target="peer" data-key="{{ view.name }}" data-direction="outgoing" data-action="mute"
+                {% if not view.outgoing.connected %}disabled{% endif %}>
+          {{ "Muted" if view.outgoing.muted else "Mute" }}
+        </button>
+      </div>
+      {{ f.fader("peer", view.name, "outgoing", view.outgoing.volume, view.outgoing.connected) }}
+      <div class="readout">{{ "%.0f"|format((view.outgoing.volume or 0) * 100) }}%</div>
+    </div>
+
+    <div class="strip" data-direction="incoming">
+      <div class="mix-row">
+        <span class="strip-label">{{ view.name }}&rarr;headset <span class="offline" {% if view.incoming.connected %}hidden{% endif %}>(off)</span></span>
+        <button class="mute-btn {{ 'active' if view.incoming.muted }}"
+                data-target="peer" data-key="{{ view.name }}" data-direction="incoming" data-action="mute"
+                {% if not view.incoming.connected %}disabled{% endif %}>
+          {{ "Muted" if view.incoming.muted else "Mute" }}
+        </button>
+      </div>
+      <div class="pad" data-target="peer" data-key="{{ view.name }}" data-direction="incoming" data-action="balance-pad">
+        <div class="pad-dot" style="left: {{ ((view.incoming.balance + 1) / 2 * 100) }}%;"></div>
+      </div>
+      {{ f.fader("peer", view.name, "incoming", view.incoming.volume, view.incoming.connected) }}
+      <div class="readout">{{ "%.0f"|format((view.incoming.volume or 0) * 100) }}%</div>
     </div>
   </div>
 
-  <div class="direction">
-    <label>{{ view.peer.name }} &rarr; headset {% if not view.incoming.connected %}<span class="offline">(offline)</span>{% endif %}</label>
-    <div class="slider-row">
-      <input type="range" min="0" max="1.5" step="0.05"
-             value="{{ view.incoming.volume if view.incoming.volume is not none else 1.0 }}"
-             hx-post="/peers/{{ view.peer.name }}/volume/incoming"
-             hx-trigger="change"
-             hx-vals='js:{value: event.target.value}'
-             hx-target="#peer-{{ view.peer.name }}" hx-swap="outerHTML"
-             {% if not view.incoming.connected %}disabled{% endif %} />
-      <button class="mute-btn {{ 'active' if view.incoming.muted }}"
-              hx-post="/peers/{{ view.peer.name }}/mute/incoming"
-              hx-target="#peer-{{ view.peer.name }}" hx-swap="outerHTML"
-              {% if not view.incoming.connected %}disabled{% endif %}>
-        {{ "Muted" if view.incoming.muted else "Mute" }}
-      </button>
-    </div>
-    <div class="balance-row">
-      <span class="balance-label">L</span>
-      <input type="range" class="balance-slider" min="-1" max="1" step="0.1"
-             value="{{ view.incoming.balance }}"
-             hx-post="/peers/{{ view.peer.name }}/balance/incoming"
-             hx-trigger="change"
-             hx-vals='js:{value: event.target.value}'
-             hx-target="#peer-{{ view.peer.name }}" hx-swap="outerHTML"
-             {% if not view.incoming.connected %}disabled{% endif %} />
-      <span class="balance-label">R</span>
-    </div>
-  </div>
-
-  {% if view.peer.managed %}
+  {% if view.managed %}
   <button class="remove-btn"
-          hx-post="/peers/{{ view.peer.name }}/delete"
+          hx-post="/peers/{{ view.name }}/delete"
           hx-target="#peers" hx-swap="innerHTML"
-          hx-confirm="Remove {{ view.peer.name }}?">
+          hx-confirm="Remove {{ view.name }}?">
     Remove peer
   </button>
   {% endif %}

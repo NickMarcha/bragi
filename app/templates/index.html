@@ -6,8 +6,14 @@
   <title>Bragi</title>
   <link rel="stylesheet" href="/static/style.css" />
   <script src="/static/htmx.min.js"></script>
+  <script src="/static/ws.js" defer></script>
 </head>
 <body>
+  <div id="top-bar">
+    <button id="unit-toggle" title="Toggle volume readout between % and dB">%</button>
+    <div id="ws-status" class="connecting"><span class="dot"></span><span class="label">Connecting…</span></div>
+  </div>
+
   <header>
     <h1>Bragi</h1>
     <p class="subtitle">Network audio bridge — sagepi</p>
@@ -19,9 +25,11 @@
       {% if not headsets %}
       <p class="hint">No USB headset detected on sagepi right now.</p>
       {% endif %}
-      {% for view in headsets %}
-      {% include "_headset_card.html" %}
-      {% endfor %}
+      <div class="card-row">
+        {% for view in headsets %}
+        {% include "_headset_card.html" %}
+        {% endfor %}
+      </div>
     </section>
 
     <section id="peers">

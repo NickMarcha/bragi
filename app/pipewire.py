@@ -94,6 +94,60 @@ def get_volume_mute(node_id: int) -> tuple[float | None, bool]:
     return float(m.group(1)), bool(m.group(2))
 
 
+@dataclass
+class Device:
+    id: int
+    name: str  # e.g. "alsa_card.usb-HP__Inc_HyperX_..." - see headsets.py's card_id
+    description: str
+    active_profile_index: int | None
+    off_profile_index: int | None
+    restore_profile_index: int | None  # highest-priority non-off profile, to re-enable with
+
+
+def list_devices() -> list[Device]:
+    """ALSA card Device objects - a different PipeWire object type from the
+    Sink/Source Nodes list_nodes() returns, needed only for enable/disable
+    (which acts on the whole card's ALSA profile, not any one node). Kept
+    out of list_nodes()/headsets.list_headsets() on purpose: those are on
+    the hot path for every throttled slider tick, and this is an extra
+    pw-dump call this doesn't justify paying there - only headset_view()
+    (full listing) and the enable/disable action itself call this."""
+    raw = _run(["pw-dump"])
+    objects = json.loads(raw)
+    devices: list[Device] = []
+    for obj in objects:
+        if obj.get("type") != "PipeWire:Interface:Device":
+            continue
+        props = (obj.get("info") or {}).get("props") or {}
+        name = props.get("device.name", "")
+        if not name.startswith("alsa_card."):
+            continue
+        params = (obj.get("info") or {}).get("params") or {}
+        profiles = params.get("EnumProfile", [])
+        current = params.get("Profile", [])
+        off = next((p["index"] for p in profiles if p.get("name") == "off"), None)
+        non_off = max(
+            (p for p in profiles if p.get("name") != "off"),
+            key=lambda p: p.get("priority", 0),
+            default=None,
+        )
+        devices.append(
+            Device(
+                id=obj["id"],
+                name=name,
+                description=props.get("device.description", name),
+                active_profile_index=current[0].get("index") if current else None,
+                off_profile_index=off,
+                restore_profile_index=non_off["index"] if non_off else None,
+            )
+        )
+    return devices
+
+
+def set_device_profile(device_id: int, profile_index: int) -> None:
+    _run(["wpctl", "set-profile", str(device_id), str(profile_index)])
+
+
 def find_node_id(nodes: list[Node], name: str, media_class_prefix: str | None = None) -> int | None:
     for node in nodes:
         if node.name == name:

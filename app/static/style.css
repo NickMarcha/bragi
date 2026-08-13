@@ -32,16 +32,21 @@ header h1 {
 }
 
 main {
-  max-width: 720px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 1rem 1.5rem 3rem;
 }
 
-#peers {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+#headsets, #peers {
   margin-bottom: 2rem;
+}
+
+.card-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1rem;
 }
 
 .peer-card {
@@ -62,6 +67,43 @@ main {
   font-size: 1.1rem;
 }
 
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.status-dot.online { background: #4caf50; }
+.status-dot.offline { background: var(--danger); }
+.status-dot.partial { background: #d8b16a; }
+.status-dot.disabled { background: var(--muted); }
+
+/* Headset names come straight from the device (e.g. "HyperX Cloud III S
+   Wireless") which is too wide to sit inline with badges without forcing
+   the whole card wider than its strips - stack them, and truncate the
+   name itself as a backstop (full name still available via title=). */
+.headset-card .peer-header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.headset-card .peer-header h3 {
+  max-width: 170px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.peer-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .badge {
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -77,55 +119,212 @@ main {
   color: #d8b16a;
 }
 
+.enable-toggle-btn {
+  background: var(--border);
+  color: var(--text);
+  border: none;
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.headset-disabled {
+  opacity: 0.55;
+}
+
+.headset-disabled .enable-toggle-btn {
+  opacity: 1;
+  background: var(--accent);
+  color: white;
+}
+
 .ip {
   color: var(--muted);
   font-size: 0.85rem;
   margin: 0.15rem 0 0.75rem;
 }
 
-.direction {
-  margin-bottom: 0.65rem;
-}
-
-.direction label {
-  display: block;
-  font-size: 0.85rem;
-  color: var(--muted);
-  margin-bottom: 0.25rem;
-}
-
 .offline {
   color: var(--danger);
 }
 
-.slider-row {
+/* --- Voicemeeter-style vertical strips --- */
+
+.strips {
   display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  padding-top: 0.25rem;
+}
+
+.strip {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
+  min-width: 72px;
 }
 
-.slider-row input[type="range"] {
-  flex: 1;
-  accent-color: var(--accent);
+.mix-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+  text-align: center;
 }
 
-.balance-row {
+.strip-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* The balance pad - only present on peer "incoming" strips (headset
+   balance doesn't hold on real ALSA hardware, see app/pipewire.py). Square,
+   drag horizontally; the dot only ever moves left/right, see ws.js. */
+.pad {
+  position: relative;
+  width: 44px;
+  aspect-ratio: 1 / 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.pad-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.fader-wrap {
+  display: flex;
+  justify-content: center;
+  height: 150px;
+  margin-bottom: 0.5rem;
+}
+
+/* Custom pointer-driven vertical fader - deliberately not a native
+   <input type=range> rotated via writing-mode: that combination has a
+   real cross-browser quirk where drag/click position gets mapped against
+   the pre-rotation bounding box, causing the thumb to jump on the first
+   click/drag tick. See ws.js's wireFaders() for the interaction logic. */
+.fader {
+  position: relative;
+  width: 28px;
+  height: 150px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.fader[data-disabled="1"] {
+  cursor: not-allowed;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.fader-track {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  margin-left: -2px;
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.fader-fill {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 4px;
+  margin-left: -2px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.fader-thumb {
+  position: absolute;
+  left: 50%;
+  width: 22px;
+  height: 12px;
+  margin-left: -11px;
+  transform: translateY(50%);
+  background: var(--text);
+  border-radius: 3px;
+}
+
+.readout {
+  font-size: 0.8rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- top-corner WS status + unit toggle --- */
+
+#top-bar {
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-top: 0.35rem;
+  z-index: 10;
 }
 
-.balance-row input[type="range"] {
-  flex: 1;
-  accent-color: var(--muted);
+#unit-toggle {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+  cursor: pointer;
 }
 
-.balance-label {
-  font-size: 0.7rem;
+#ws-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
   color: var(--muted);
-  width: 1em;
-  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+}
+
+#ws-status .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+#ws-status.connected .dot {
+  background: #4caf50;
+}
+
+#ws-status.connecting .dot {
+  background: #d8b16a;
+  animation: ws-pulse 1s infinite;
+}
+
+@keyframes ws-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 #headsets h2, #peers h2 {

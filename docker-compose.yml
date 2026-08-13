@@ -4,6 +4,18 @@ services:
     image: bragi
     restart: unless-stopped
     user: "1000:1000"
+    # Lets the container's uid 1000 read /dev/input/eventN (owned root:input,
+    # mode 660 on the host) for the knob-watcher - see app/knob_watcher.py.
+    # GID must match the host's `input` group (`getent group input` on sagepi).
+    group_add:
+      - "996"
+    # `devices:` (not `volumes:`) is required here - a plain bind mount only
+    # makes the node visible in the container's filesystem, it does NOT grant
+    # the cgroup device-access permission needed to actually open it (that
+    # gap surfaced live as EPERM/errno 1, not the EACCES a real Unix
+    # permission mismatch would give).
+    devices:
+      - "/dev/input:/dev/input"
     environment:
       XDG_RUNTIME_DIR: /run/user/1000
     volumes:

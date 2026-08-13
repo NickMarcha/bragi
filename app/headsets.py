@@ -38,7 +38,25 @@ def _card_id(node_name: str, prefix: str) -> str | None:
     return rest.rsplit(".", 1)[0] if "." in rest else rest
 
 
-def list_headsets(nodes: list[pipewire.Node]) -> list[Headset]:
+def get_headset_device(card_id: str) -> pipewire.Device | None:
+    """The ALSA card Device object backing this headset's card_id, for
+    enable/disable - a separate pw-dump call from list_headsets() (see
+    pipewire.list_devices' docstring for why they're kept apart)."""
+    wanted_name = f"alsa_card.{card_id}"
+    return next((d for d in pipewire.list_devices() if d.name == wanted_name), None)
+
+
+def list_headsets(nodes: list[pipewire.Node], devices: list[pipewire.Device] | None = None) -> list[Headset]:
+    """`devices`, when given, also surfaces headsets that are currently
+    *disabled* (ALSA profile set to "off") - disabling makes a card's
+    Sink/Source nodes disappear from PipeWire entirely, so a Node-only scan
+    would lose track of it completely, with no way to discover it again to
+    re-enable. Left optional (default None - Node-only, same as before)
+    since resolving it costs a second pw-dump call: the throttled per-tick
+    hot path (views.get_headset/headset_control_view) doesn't need to know
+    about disabled headsets - a throttled action against one just no-ops,
+    which is correct - only the dashboard listing and the enable/disable
+    action itself pass devices."""
     playback: dict[str, pipewire.Node] = {}
     capture: dict[str, pipewire.Node] = {}
     for node in nodes:
@@ -51,11 +69,30 @@ def list_headsets(nodes: list[pipewire.Node]) -> list[Headset]:
             if card:
                 capture[card] = node
 
+    device_by_card: dict[str, pipewire.Device] = {}
+    if devices:
+        for d in devices:
+            if d.name.startswith("alsa_card.usb-"):
+                device_by_card[d.name[len("alsa_card."):]] = d
+
+    cards = set(playback) | set(capture) | set(device_by_card)
+
     headsets = []
-    for card in sorted(set(playback) | set(capture)):
+    for card in sorted(cards):
         out_node = playback.get(card)
         in_node = capture.get(card)
-        label = (out_node or in_node).description or card
+        device = device_by_card.get(card)
+        if device is not None:
+            # Shorter than the node description (which adds "Analog
+            # Stereo"/"Mono" - e.g. device.description "HyperX Cloud III S
+            # Wireless" vs node "HyperX Cloud III S Wireless Analog
+            # Stereo") - and it's what's available at all once disabled,
+            # since there are no nodes left to name it from then.
+            label = device.description
+        elif out_node or in_node:
+            label = (out_node or in_node).description or card
+        else:
+            label = card
         headsets.append(
             Headset(
                 key=card,
