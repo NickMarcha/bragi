@@ -1,0 +1,81 @@
+name: Bragi Client Release
+
+# Tag-triggered, not push-to-main: this repo's main branch also carries
+# server-only (app/) commits that shouldn't fire a client release build.
+# See client/README.md for the release process.
+on:
+  push:
+    tags:
+      - "client-v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive and verify version
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#client-v}"
+          csproj_version=$(grep -oP '(?<=<Version>)[^<]+' client/src/Bragi.Client/Bragi.Client.csproj)
+          if [ "$version" != "$csproj_version" ]; then
+            echo "::error::Tag $tag (version $version) does not match Bragi.Client.csproj's <Version>$csproj_version</Version> - bump the csproj and retag."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish
+        run: |
+          dotnet publish client/src/Bragi.Client/Bragi.Client.csproj \
+            -c Release -r linux-x64 --self-contained true \
+            -p:Version=${{ steps.version.outputs.version }} \
+            -o publish
+
+      - name: Install packaging dependencies
+        # mksquashfs is required by `vpk pack` to build the Linux AppImage -
+        # confirmed missing by default (tested locally on sage-dev, an Arch
+        # derivative where it's also not preinstalled; not verified against
+        # ubuntu-latest specifically, so keep this explicit rather than
+        # assuming the runner image already has it).
+        run: sudo apt-get update && sudo apt-get install -y squashfs-tools
+
+      - name: Install vpk
+        run: dotnet tool install -g vpk
+
+      - name: Download previous release (for delta packages)
+        run: |
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          vpk download github --repoUrl https://github.com/NickMarcha/bragi --channel linux || true
+
+      - name: Pack
+        run: |
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          vpk pack \
+            --packId BragiClient \
+            --packVersion ${{ steps.version.outputs.version }} \
+            --packDir publish \
+            --packTitle "Bragi Client" \
+            --packAuthors NickMarcha \
+            --mainExe Bragi.Client \
+            --icon client/src/Bragi.Client/Assets/tray-enabled.png \
+            --channel linux
+
+      - name: Upload + publish GitHub Release
+        run: |
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          vpk upload github \
+            --repoUrl https://github.com/NickMarcha/bragi \
+            --channel linux \
+            --publish \
+            --releaseName "Bragi Client ${{ steps.version.outputs.version }}" \
+            --tag ${{ github.ref_name }} \
+            --token ${{ secrets.GITHUB_TOKEN }}

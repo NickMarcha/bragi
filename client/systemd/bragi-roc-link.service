@@ -1,0 +1,26 @@
+[Unit]
+Description=Bragi Roc audio link to sagepi (persistent pw-cli session, hot-loaded modules, no pipewire restart)
+Documentation=https://github.com/NickMarcha/bragi/blob/main/client/README.md
+After=pipewire.service wireplumber.service
+Requisite=pipewire.service
+
+[Service]
+# NOTE: not Type=oneshot. A `pw-cli load-module` command loads the module
+# into pw-cli's OWN connection, not the pipewire daemon - the resulting
+# node is destroyed the instant pw-cli disconnects (verified empirically,
+# see client/README.md "Why this isn't a oneshot unit"). This unit's
+# ExecStart is the actual pw-cli session, kept alive for as long as the
+# link should stay up; killing it (systemctl stop) is what tears the
+# modules down, and PipeWire's own client-disconnect cleanup does that -
+# no explicit `pw-cli destroy` calls needed.
+Type=notify
+NotifyAccess=all
+EnvironmentFile=%h/.config/bragi-client/roc-link.env
+ExecStart=%h/.local/bin/bragi-roc-link-run.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=15
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
