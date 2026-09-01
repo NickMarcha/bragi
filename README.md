@@ -11,6 +11,12 @@ that pushes voices around a network.
 
 ## Docs
 
+- [`docs/development.md`](docs/development.md) — start here to work on the
+  backend: the `app/` module map, local setup, the no-test-suite reality
+  and how changes get verified, the `data/` file schemas.
+- [`docs/dashboard-ui.md`](docs/dashboard-ui.md) — the template tree, the
+  data contract templates render from, how a control reaches the server,
+  and where htmx stops and the WebSocket takes over.
 - [`docs/audio-bridge.md`](docs/audio-bridge.md) — the PipeWire graph, the
   Roc and VBAN transports, and the parts that took several tries to make
   stable. Read this to understand what Bragi is controlling.
