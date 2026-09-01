@@ -1,0 +1,52 @@
+name: Server Tests
+
+# Path-filtered for the same reason client-release.yml is tag-triggered:
+# this repo's main branch carries both server (app/) and client (client/)
+# commits, and neither needs to run the other's CI. The two path lists are
+# duplicated rather than shared via a YAML anchor - GitHub Actions does not
+# support anchors in workflow files.
+#
+# No PipeWire on the runner, and none needed: tests/fake_pipewire.py
+# replaces pipewire._run, the single place the app shells out. See
+# docs/development.md.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "requirements.txt"
+      - "requirements-dev.txt"
+      - "pytest.ini"
+      - ".github/workflows/server-tests.yml"
+  pull_request:
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "requirements.txt"
+      - "requirements-dev.txt"
+      - "pytest.ini"
+      - ".github/workflows/server-tests.yml"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.13 is what the Dockerfile ships, so it is what sagepi actually
+        # runs; 3.14 is what docs/development.md says you develop against.
+        # Both, until those two agree.
+        python-version: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      - run: pytest

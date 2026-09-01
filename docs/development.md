@@ -32,6 +32,11 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
+CI runs them on every push to `main` and every PR that touches `app/`,
+`tests/`, or the requirements (`.github/workflows/server-tests.yml`), on
+both Python 3.13 (what the Dockerfile ships, so what `sagepi` runs) and
+3.14 (what this page says to develop on).
+
 They run anywhere - no PipeWire needed. `tests/fake_pipewire.py` replaces
 `pipewire._run`, the single place the app shells out, with a fake host
 modelling the graph as it actually stands on `sagepi` (captured from a live
