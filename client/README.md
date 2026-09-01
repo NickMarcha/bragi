@@ -118,6 +118,27 @@ proven. An actual self-update from one installed build to the next still
 needs a second release (`client-v0.1.1`) to exist before it can be
 confirmed on a machine.
 
+### Installing the tray app on a machine
+
+The update check only runs for a Velopack-installed build. A
+framework-dependent `dotnet build` output reports `IsInstalled == false`
+and both the silent and manual checks no-op. So install the AppImage from
+the release, not a local build:
+
+```
+gh release download client-v0.1.0 --repo NickMarcha/bragi \
+  --pattern 'BragiClient.AppImage' --dir ~/.local/bin --clobber
+chmod +x ~/.local/bin/BragiClient.AppImage
+# point autostart at it:
+#   Exec=/home/<user>/.local/bin/BragiClient.AppImage
+```
+
+Velopack self-updates by replacing that AppImage file in place, so it has
+to live somewhere writable and stable. On the first run it logs to
+`/tmp/velopack_BragiClient.log`; a line like `Initialised
+LinuxVelopackLocator for BragiClient v0.1.0` followed by `Retrieving latest
+release feed` confirms the update check is active.
+
 ## Dashboard presence heartbeat
 
 `Tray/PeerPresenceClient.cs` holds a WebSocket open to sagepi's
@@ -133,20 +154,21 @@ URL) - both optional, missing either just disables the heartbeat without
 affecting anything else. Verified end-to-end on sage-dev: disabling the
 tray link flips the dashboard's sage-dev dot live, no page refresh.
 
-## Status (2026-08-13)
+## Status (2026-09-01)
 
 - Systemd unit + hot-load mechanism: done, live in production on both
   sage-dev and sagedeck (verified: start/stop/crash-recovery, real audio
   confirmed working on sage-dev, nodes + default routing confirmed on
   sagedeck).
-- Tray app (enable/disable, status): done, full loop verified against the
-  live unit on sage-dev (toggling from the tray actually starts/stops the
-  real link). Builds successfully on sagedeck too, but the GUI itself
-  hasn't been visually confirmed there - couldn't launch it over SSH (no
-  display/Wayland socket access from a non-interactive remote shell, not
-  an app bug). Worth a quick check next time you're on the device
-  directly, ideally also via a `~/.config/autostart/*.desktop` entry so it
-  starts automatically at login (not set up yet on either machine).
+- Tray app on sage-dev: the `client-v0.1.0` AppImage is installed at
+  `~/.local/bin/BragiClient.AppImage`, autostart points at it, and it runs.
+  The Velopack log confirms the update check reaches the GitHub feed and
+  correctly reports up to date. The earlier autostart entry pointed at a
+  stale local `dotnet build` output, which is why the update check never
+  did anything there.
+- Tray app on sagedeck: still a local build. Builds fine, GUI not visually
+  confirmed (couldn't launch over SSH, no display access). Install the
+  AppImage the same way next time on the device.
 - Velopack self-update: `client-v0.1.0` released 2026-09-01, workflow runs
-  clean. The upgrade path itself is unconfirmed until a `client-v0.1.1`
-  exists to update to.
+  clean, the check works against the feed. The upgrade path itself is
+  unconfirmed until a `client-v0.1.1` exists to update to.
