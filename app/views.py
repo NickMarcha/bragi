@@ -10,6 +10,7 @@ from . import headsets as headsets_module
 from . import peer_presence
 from . import peers as peers_module
 from . import pipewire
+from . import viz_settings
 
 
 def resolve_node_id(nodes: list[pipewire.Node], peer: peers_module.Peer, direction: str) -> int | None:
@@ -34,6 +35,13 @@ def peer_incoming_node_name(peer: peers_module.Peer) -> str:
     # resolve_node_id) - balance state would collide across multiple VBAN
     # peers, same limitation the README already documents for VBAN peers.
     return peer.incoming_source_name if peer.protocol == "roc" else "vban-incoming"
+
+
+def peer_outgoing_node_name(peer: peers_module.Peer) -> str:
+    # Mirrors peer_incoming_node_name - the outgoing (mic->peer) direction is
+    # just as much a software Roc/VBAN stream node as incoming is, so it's
+    # equally safe to pan (unlike headset directions, see direction_view).
+    return peer.outgoing_sink_name if peer.protocol == "roc" else "vban-outgoing"
 
 
 def direction_view(node_id: int | None, node_name: str | None = None) -> dict:
@@ -72,7 +80,7 @@ def peer_view(nodes: list[pipewire.Node], peer: peers_module.Peer) -> dict:
         "protocol": peer.protocol,
         "tailscale_ip": peer.tailscale_ip,
         "managed": peer.managed,
-        "outgoing": direction_view(out_id),
+        "outgoing": direction_view(out_id, peer_outgoing_node_name(peer)),
         "incoming": direction_view(in_id, peer_incoming_node_name(peer)),
         # Only meaningful for peers with a Bragi Client tray app (currently
         # Roc peers only - VBAN's "sage" has no client yet, see
@@ -135,6 +143,7 @@ def build_state() -> dict:
             headset_view(h, device_by_card.get(h.key)) for h in headsets_module.list_headsets(nodes, devices)
         ],
         "peers": [peer_view(nodes, p) for p in peers_module.load_peers()],
+        "viz_settings": {"enabled": viz_settings.get_enabled()},
     }
 
 
@@ -174,5 +183,10 @@ def peer_control_view(key: str, direction: str) -> dict | None:
         return None
     nodes = pipewire.list_nodes()
     node_id = resolve_node_id(nodes, peer, direction)
-    node_name = peer_incoming_node_name(peer) if direction == "incoming" else None
+    if direction == "incoming":
+        node_name = peer_incoming_node_name(peer)
+    elif direction == "outgoing":
+        node_name = peer_outgoing_node_name(peer)
+    else:
+        node_name = None
     return direction_view(node_id, node_name)

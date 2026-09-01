@@ -1,4 +1,5 @@
 {% import "_fader.html" as f %}
+{% import "_icons.html" as icons %}
 {% if not view.enabled %}
   {% set hs_status = "disabled" %}
 {% elif view.playback.connected and view.capture.connected %}
@@ -9,42 +10,46 @@
   {% set hs_status = "partial" %}
 {% endif %}
 <article class="peer-card headset-card {{ 'headset-disabled' if not view.enabled }}" id="headset-{{ view.key }}" data-headset="{{ view.key }}">
-  <div class="peer-header">
-    <h3 title="{{ view.label }}"><span class="status-dot {{ hs_status }}" title="{{ {'online': 'Speakers and mic connected', 'offline': 'Speakers and mic offline', 'partial': 'Only one of speakers/mic connected', 'disabled': 'Headset disabled'}[hs_status] }}"></span> {{ view.label }}</h3>
-    <div class="peer-header-badges">
-      <span class="badge">local headset</span>
-      <button class="enable-toggle-btn"
-              data-target="headset" data-key="{{ view.key }}" data-action="toggle_enabled">
-        {{ "Enable" if not view.enabled else "Disable" }}
-      </button>
+  <div class="status-dot {{ hs_status }}" title="{{ {'online': 'Speakers and mic connected', 'offline': 'Speakers and mic offline', 'partial': 'Only one of speakers/mic connected', 'disabled': 'Headset disabled'}[hs_status] }}"></div>
+  <div class="card-body">
+    <div class="peer-header">
+      <h3 title="{{ view.label }}">{{ view.label }}</h3>
+      <div class="peer-header-badges">
+        <span class="chip" title="Local headset (USB)">H</span>
+        <button class="icon-btn enable-toggle-btn"
+                data-target="headset" data-key="{{ view.key }}" data-action="toggle_enabled"
+                title="{{ 'Enable headset' if not view.enabled else 'Disable headset' }}">
+          {{ icons.power() }}
+        </button>
+      </div>
     </div>
-  </div>
 
-  <div class="strips">
-    <div class="strip" data-direction="playback">
-      <div class="mix-row">
-        <span class="strip-label">Speakers <span class="offline" {% if view.playback.connected %}hidden{% endif %}>(off)</span></span>
-        <button class="mute-btn {{ 'active' if view.playback.muted }}"
+    <div class="strips">
+      <div class="strip" data-direction="playback">
+        <span class="strip-label">Speakers <span class="offline" {% if view.playback.connected %}hidden{% endif %}>&middot;off</span></span>
+        {{ f.fader("headset", view.key, "playback", view.playback.volume, view.playback.connected, show_level=True) }}
+        <button class="icon-btn mute-btn {{ 'active' if view.playback.muted }}"
                 data-target="headset" data-key="{{ view.key }}" data-direction="playback" data-action="mute"
-                {% if not view.playback.connected %}disabled{% endif %}>
-          {{ "Muted" if view.playback.muted else "Mute" }}
+                data-mute-label="Mute speakers"
+                {% if not view.playback.connected %}disabled{% endif %}
+                title="{{ 'Muted' if view.playback.muted else 'Mute speakers' }}">
+          {{ icons.speaker_mute() }}
         </button>
+        <div class="readout">{{ "%.0f"|format((view.playback.volume or 0) * 100) }}%</div>
       </div>
-      {{ f.fader("headset", view.key, "playback", view.playback.volume, view.playback.connected) }}
-      <div class="readout">{{ "%.0f"|format((view.playback.volume or 0) * 100) }}%</div>
-    </div>
 
-    <div class="strip" data-direction="capture">
-      <div class="mix-row">
-        <span class="strip-label">Mic <span class="offline" {% if view.capture.connected %}hidden{% endif %}>(off)</span></span>
-        <button class="mute-btn {{ 'active' if view.capture.muted }}"
+      <div class="strip" data-direction="capture">
+        <span class="strip-label">Mic <span class="offline" {% if view.capture.connected %}hidden{% endif %}>&middot;off</span></span>
+        {{ f.fader("headset", view.key, "capture", view.capture.volume, view.capture.connected, show_level=True) }}
+        <button class="icon-btn mute-btn {{ 'active' if view.capture.muted }}"
                 data-target="headset" data-key="{{ view.key }}" data-direction="capture" data-action="mute"
-                {% if not view.capture.connected %}disabled{% endif %}>
-          {{ "Muted" if view.capture.muted else "Mute" }}
+                data-mute-label="Mute mic"
+                {% if not view.capture.connected %}disabled{% endif %}
+                title="{{ 'Muted' if view.capture.muted else 'Mute mic' }}">
+          {{ icons.mic_mute() }}
         </button>
+        <div class="readout">{{ "%.0f"|format((view.capture.volume or 0) * 100) }}%</div>
       </div>
-      {{ f.fader("headset", view.key, "capture", view.capture.volume, view.capture.connected) }}
-      <div class="readout">{{ "%.0f"|format((view.capture.volume or 0) * 100) }}%</div>
     </div>
   </div>
 </article>

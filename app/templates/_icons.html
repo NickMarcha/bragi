@@ -1,0 +1,38 @@
+{# Small self-contained line icons (currentColor stroke/fill so button state
+   colors apply automatically) - no icon font/library, keeps the project's
+   no-build-step vanilla stack. #}
+
+{% macro power() %}
+<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true">
+  <path d="M12 3v8"/>
+  <path d="M18.4 6.6a9 9 0 1 1-12.77.03"/>
+</svg>
+{% endmacro %}
+
+{% macro speaker_mute() %}
+<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <polygon points="4,9 8,9 12,5 12,19 8,15 4,15" fill="currentColor" stroke="none"/>
+  <line x1="16" y1="9" x2="22" y2="15"/>
+  <line x1="22" y1="9" x2="16" y2="15"/>
+</svg>
+{% endmacro %}
+
+{% macro mic_mute() %}
+<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <rect x="9" y="2" width="6" height="10" rx="3"/>
+  <path d="M5 11a7 7 0 0 0 14 0"/>
+  <line x1="12" y1="18" x2="12" y2="21"/>
+  <line x1="3" y1="3" x2="21" y2="21"/>
+</svg>
+{% endmacro %}
+
+{% macro settings() %}
+<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true">
+  <line x1="4" y1="6" x2="20" y2="6"/>
+  <circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/>
+  <line x1="4" y1="12" x2="20" y2="12"/>
+  <circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/>
+  <line x1="4" y1="18" x2="20" y2="18"/>
+  <circle cx="7" cy="18" r="2" fill="currentColor" stroke="none"/>
+</svg>
+{% endmacro %}

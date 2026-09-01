@@ -1,3 +1,4 @@
+{% import "_icons.html" as icons %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -8,11 +9,21 @@
   <script src="/static/htmx.min.js"></script>
   <script src="/static/ws.js" defer></script>
 </head>
-<body>
+<body class="{{ 'viz-enabled' if viz_settings.enabled }}">
   <div id="top-bar">
+    <button id="settings-toggle" title="Visualizer settings">{{ icons.settings() }}</button>
     <button id="unit-toggle" title="Toggle volume readout between % and dB">%</button>
     <div id="ws-status" class="connecting"><span class="dot"></span><span class="label">Connecting…</span></div>
   </div>
+
+  <dialog id="viz-settings-dialog">
+    <h2>Visualizer settings</h2>
+    <label class="viz-settings-row">
+      <input type="checkbox" id="viz-enabled-checkbox" {% if viz_settings.enabled %}checked{% endif %} />
+      Show audio level meters
+    </label>
+    <button id="viz-settings-close" type="button">Close</button>
+  </dialog>
 
   <header>
     <h1>Bragi</h1>
@@ -20,8 +31,8 @@
   </header>
 
   <main>
-    <section id="headsets">
-      <h2>Local headset{{ "s" if headsets|length != 1 }}</h2>
+    <section id="devices">
+      <h2>Headsets &amp; peers</h2>
       {% if not headsets %}
       <p class="hint">No USB headset detected on sagepi right now.</p>
       {% endif %}
@@ -29,12 +40,10 @@
         {% for view in headsets %}
         {% include "_headset_card.html" %}
         {% endfor %}
+        <div id="peers">
+          {% include "_peers_list.html" %}
+        </div>
       </div>
-    </section>
-
-    <section id="peers">
-      <h2>Peers</h2>
-      {% include "_peers_list.html" %}
     </section>
 
     <section id="add-peer">

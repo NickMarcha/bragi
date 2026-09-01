@@ -1,4 +1,4 @@
-{% macro fader(target, key, direction, volume, connected, max=1.5) %}
+{% macro fader(target, key, direction, volume, connected, max=1.5, show_level=False) %}
 {% set v = volume if volume is not none else 1.0 %}
 <div class="fader-wrap">
   <div class="fader" data-target="{{ target }}" data-key="{{ key }}" data-direction="{{ direction }}" data-action="volume"
@@ -8,5 +8,15 @@
     <div class="fader-fill" style="height: {{ (v / max * 100) }}%;"></div>
     <div class="fader-thumb" style="bottom: {{ (v / max * 100) }}%;"></div>
   </div>
+  {% if show_level %}
+  {# Live signal level - deliberately a separate element from .fader-fill
+     above, which reflects the *volume setting*, not what's actually
+     playing right now. Visibility is gated purely by CSS (body.viz-enabled,
+     see style.css) so there's one source of truth for on/off, not per-
+     element hidden-attribute bookkeeping. #}
+  <div class="level-meter" data-level-target="{{ target }}" data-level-key="{{ key }}" data-level-direction="{{ direction }}">
+    <div class="level-fill" style="height: 0%;"></div>
+  </div>
+  {% endif %}
 </div>
 {% endmacro %}

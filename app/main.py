@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import knob_watcher
+from . import level_meter
 from . import peer_presence
 from . import peers as peers_module
 from . import pipewire
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI):
     tasks = [
         asyncio.create_task(watcher.watch(ws.on_node_changed)),
         asyncio.create_task(knob_watcher.watch(ws.broadcast_headset_volume_change)),
+        asyncio.create_task(level_meter.supervise()),
     ]
     yield
     for task in tasks:

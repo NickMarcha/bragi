@@ -71,6 +71,8 @@
       else if (msg.type === "control") applyControl(msg);
       else if (msg.type === "headset") applyHeadset(msg);
       else if (msg.type === "peer_presence") applyPeerPresence(msg);
+      else if (msg.type === "level") applyLevel(msg);
+      else if (msg.type === "viz_settings") applyVizSettings(msg);
     });
     socket.addEventListener("close", () => {
       setStatus("disconnected");
@@ -122,6 +124,21 @@
     });
   }
 
+  function wireSettingsDialog() {
+    const toggleBtn = document.getElementById("settings-toggle");
+    const dialog = document.getElementById("viz-settings-dialog");
+    const closeBtn = document.getElementById("viz-settings-close");
+    const checkbox = document.getElementById("viz-enabled-checkbox");
+    if (!toggleBtn || !dialog) return;
+    toggleBtn.addEventListener("click", () => dialog.showModal());
+    if (closeBtn) closeBtn.addEventListener("click", () => dialog.close());
+    if (checkbox) {
+      checkbox.addEventListener("change", () => {
+        send({ action: "set_viz_enabled", value: checkbox.checked });
+      });
+    }
+  }
+
   // --- applying server state ---
 
   function applyState(state) {
@@ -134,6 +151,31 @@
         ["incoming", view.incoming],
       ]);
     }
+    if (state.viz_settings) applyVizSettings(state.viz_settings);
+  }
+
+  // One update per ~50ms audio chunk from app/level_meter.py (headset
+  // strips only, v1 scope) - paints the live-signal bar next to the fader,
+  // never the fader itself (see _fader.html's level-meter comment for why
+  // that's a deliberately separate element from the volume fill).
+  function applyLevel(msg) {
+    const attr = msg.target === "headset" ? "data-headset" : "data-peer";
+    const card = document.querySelector(`[${attr}="${cssEscape(msg.key)}"]`);
+    if (!card) return;
+    const section = card.querySelector(`.strip[data-direction="${msg.direction}"]`);
+    if (!section) return;
+    const fill = section.querySelector(".level-fill");
+    if (fill) fill.style.height = `${Math.max(0, Math.min(1, msg.value)) * 100}%`;
+  }
+
+  // The one place viz_settings.enabled (see app/viz_settings.py) turns
+  // into UI state - toggles the body class that CSS gates every
+  // .level-meter's visibility on, and keeps the settings checkbox in sync
+  // whether the change came from this tab or another one.
+  function applyVizSettings(msg) {
+    document.body.classList.toggle("viz-enabled", !!msg.enabled);
+    const checkbox = document.getElementById("viz-enabled-checkbox");
+    if (checkbox) checkbox.checked = !!msg.enabled;
   }
 
   // Targeted update for a single control (the common case - every slider
@@ -155,7 +197,7 @@
     if (!card) return;
     card.classList.toggle("headset-disabled", !msg.enabled);
     const toggleBtn = card.querySelector('[data-action="toggle_enabled"]');
-    if (toggleBtn) toggleBtn.textContent = msg.enabled ? "Disable" : "Enable";
+    if (toggleBtn) toggleBtn.title = msg.enabled ? "Disable headset" : "Enable headset";
     if (msg.playback) applyDirection(card, "playback", msg.playback);
     if (msg.capture) applyDirection(card, "capture", msg.capture);
   }
@@ -205,11 +247,16 @@
       setReadout(section, dv.volume);
     }
 
+    // Icon-only button (see _icons.html) - only title/class communicate
+    // muted state now, never textContent, which would blow away the SVG
+    // icon markup inside. data-mute-label holds the direction-specific
+    // "unmuted" tooltip (e.g. "Mute speakers") set by the template, since
+    // that phrasing differs per strip and isn't recoverable once muted.
     const muteBtn = section.querySelector('[data-action="mute"]');
     if (muteBtn) {
       muteBtn.disabled = !dv.connected;
       muteBtn.classList.toggle("active", !!dv.muted);
-      muteBtn.textContent = dv.muted ? "Muted" : "Mute";
+      muteBtn.title = dv.muted ? "Muted" : (muteBtn.dataset.muteLabel || "Mute");
     }
 
     const pad = section.querySelector('[data-action="balance-pad"]');
@@ -335,10 +382,10 @@
     });
   }
 
-  // --- balance pad: same pointer-driven pattern as the fader above. Only
-  // present on peer "incoming" strips - headset balance doesn't hold on
-  // real ALSA hardware (WirePlumber overrides it), so headset strips have
-  // no pad at all.
+  // --- balance pad: same pointer-driven pattern as the fader above. Present
+  // on both peer strips (outgoing and incoming are both software Roc/VBAN
+  // stream nodes) - headset strips have no pad at all, since headset
+  // balance doesn't hold on real ALSA hardware (WirePlumber overrides it).
 
   function setPadPosition(pad, balance) {
     const dot = pad.querySelector(".pad-dot");
@@ -420,6 +467,7 @@
     wireFaders();
     wirePads();
     wireUnitToggle();
+    wireSettingsDialog();
 
     document.querySelectorAll('button[data-action="mute"]').forEach((el) => {
       el.addEventListener("click", () => {

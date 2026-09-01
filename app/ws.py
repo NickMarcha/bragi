@@ -47,6 +47,7 @@ from . import audio_state
 from . import headsets as headsets_module
 from . import pipewire
 from . import views
+from . import viz_settings
 
 logger = logging.getLogger("bragi.ws")
 
@@ -64,6 +65,12 @@ class ConnectionManager:
 
     def unregister(self, ws: WebSocket) -> None:
         self._queues.pop(ws, None)
+
+    def has_clients(self) -> bool:
+        """Used by level_meter.py's supervisor to decide whether any node
+        capture should run at all - no point spawning pw-cat processes for
+        a dashboard nobody has open."""
+        return bool(self._queues)
 
     def broadcast_nowait(self, message: dict) -> None:
         for queue in self._queues.values():
@@ -276,6 +283,14 @@ async def apply_action(action: dict) -> None:
     if verb in ("set_volume", "set_balance") and not _accept_ts((target, key, direction), action.get("ts")):
         return
 
+    if verb == "set_viz_enabled":
+        # No target/key/direction - a single global toggle, not a per-node
+        # control, see viz_settings.py.
+        enabled = bool(action.get("value"))
+        await asyncio.to_thread(viz_settings.set_enabled, enabled)
+        manager.broadcast_nowait({"type": "viz_settings", "enabled": enabled})
+        return
+
     if target == "headset":
         if verb == "toggle_enabled":
             # Resolved by device, not views.get_headset (Node-only) - a
@@ -334,11 +349,19 @@ async def apply_action(action: dict) -> None:
         if node_id is None:
             return
 
-        if verb == "set_volume" and direction == "incoming":
-            node_name = views.peer_incoming_node_name(peer)
+        # Both peer directions are software Roc/VBAN stream nodes (unlike
+        # headset directions, which are real ALSA hardware - see
+        # direction_view's docstring), so both are pannable.
+        pan_node_name = None
+        if direction == "incoming":
+            pan_node_name = views.peer_incoming_node_name(peer)
+        elif direction == "outgoing":
+            pan_node_name = views.peer_outgoing_node_name(peer)
+
+        if verb == "set_volume" and pan_node_name:
             await _throttled_apply(
-                ("peer", key, "incoming"),
-                lambda nid=node_id, nm=node_name, v=action["value"]: _apply_pan(nid, nm, volume=v),
+                ("peer", key, direction),
+                lambda nid=node_id, nm=pan_node_name, v=action["value"]: _apply_pan(nid, nm, volume=v),
                 action.get("ts"),
             )
         elif verb == "set_volume":
@@ -354,11 +377,10 @@ async def apply_action(action: dict) -> None:
 
             await asyncio.to_thread(_toggle)
             await broadcast_control("peer", key, direction)
-        elif verb == "set_balance" and direction == "incoming":
-            node_name = views.peer_incoming_node_name(peer)
+        elif verb == "set_balance" and pan_node_name:
             await _throttled_apply(
-                ("peer", key, "incoming"),
-                lambda nid=node_id, nm=node_name, b=action["value"]: _apply_pan(nid, nm, balance=b),
+                ("peer", key, direction),
+                lambda nid=node_id, nm=pan_node_name, b=action["value"]: _apply_pan(nid, nm, balance=b),
                 action.get("ts"),
             )
 
