@@ -12,8 +12,8 @@ that pushes voices around a network.
 ## Docs
 
 - [`docs/development.md`](docs/development.md) — start here to work on the
-  backend: the `app/` module map, local setup, the no-test-suite reality
-  and how changes get verified, the `data/` file schemas.
+  backend: the `app/` module map, local setup, the test suite (and what it
+  deliberately cannot cover), the `data/` file schemas.
 - [`docs/dashboard-ui.md`](docs/dashboard-ui.md) — the template tree, the
   data contract templates render from, how a control reaches the server,
   and where htmx stops and the WebSocket takes over.

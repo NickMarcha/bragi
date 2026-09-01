@@ -71,7 +71,7 @@
       else if (msg.type === "control") applyControl(msg);
       else if (msg.type === "headset") applyHeadset(msg);
       else if (msg.type === "peer_presence") applyPeerPresence(msg);
-      else if (msg.type === "level") applyLevel(msg);
+      else if (msg.type === "levels") applyLevels(msg);
       else if (msg.type === "viz_settings") applyVizSettings(msg);
     });
     socket.addEventListener("close", () => {
@@ -154,18 +154,34 @@
     if (state.viz_settings) applyVizSettings(state.viz_settings);
   }
 
-  // One update per ~50ms audio chunk from app/level_meter.py (headset
-  // strips only, v1 scope) - paints the live-signal bar next to the fader,
-  // never the fader itself (see _fader.html's level-meter comment for why
-  // that's a deliberately separate element from the volume fill).
-  function applyLevel(msg) {
-    const attr = msg.target === "headset" ? "data-headset" : "data-peer";
-    const card = document.querySelector(`[${attr}="${cssEscape(msg.key)}"]`);
-    if (!card) return;
-    const section = card.querySelector(`.strip[data-direction="${msg.direction}"]`);
-    if (!section) return;
-    const fill = section.querySelector(".level-fill");
-    if (fill) fill.style.height = `${Math.max(0, Math.min(1, msg.value)) * 100}%`;
+  // One frame per ~50ms audio chunk from app/level_meter.py, carrying every
+  // metered direction at once (it used to be one frame per direction, which
+  // at 8 directions x 20Hz was 160 frames a second for one open dashboard).
+  // Paints the live-signal bar next to the fader, never the fader itself
+  // (see _fader.html's level-meter comment for why that's a deliberately
+  // separate element from the volume fill).
+  //
+  // The .level-fill elements are looked up once and cached: at 20Hz across
+  // 8 meters, re-running two document queries per meter per frame is 320
+  // needless DOM searches a second, on a page whose strips never move.
+  const levelFills = new Map();
+
+  function levelFillFor(target, key, direction) {
+    const cacheKey = tsKeyFor(target, key, direction);
+    if (levelFills.has(cacheKey)) return levelFills.get(cacheKey);
+    const attr = target === "headset" ? "data-headset" : "data-peer";
+    const card = document.querySelector(`[${attr}="${cssEscape(key)}"]`);
+    const section = card && card.querySelector(`.strip[data-direction="${direction}"]`);
+    const fill = section ? section.querySelector(".level-fill") : null;
+    levelFills.set(cacheKey, fill);
+    return fill;
+  }
+
+  function applyLevels(msg) {
+    for (const level of msg.values || []) {
+      const fill = levelFillFor(level.target, level.key, level.direction);
+      if (fill) fill.style.height = `${Math.max(0, Math.min(1, level.value)) * 100}%`;
+    }
   }
 
   // The one place viz_settings.enabled (see app/viz_settings.py) turns
@@ -495,4 +511,8 @@
     wireControls();
     connect();
   });
+
+  // Adding or removing a peer swaps the whole peers list (the one place
+  // htmx still owns), which detaches every cached .level-fill in it.
+  document.addEventListener("htmx:afterSwap", () => levelFills.clear());
 })();

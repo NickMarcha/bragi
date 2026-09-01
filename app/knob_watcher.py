@@ -101,8 +101,8 @@ async def watch(on_volume_changed: OnVolumeChanged) -> None:
         while True:
             try:
                 devices = await asyncio.to_thread(_consumer_control_devices)
-                nodes = await asyncio.to_thread(pipewire.list_nodes)
-                current = await asyncio.to_thread(headsets_module.list_headsets, nodes)
+                graph = await asyncio.to_thread(pipewire.dump)
+                current = await asyncio.to_thread(headsets_module.list_headsets, graph)
                 current_keys = {hs.key for hs in current}
 
                 for key in list(open_files):

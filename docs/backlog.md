@@ -5,6 +5,42 @@ Known bugs and deferred work. Most of this came out of deck-assistant issue
 
 ## Bugs
 
+### Re-enabling a headset can leave the card on with no nodes
+
+Seen once in roughly six enable/disable cycles on `sagepi`'s HyperX Cloud
+III S Wireless (device 88), while verifying the enable/disable latency fix.
+
+After a disable, the following enable wrote the card's restore profile back
+(`active_profile_index` went to 1, which is what it was before), the UI
+correctly showed the headset enabled - and PipeWire never created the
+card's Sink/Source nodes. So the card claims a working profile while
+`list_headsets()` reports `playback=None capture=None`, both strips read
+offline, and no audio path exists.
+
+It is a session-manager wedge, not hardware and not the ALSA layer:
+
+- `lsusb` and `/proc/asound/cards` both still showed the card.
+- `/proc/asound/card1/pcm0{p,c}/sub0/status` both read `closed`, so nothing
+  held the PCM open and nothing had failed to open it.
+- `journalctl --user -u wireplumber -u pipewire` logged nothing at all.
+- Writing profile 0 (off) again did *not* stick - it read back as 1 within
+  half a second, which is the tell that WirePlumber's own restore policy
+  was fighting the write.
+
+**Recovery that works, without restarting anything:** select a *different*
+real profile, then go back. On device 88, `wpctl set-profile 88 2`
+(`output:analog-stereo`) created the sink within one second, after which
+`wpctl set-profile 88 1` restored both playback and capture immediately.
+Re-selecting the profile the device already believes is active is what does
+nothing.
+
+Not fixed, deliberately. A "verify the nodes appeared, else nudge through
+another profile" retry loop is speculative complexity for something seen
+once and not reproducible on demand, and it would put a second `pw-dump`
+plus a wait back on the click path that was just brought from 9.7s to
+0.55s. Worth revisiting if it turns out to be common - the recovery above
+is a one-liner in the meantime.
+
 ### UI-added peers never reach the live PipeWire graph
 
 `app/pipewire.py:189` `load_module()` runs `pw-cli load-module` as a

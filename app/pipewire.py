@@ -44,36 +44,18 @@ class Node:
     media_class: str
 
 
-def list_nodes() -> list[Node]:
-    """All Audio nodes currently in the PipeWire graph.
-
-    Deliberately does NOT include volume/mute - that needs a separate
-    `wpctl get-volume` call per node (see get_volume_mute), and callers
-    should only pay that cost for the handful of nodes they actually care
-    about, not all of them. A page with N peers needs O(N) wpctl calls,
-    not O(N * total_graph_nodes) - the earlier version made that mistake
-    and took 6+ seconds to render on a Pi 4 with just 21 nodes in the graph.
-    """
-    raw = _run(["pw-dump"])
-    objects = json.loads(raw)
-    nodes: list[Node] = []
-    for obj in objects:
-        if obj.get("type") != "PipeWire:Interface:Node":
-            continue
-        props = (obj.get("info") or {}).get("props") or {}
-        media_class = props.get("media.class", "")
-        if "Audio" not in media_class:
-            continue
-        node_id = obj["id"]
-        nodes.append(
-            Node(
-                id=node_id,
-                name=props.get("node.name", f"node-{node_id}"),
-                description=props.get("node.description", props.get("node.name", "")),
-                media_class=media_class,
-            )
-        )
-    return nodes
+def _parse_node(obj: dict) -> Node | None:
+    props = (obj.get("info") or {}).get("props") or {}
+    media_class = props.get("media.class", "")
+    if "Audio" not in media_class:
+        return None
+    node_id = obj["id"]
+    return Node(
+        id=node_id,
+        name=props.get("node.name", f"node-{node_id}"),
+        description=props.get("node.description", props.get("node.name", "")),
+        media_class=media_class,
+    )
 
 
 _VOLUME_RE = re.compile(r"Volume:\s*([0-9.]+)\s*(\[MUTED\])?")
@@ -104,44 +86,69 @@ class Device:
     restore_profile_index: int | None  # highest-priority non-off profile, to re-enable with
 
 
-def list_devices() -> list[Device]:
-    """ALSA card Device objects - a different PipeWire object type from the
-    Sink/Source Nodes list_nodes() returns, needed only for enable/disable
-    (which acts on the whole card's ALSA profile, not any one node). Kept
-    out of list_nodes()/headsets.list_headsets() on purpose: those are on
-    the hot path for every throttled slider tick, and this is an extra
-    pw-dump call this doesn't justify paying there - only headset_view()
-    (full listing) and the enable/disable action itself call this."""
-    raw = _run(["pw-dump"])
-    objects = json.loads(raw)
+def _parse_device(obj: dict) -> Device | None:
+    props = (obj.get("info") or {}).get("props") or {}
+    name = props.get("device.name", "")
+    if not name.startswith("alsa_card."):
+        return None
+    params = (obj.get("info") or {}).get("params") or {}
+    profiles = params.get("EnumProfile", [])
+    current = params.get("Profile", [])
+    off = next((p["index"] for p in profiles if p.get("name") == "off"), None)
+    non_off = max(
+        (p for p in profiles if p.get("name") != "off"),
+        key=lambda p: p.get("priority", 0),
+        default=None,
+    )
+    return Device(
+        id=obj["id"],
+        name=name,
+        description=props.get("device.description", name),
+        active_profile_index=current[0].get("index") if current else None,
+        off_profile_index=off,
+        restore_profile_index=non_off["index"] if non_off else None,
+    )
+
+
+@dataclass
+class Graph:
+    """One `pw-dump`'s worth of graph state: the Audio nodes and the ALSA
+    card devices, which a single dump already carries together.
+
+    Passed around explicitly rather than re-fetched, because a dump is
+    expensive and there is no cheaper query: 85ms to run plus 17ms to parse
+    ~495KB of JSON on sagepi's Pi 4. An earlier version had separate
+    list_nodes()/list_devices() calls, which meant the enable/disable path
+    alone paid for three dumps - and, far worse, the pw-mon watcher paid for
+    one *per changed object id*. A single headset profile flip emits 147
+    changed events across 72 distinct ids, so that was ~7 seconds of dump
+    work for one click (measured live; the click itself took 9.7s).
+
+    Deliberately carries no volume/mute: that needs a separate
+    `wpctl get-volume` per node (see get_volume_mute), and callers should
+    only pay it for the handful of nodes they actually display, not for
+    every node in the graph.
+    """
+
+    nodes: list[Node]
+    devices: list[Device]
+
+
+def dump() -> Graph:
+    objects = json.loads(_run(["pw-dump"]))
+    nodes: list[Node] = []
     devices: list[Device] = []
     for obj in objects:
-        if obj.get("type") != "PipeWire:Interface:Device":
-            continue
-        props = (obj.get("info") or {}).get("props") or {}
-        name = props.get("device.name", "")
-        if not name.startswith("alsa_card."):
-            continue
-        params = (obj.get("info") or {}).get("params") or {}
-        profiles = params.get("EnumProfile", [])
-        current = params.get("Profile", [])
-        off = next((p["index"] for p in profiles if p.get("name") == "off"), None)
-        non_off = max(
-            (p for p in profiles if p.get("name") != "off"),
-            key=lambda p: p.get("priority", 0),
-            default=None,
-        )
-        devices.append(
-            Device(
-                id=obj["id"],
-                name=name,
-                description=props.get("device.description", name),
-                active_profile_index=current[0].get("index") if current else None,
-                off_profile_index=off,
-                restore_profile_index=non_off["index"] if non_off else None,
-            )
-        )
-    return devices
+        obj_type = obj.get("type")
+        if obj_type == "PipeWire:Interface:Node":
+            node = _parse_node(obj)
+            if node is not None:
+                nodes.append(node)
+        elif obj_type == "PipeWire:Interface:Device":
+            device = _parse_device(obj)
+            if device is not None:
+                devices.append(device)
+    return Graph(nodes=nodes, devices=devices)
 
 
 def set_device_profile(device_id: int, profile_index: int) -> None:

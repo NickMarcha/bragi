@@ -92,26 +92,86 @@ def _desired_nodes() -> dict[tuple[str, str, str], str]:
     actually running."""
     if not viz_settings.get_enabled() or not ws.manager.has_clients():
         return {}
-    nodes = pipewire.list_nodes()
+    graph = pipewire.dump()
     desired: dict[tuple[str, str, str], str] = {}
-    for hs in headsets_module.list_headsets(nodes):
+    for hs in headsets_module.list_headsets(graph):
         if hs.playback_node_name:
             desired[("headset", hs.key, "playback")] = hs.playback_node_name
         if hs.capture_node_name:
             desired[("headset", hs.key, "capture")] = hs.capture_node_name
     for peer in peers_module.load_peers():
         for direction in ("outgoing", "incoming"):
-            node_id = views.resolve_node_id(nodes, peer, direction)
+            node_id = views.resolve_node_id(graph, peer, direction)
             if node_id is not None:
                 desired[("peer", peer.name, direction)] = str(node_id)
     return desired
 
 
-async def _read_levels(proc: asyncio.subprocess.Process, target: str, key: str, direction: str) -> None:
-    assert proc.stdout is not None
+# The latest display value per metered direction, and the ones that have
+# just stopped and still owe the client a final zero. Readers write here
+# rather than broadcasting; one ticker (broadcast_levels_once) turns the
+# whole set into a single WebSocket frame - see its docstring.
+_levels: dict[tuple[str, str, str], float] = {}
+_stopped: set[tuple[str, str, str]] = set()
+
+
+def report_level(control: tuple[str, str, str], value: float) -> None:
+    _levels[control] = value
+    _stopped.discard(control)
+
+
+def stop_level(control: tuple[str, str, str]) -> None:
+    """A capture ended (headset disabled or unplugged, peer removed, viz
+    switched off). Queues one final zero: without it the client keeps the
+    bar painted at whatever height the last frame left it, so a disabled
+    headset appears to be sitting at a constant level forever."""
+    if control in _levels:
+        _levels[control] = 0.0
+        _stopped.add(control)
+
+
+def current_levels() -> dict[tuple[str, str, str], float]:
+    return dict(_levels)
+
+
+async def broadcast_levels_once() -> None:
+    """One frame for every meter, instead of one frame per meter.
+
+    8 metered directions at 20Hz was 160 WebSocket frames a second for a
+    single dashboard, which cost more in framing, tailnet encryption and
+    client-side JSON parsing than the levels themselves are worth - it
+    measured as 39% CPU in tailscaled on sagepi. The same information fits
+    in 20 frames a second, unchanged in content or rate of update."""
+    if not _levels:
+        return
+    ws.manager.broadcast_levels_nowait(
+        {
+            "type": "levels",
+            "values": [
+                {"target": t, "key": k, "direction": d, "value": v}
+                for (t, k, d), v in sorted(_levels.items())
+            ],
+        }
+    )
+    for control in _stopped:
+        _levels.pop(control, None)
+    _stopped.clear()
+
+
+async def _ticker() -> None:
+    while True:
+        await asyncio.sleep(_CHUNK_SECONDS)
+        await broadcast_levels_once()
+
+
+async def _read_levels(stream, target: str, key: str, direction: str) -> None:
+    """Turns one capture's raw PCM into a smoothed display level. Takes the
+    stream rather than the Process so the arithmetic can be exercised
+    against a scripted signal."""
+    control = (target, key, direction)
     level = 0.0
     while True:
-        chunk = await proc.stdout.readexactly(_CHUNK_BYTES)
+        chunk = await stream.readexactly(_CHUNK_BYTES)
         n = len(chunk) // 2
         samples = struct.unpack(f"<{n}h", chunk)  # s16 is native, but every
         # box this runs on (sage-dev x86_64, sagepi arm64) is little-endian -
@@ -119,13 +179,7 @@ async def _read_levels(proc: asyncio.subprocess.Process, target: str, key: str, 
         rms = math.sqrt(sum(s * s for s in samples) / n) / 32768.0 if n else 0.0
         coeff = _ATTACK_COEFF if rms > level else _RELEASE_COEFF
         level += (rms - level) * coeff
-        ws.manager.broadcast_nowait({
-            "type": "level",
-            "target": target,
-            "key": key,
-            "direction": direction,
-            "value": _to_display_value(level),
-        })
+        report_level(control, _to_display_value(level))
 
 
 async def _monitor_node(target: str, key: str, direction: str, pw_target: str) -> None:
@@ -145,12 +199,14 @@ async def _monitor_node(target: str, key: str, direction: str, pw_target: str) -
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
-            await _read_levels(proc, target, key, direction)
+            assert proc.stdout is not None
+            await _read_levels(proc.stdout, target, key, direction)
         except asyncio.CancelledError:
             if proc is not None and proc.returncode is None:
                 proc.terminate()
                 with contextlib.suppress(Exception):
                     await proc.wait()
+            stop_level((target, key, direction))
             raise
         except (asyncio.IncompleteReadError, Exception):
             # Covers a missing pw-cat binary, the target node disappearing
@@ -170,8 +226,13 @@ async def supervise() -> None:
     disabled, unplugged, or removed, the viz setting being flipped) without
     needing a hook at every one of those call sites."""
     running: dict[tuple[str, str, str], tuple[str, asyncio.Task]] = {}
+    ticker = asyncio.create_task(_ticker())
     try:
         while True:
+            # Cleared before reading the desired set, not after reconciling,
+            # so a change that lands *during* a reconcile still triggers the
+            # next one instead of being swallowed.
+            ws.manager.wake.clear()
             try:
                 desired = await asyncio.to_thread(_desired_nodes)
             except Exception:
@@ -182,6 +243,7 @@ async def supervise() -> None:
                 pw_target, task = running[key]
                 if desired.get(key) != pw_target:
                     task.cancel()
+                    stop_level(key)
                     del running[key]
 
             for key, pw_target in desired.items():
@@ -189,10 +251,18 @@ async def supervise() -> None:
                     task = asyncio.create_task(_monitor_node(key[0], key[1], key[2], pw_target))
                     running[key] = (pw_target, task)
 
-            await asyncio.sleep(_RECONCILE_SECONDS)
+            # The timer is the floor, not the only trigger: a tab opening had
+            # to wait it out before any pw-cat was even spawned, which (plus
+            # pw-cat's own ~0.5-1s to first byte) left the meters dead for
+            # about three seconds every time the dashboard was opened.
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(ws.manager.wake.wait(), timeout=_RECONCILE_SECONDS)
     finally:
+        ticker.cancel()
         for _, task in running.values():
             task.cancel()
         for _, task in running.values():
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        with contextlib.suppress(asyncio.CancelledError):
+            await ticker

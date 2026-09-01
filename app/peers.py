@@ -135,7 +135,7 @@ def _next_free_ports(existing: list[Peer]) -> RocPorts:
 
 def _headset_mic_source_name() -> str | None:
     """The physical mic node currently feeding all peers' outgoing audio."""
-    for node in pipewire.list_nodes():
+    for node in pipewire.dump().nodes:
         if node.media_class == "Audio/Source" and "alsa_input" in node.name:
             return node.name
     return None

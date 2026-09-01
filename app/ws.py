@@ -53,18 +53,34 @@ logger = logging.getLogger("bragi.ws")
 
 _THROTTLE_SECONDS = 0.1
 
+# How many level frames may sit unread in one connection's queue before
+# further ones are dropped for it - see broadcast_levels_nowait. Small
+# on purpose: at 20 frames a second this is well under a second of
+# meter history, which is all a live meter is worth.
+MAX_QUEUED_LEVEL_FRAMES = 4
+
 
 class ConnectionManager:
     def __init__(self) -> None:
         self._queues: dict[WebSocket, asyncio.Queue] = {}
+        # Set whenever something changes what should be metered - a tab
+        # connecting or closing, or the viz toggle being flipped.
+        # level_meter.supervise() waits on this instead of only its own
+        # timer, so opening the dashboard starts the meters immediately
+        # rather than up to _RECONCILE_SECONDS later. Owned here rather
+        # than in level_meter because level_meter already imports ws, and
+        # the reverse would be a cycle.
+        self.wake = asyncio.Event()
 
     def register(self, ws: WebSocket) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue()
         self._queues[ws] = queue
+        self.wake.set()
         return queue
 
     def unregister(self, ws: WebSocket) -> None:
         self._queues.pop(ws, None)
+        self.wake.set()
 
     def has_clients(self) -> bool:
         """Used by level_meter.py's supervisor to decide whether any node
@@ -75,6 +91,31 @@ class ConnectionManager:
     def broadcast_nowait(self, message: dict) -> None:
         for queue in self._queues.values():
             queue.put_nowait(message)
+
+    def broadcast_levels_nowait(self, message: dict) -> None:
+        """Like broadcast_nowait, but drops the frame for any connection
+        that is already behind.
+
+        Level frames are only worth anything while they are current, and
+        they arrive 20 times a second for as long as a tab is open. This
+        queue only grows when the connection itself applies backpressure -
+        `send_json` blocking on a full write buffer, i.e. a client too slow
+        to take what it is being sent - but when that happens there is no
+        bound on it at all, and every frame it accumulates is one the client
+        will eventually be shown *late*, fast-forwarding the meters through
+        history instead of showing the present.
+
+        Note this bounds the *server* side only. A client that simply stops
+        calling recv() backs up in its own OS receive buffer, which nothing
+        here can see or do anything about.
+
+        Control messages deliberately do NOT get this treatment - nothing
+        re-sends them, so a dropped one leaves a fader wrong indefinitely.
+        A backlog of those is a real problem to fix at the source, not to
+        paper over here."""
+        for queue in self._queues.values():
+            if queue.qsize() < MAX_QUEUED_LEVEL_FRAMES:
+                queue.put_nowait(message)
 
 
 manager = ConnectionManager()
@@ -174,45 +215,74 @@ async def broadcast_control(target: str, key: str, direction: str, ts: float | N
     knob turn - that's genuinely new information uncorrelated with
     whatever _max_ts_seen happens to hold from a past drag, so it must
     never be compared against it, only always accepted."""
-    fn = views.headset_control_view if target == "headset" else views.peer_control_view
-    view = await asyncio.to_thread(fn, key, direction)
+    def _build() -> dict | None:
+        graph = pipewire.dump()
+        fn = views.headset_control_view if target == "headset" else views.peer_control_view
+        return fn(graph, key, direction)
+
+    view = await asyncio.to_thread(_build)
     if view is None:
         return
     manager.broadcast_nowait({"type": "control", "target": target, "key": key, "direction": direction, **view, "ts": ts})
 
 
-async def broadcast_headset(key: str) -> None:
-    """Whole-headset refresh - used for enable/disable, which isn't a
-    per-direction control (it's a card.profile change, not a node volume),
-    so broadcast_control's shape doesn't fit. Must resolve via
-    get_headset_with_device (not views.get_headset), which is Node-only and
-    would find nothing for a headset that's currently disabled - exactly
-    the state this fires right after toggling into."""
-    def _build():
-        result = views.get_headset_with_device(key)
-        if result is None:
-            return None
-        hs, device = result
-        return views.headset_view(hs, device)
+async def broadcast_controls(controls: set[tuple[str, str, str]], graph: pipewire.Graph) -> None:
+    """Broadcasts several controls off one already-taken graph - the batch
+    counterpart to broadcast_control, used by the watcher (see
+    _drain_changed_nodes) so a burst of pw-mon events costs one pw-dump
+    total rather than one per control."""
+    for target, key, direction in sorted(controls):
+        fn = views.headset_control_view if target == "headset" else views.peer_control_view
+        view = await asyncio.to_thread(fn, graph, key, direction)
+        if view is None:
+            continue
+        manager.broadcast_nowait(
+            {
+                "type": "control",
+                "target": target,
+                "key": key,
+                "direction": direction,
+                **view,
+                "ts": _max_ts_seen.get((target, key, direction)),
+            }
+        )
 
-    view = await asyncio.to_thread(_build)
-    if view is None:
-        return
-    manager.broadcast_nowait({"type": "headset", **view})
 
-
-def _toggle_headset_enabled(card_id: str) -> None:
-    device = headsets_module.get_headset_device(card_id)
+def _toggle_headset_enabled(card_id: str) -> dict | None:
+    """Flips the card's ALSA profile and builds the resulting headset view
+    off a single graph. Enable and the view that follows it are one unit
+    on purpose: the whole click used to cost three pw-dumps (~100ms each on
+    a Pi 4), one to find the Device and two more to rebuild the view."""
+    graph = pipewire.dump()
+    device = headsets_module.get_headset_device(graph, card_id)
     if device is None or device.off_profile_index is None:
-        return
+        return None
     currently_enabled = device.active_profile_index != device.off_profile_index
     if currently_enabled:
-        pipewire.set_device_profile(device.id, device.off_profile_index)
+        target_profile = device.off_profile_index
     else:
+        # None means no usable profile to restore, so the card is left alone
+        # rather than having "off" written over it. A USB card re-enumerates
+        # its profiles as it comes and goes, so this window is real, and the
+        # old fallback made a click asking to *enable* the headset silently
+        # disable it again and report it as off: a button that visibly does
+        # nothing.
         target_profile = device.restore_profile_index
-        if target_profile is None:
-            target_profile = device.off_profile_index
+
+    if target_profile is not None:
         pipewire.set_device_profile(device.id, target_profile)
+        device.active_profile_index = target_profile
+
+    # The card's own nodes appear or disappear with the profile flip, so the
+    # graph just dumped is already stale for the *nodes*. Patching the
+    # Device's own enabled state and reusing it is still right for what this
+    # view shows: which directions exist is derived from the nodes, and
+    # those settle asynchronously anyway - the watcher's own coalesced pass
+    # delivers the settled volumes a moment later (see _drain_changed_nodes).
+    hs = views.get_headset(graph, card_id)
+    if hs is None:
+        return None
+    return views.headset_view(hs, device)
 
 
 async def _throttled_apply(key: tuple, fn: Callable[[], None], ts: float | None) -> None:
@@ -289,15 +359,17 @@ async def apply_action(action: dict) -> None:
         enabled = bool(action.get("value"))
         await asyncio.to_thread(viz_settings.set_enabled, enabled)
         manager.broadcast_nowait({"type": "viz_settings", "enabled": enabled})
+        manager.wake.set()  # start or stop capturing now, not on the next reconcile
         return
 
     if target == "headset":
         if verb == "toggle_enabled":
-            # Resolved by device, not views.get_headset (Node-only) - a
-            # disabled headset has no nodes at all, so the Node-based lookup
-            # would find nothing and this could never re-enable anything.
-            await asyncio.to_thread(_toggle_headset_enabled, key)
-            await broadcast_headset(key)
+            # Resolved by ALSA card Device, never by node - a disabled
+            # headset has no nodes at all, so a Node-based lookup would find
+            # nothing and this could never re-enable anything.
+            view = await asyncio.to_thread(_toggle_headset_enabled, key)
+            if view is not None:
+                manager.broadcast_nowait({"type": "headset", **view})
             return
 
         # views.get_headset() shells out (pw-dump via list_headsets) - this
@@ -312,7 +384,7 @@ async def apply_action(action: dict) -> None:
         # crawled through ~5 stale values after release, matching exactly
         # (20 messages * ~75ms blocked ≈ 1.5s) this cost multiplied out.
         def _resolve_headset_node() -> int | None:
-            hs = views.get_headset(key)
+            hs = views.get_headset(pipewire.dump(), key)
             if hs is None:
                 return None
             return hs.playback_node_id if direction == "playback" else hs.capture_node_id
@@ -339,11 +411,10 @@ async def apply_action(action: dict) -> None:
         if peer is None:
             return
 
-        # Same reasoning as _resolve_headset_node above: pipewire.list_nodes()
+        # Same reasoning as _resolve_headset_node above: pipewire.dump()
         # shells out, must not block the event loop.
         def _resolve_peer_node() -> int | None:
-            nodes = pipewire.list_nodes()
-            return views.resolve_node_id(nodes, peer, direction)
+            return views.resolve_node_id(pipewire.dump(), peer, direction)
 
         node_id = await asyncio.to_thread(_resolve_peer_node)
         if node_id is None:
@@ -388,8 +459,21 @@ async def apply_action(action: dict) -> None:
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
     queue = manager.register(websocket)
+
+    # Registered before the snapshot is built, so nothing broadcast during
+    # the build is lost - but sent directly rather than queued, so the
+    # snapshot is still the first thing this tab sees. build_state() takes
+    # ~600ms of pw-dump and wpctl on a Pi 4, and registering also wakes the
+    # level meters, so frames reliably land in this queue while it runs.
+    # Queueing the snapshot behind them let a control broadcast arrive
+    # before the state it belongs to, and the snapshot would then overwrite
+    # that fresher value with its own older read.
+    #
+    # Sending directly is safe only here: the receive/queue loop below has
+    # not started yet, so this is still the only thing touching the socket
+    # (see this module's docstring, point 1).
     initial_state = await asyncio.to_thread(views.build_state)
-    queue.put_nowait({"type": "state", **initial_state})
+    await websocket.send_json({"type": "state", **initial_state})
 
     receive_task: asyncio.Task | None = None
     queue_task: asyncio.Task | None = None
@@ -437,8 +521,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
 _WATCHER_SUPPRESS_SECONDS = 0.3
 
-# node ids currently being resolved by on_node_changed - see its docstring.
-_watcher_inflight: set[int] = set()
+# How long on_node_changed collects ids before resolving them as one batch.
+# Long enough to swallow a profile flip's whole event storm (measured on
+# sagepi: 147 events across 72 ids, all inside ~100ms), short enough that a
+# physical knob turn still feels immediate.
+_WATCHER_COALESCE_SECONDS = 0.15
+
+# Ids seen from pw-mon but not yet resolved, and the single task that will
+# drain them - see on_node_changed.
+_changed_nodes: set[int] = set()
+_drain_task: asyncio.Task | None = None
 
 
 def _mark_applied(key: tuple) -> None:
@@ -456,48 +548,66 @@ async def broadcast_headset_volume_change(key: str) -> None:
 
 
 async def on_node_changed(node_id: int) -> None:
-    """watcher.py now dispatches this fire-and-forget per pw-mon event line,
-    which during a fast drag (many real wpctl calls, often 2 pw-mon events
-    each - the Node and its ALSA Device) means many concurrent calls for
-    the same node_id can pile up. The in-flight guard collapses those to
-    one resolve at a time per node_id - not just an efficiency nicety: it
-    keeps the number of outstanding find_control_for_node calls bounded,
-    which is what keeps the suppression check below actually current
-    instead of racing a growing backlog (see watcher.py's docstring for the
-    full failure mode this fixes, confirmed live via a Playwright drag)."""
-    if node_id in _watcher_inflight:
+    """Records one pw-mon "changed" id and makes sure a drain is scheduled.
+
+    Cheap and synchronous on purpose. watcher.py dispatches this
+    fire-and-forget per event line, and the events arrive in bursts far
+    bigger than the number of controls they represent: one headset profile
+    flip emits 147 events across 72 distinct ids (measured on sagepi), and a
+    fast fader drag emits two per wpctl call. The previous version resolved
+    each id independently, each paying its own pw-dump - ~7s of subprocess
+    work for a single click, which is most of why enable/disable took 9.7s.
+    Collecting ids and resolving the whole set at once collapses that to one
+    dump per burst."""
+    _changed_nodes.add(node_id)
+    global _drain_task
+    if _drain_task is None or _drain_task.done():
+        _drain_task = asyncio.create_task(_drain_changed_nodes())
+
+
+async def _drain_changed_nodes() -> None:
+    """Waits out the burst, then resolves every id collected during it
+    against one graph and broadcasts the (usually one or two) controls they
+    map to."""
+    await asyncio.sleep(_WATCHER_COALESCE_SECONDS)
+    node_ids = set(_changed_nodes)
+    _changed_nodes.clear()
+    if not node_ids:
         return
-    _watcher_inflight.add(node_id)
-    try:
-        control = await asyncio.to_thread(views.find_control_for_node, node_id)
-        if control is None:
-            return
-        # Every wpctl/pw-cli call Bragi itself makes also raises a pw-mon
-        # "changed" event, which this watcher reacts to independently of
-        # whatever action caused it - a client's own throttled slider tick
-        # already gets a fresh, correct broadcast from _throttled_apply
-        # itself, so this would just be a redundant echo, and not even a
-        # reliably correct one: it can carry a subtly stale value (a
-        # hardware read racing the write) or a differently-rounded one.
-        # Skip it whenever a client action touched this exact control
-        # recently enough that its own broadcast is still the freshest
-        # information.
-        last = _last_applied.get(control, 0.0)
-        if asyncio.get_event_loop().time() - last < _WATCHER_SUPPRESS_SECONDS:
-            return
-        # Tag with the current high-water mark too (None if no client has
-        # ever touched this control - a genuine hardware-only change, e.g.
-        # an actual knob turn, which must always reach the client). This
-        # closes a gap the suppression window above doesn't fully cover: a
-        # delayed watcher event that slips past it during a fast drag was
-        # otherwise broadcasting with no ts at all, bypassing the client's
-        # own freshness check entirely (see ws.js's applyDirection) and
-        # briefly showing a stale value even though the value here is
-        # freshly read - confirmed live via a Playwright-driven drag.
-        # Safe to attach: broadcast_control always re-reads current state
-        # fresh regardless of which event triggered it, so a still-current
-        # _max_ts_seen paired with a still-current read is never a lie,
-        # even when the pw-mon event that triggered this call was stale.
-        await broadcast_control(*control, ts=_max_ts_seen.get(control))
-    finally:
-        _watcher_inflight.discard(node_id)
+
+    def _resolve() -> tuple[pipewire.Graph, set[tuple[str, str, str]]]:
+        graph = pipewire.dump()
+        return graph, views.find_controls_for_nodes(graph, node_ids)
+
+    graph, controls = await asyncio.to_thread(_resolve)
+
+    # Every wpctl/pw-cli call Bragi itself makes also raises a pw-mon
+    # "changed" event, which this watcher reacts to independently of
+    # whatever action caused it - a client's own throttled slider tick
+    # already gets a fresh, correct broadcast from _throttled_apply itself,
+    # so this would just be a redundant echo, and not even a reliably
+    # correct one: it can carry a subtly stale value (a hardware read racing
+    # the write) or a differently-rounded one. Skip any control a client
+    # action touched recently enough that its own broadcast is still the
+    # freshest information.
+    now = asyncio.get_event_loop().time()
+    controls = {c for c in controls if now - _last_applied.get(c, 0.0) >= _WATCHER_SUPPRESS_SECONDS}
+
+    # broadcast_controls tags each with the current high-water mark (None if
+    # no client has ever touched that control - a genuine hardware-only
+    # change, e.g. an actual knob turn, which must always reach the client).
+    # This closes a gap the suppression window above doesn't fully cover: a
+    # delayed watcher event that slips past it during a fast drag was
+    # otherwise broadcasting with no ts at all, bypassing the client's own
+    # freshness check entirely (see ws.js's applyDirection) and briefly
+    # showing a stale value even though the value here is freshly read -
+    # confirmed live via a Playwright-driven drag. Safe to attach: the view
+    # is re-read fresh regardless of which event triggered it, so a
+    # still-current _max_ts_seen paired with a still-current read is never a
+    # lie, even when the pw-mon event was stale.
+    await broadcast_controls(controls, graph)
+
+    # Ids that arrived while the resolve was in flight get their own pass.
+    if _changed_nodes:
+        global _drain_task
+        _drain_task = asyncio.create_task(_drain_changed_nodes())

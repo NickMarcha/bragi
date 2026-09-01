@@ -82,8 +82,8 @@ def add_peer(request: Request, name: str = Form(...), tailscale_ip: str = Form(.
         raise HTTPException(400, str(exc)) from exc
     except peers_module.ConfigWriteError as exc:
         raise HTTPException(502, str(exc)) from exc
-    nodes = pipewire.list_nodes()
-    views_list = [views.peer_view(nodes, p) for p in peers_module.load_peers()]
+    graph = pipewire.dump()
+    views_list = [views.peer_view(graph, p) for p in peers_module.load_peers()]
     return templates.TemplateResponse(request, "_peers_list.html", {"peers": views_list})
 
 

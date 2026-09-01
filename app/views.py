@@ -13,9 +13,10 @@ from . import pipewire
 from . import viz_settings
 
 
-def resolve_node_id(nodes: list[pipewire.Node], peer: peers_module.Peer, direction: str) -> int | None:
+def resolve_node_id(graph: pipewire.Graph, peer: peers_module.Peer, direction: str) -> int | None:
     """direction: 'outgoing' (sagepi's mic, going to this peer) or
     'incoming' (this peer's audio, arriving at sagepi's headset)."""
+    nodes = graph.nodes
     if peer.protocol == "roc":
         name = peer.outgoing_sink_name if direction == "outgoing" else peer.incoming_source_name
         return pipewire.find_node_id(nodes, name) if name else None
@@ -72,9 +73,9 @@ def direction_view(node_id: int | None, node_name: str | None = None) -> dict:
     return view
 
 
-def peer_view(nodes: list[pipewire.Node], peer: peers_module.Peer) -> dict:
-    out_id = resolve_node_id(nodes, peer, "outgoing")
-    in_id = resolve_node_id(nodes, peer, "incoming")
+def peer_view(graph: pipewire.Graph, peer: peers_module.Peer) -> dict:
+    out_id = resolve_node_id(graph, peer, "outgoing")
+    in_id = resolve_node_id(graph, peer, "incoming")
     return {
         "name": peer.name,
         "protocol": peer.protocol,
@@ -112,22 +113,17 @@ def _device_by_card(devices: list[pipewire.Device]) -> dict[str, pipewire.Device
     return {d.name[len("alsa_card."):]: d for d in devices if d.name.startswith("alsa_card.")}
 
 
-def get_headset(key: str) -> headsets_module.Headset | None:
-    """Node-based only (cheap, no device scan) - returns None for a
-    currently-disabled headset, which is fine for the throttled volume/mute
-    hot path this is used by (a no-op on a disabled headset is correct).
-    Use get_headset_with_device for anything that must also work when
-    disabled (re-enabling, the dashboard listing)."""
-    return next((h for h in headsets_module.list_headsets(pipewire.list_nodes()) if h.key == key), None)
+def get_headset(graph: pipewire.Graph, key: str) -> headsets_module.Headset | None:
+    return next((h for h in headsets_module.list_headsets(graph) if h.key == key), None)
 
 
-def get_headset_with_device(key: str) -> tuple[headsets_module.Headset, pipewire.Device | None] | None:
-    nodes = pipewire.list_nodes()
-    devices = pipewire.list_devices()
-    for hs in headsets_module.list_headsets(nodes, devices):
-        if hs.key == key:
-            return hs, _device_by_card(devices).get(key)
-    return None
+def get_headset_with_device(
+    graph: pipewire.Graph, key: str
+) -> tuple[headsets_module.Headset, pipewire.Device | None] | None:
+    hs = get_headset(graph, key)
+    if hs is None:
+        return None
+    return hs, _device_by_card(graph.devices).get(key)
 
 
 def get_peer(name: str) -> peers_module.Peer | None:
@@ -135,54 +131,53 @@ def get_peer(name: str) -> peers_module.Peer | None:
 
 
 def build_state() -> dict:
-    nodes = pipewire.list_nodes()
-    devices = pipewire.list_devices()
-    device_by_card = _device_by_card(devices)
+    graph = pipewire.dump()
+    device_by_card = _device_by_card(graph.devices)
     return {
-        "headsets": [
-            headset_view(h, device_by_card.get(h.key)) for h in headsets_module.list_headsets(nodes, devices)
-        ],
-        "peers": [peer_view(nodes, p) for p in peers_module.load_peers()],
+        "headsets": [headset_view(h, device_by_card.get(h.key)) for h in headsets_module.list_headsets(graph)],
+        "peers": [peer_view(graph, p) for p in peers_module.load_peers()],
         "viz_settings": {"enabled": viz_settings.get_enabled()},
     }
 
 
-def find_control_for_node(node_id: int) -> tuple[str, str, str] | None:
-    """Maps a PipeWire node id back to the (target, key, direction) control
-    that displays it, or None if it's not something the dashboard shows
-    (video capture, MIDI bridge, etc.). Used by the watcher so a hardware
-    knob turn triggers a *targeted* refresh of just that one control,
-    not a full-graph rebuild - see headset_control_view/peer_control_view,
-    the whole reason a full build_state() per change was too slow to feel
-    live while dragging (confirmed live: ~625ms for the full graph vs
-    ~100-150ms for one control, on sagepi's Pi 4)."""
-    nodes = pipewire.list_nodes()
-    for hs in headsets_module.list_headsets(nodes):
-        if hs.playback_node_id == node_id:
-            return ("headset", hs.key, "playback")
-        if hs.capture_node_id == node_id:
-            return ("headset", hs.key, "capture")
+def find_controls_for_nodes(graph: pipewire.Graph, node_ids: set[int]) -> set[tuple[str, str, str]]:
+    """Maps PipeWire node ids back to the (target, key, direction) controls
+    that display them, dropping ids the dashboard shows nothing for (ports,
+    links, video capture, the MIDI bridge...).
+
+    Takes the whole id set at once, and resolves it against one graph,
+    because the caller is the pw-mon watcher and its events arrive in
+    bursts: a single headset profile flip emits 147 changed events across
+    72 distinct ids. Resolving those one at a time, each against its own
+    fresh pw-dump, is what made enable/disable take ~9.7s. Note how few
+    controls a burst that size actually maps to - usually one or two - so
+    the returned set also collapses the redundant broadcasts."""
+    controls: set[tuple[str, str, str]] = set()
+    for hs in headsets_module.list_headsets(graph):
+        if hs.playback_node_id in node_ids:
+            controls.add(("headset", hs.key, "playback"))
+        if hs.capture_node_id in node_ids:
+            controls.add(("headset", hs.key, "capture"))
     for peer in peers_module.load_peers():
         for direction in ("outgoing", "incoming"):
-            if resolve_node_id(nodes, peer, direction) == node_id:
-                return ("peer", peer.name, direction)
-    return None
+            if resolve_node_id(graph, peer, direction) in node_ids:
+                controls.add(("peer", peer.name, direction))
+    return controls
 
 
-def headset_control_view(key: str, direction: str) -> dict | None:
-    hs = get_headset(key)
+def headset_control_view(graph: pipewire.Graph, key: str, direction: str) -> dict | None:
+    hs = get_headset(graph, key)
     if hs is None:
         return None
     node_id = hs.playback_node_id if direction == "playback" else hs.capture_node_id
     return direction_view(node_id)
 
 
-def peer_control_view(key: str, direction: str) -> dict | None:
+def peer_control_view(graph: pipewire.Graph, key: str, direction: str) -> dict | None:
     peer = get_peer(key)
     if peer is None:
         return None
-    nodes = pipewire.list_nodes()
-    node_id = resolve_node_id(nodes, peer, direction)
+    node_id = resolve_node_id(graph, peer, direction)
     if direction == "incoming":
         node_name = peer_incoming_node_name(peer)
     elif direction == "outgoing":

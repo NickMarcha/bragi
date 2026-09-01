@@ -92,7 +92,7 @@ node id) shelled out to `pw-dump` synchronously, directly on the event loop
 thread - not wrapped in `asyncio.to_thread`. That blocked the *entire*
 event loop, including the worker's own progress and the receive loop, for
 ~75ms per message. Twenty messages in a drag ≈ 1.5s of pure blocking.
-**Fix:** wrap every such call (`views.get_headset`, `pipewire.list_nodes`,
+**Fix:** wrap every such call (`views.get_headset`, `pipewire.dump`,
 the `toggle_mute` handlers) in `asyncio.to_thread`.
 
 ### 4. The watcher backlogging on its own event stream
@@ -108,6 +108,10 @@ client?" suppression window and broadcasting a stale value.
 **Fix:** dispatch `on_change` fire-and-forget from the watcher's read loop
 too, plus an in-flight guard per `node_id` in `ws.on_node_changed` so a
 burst of duplicate events for the same node collapses to one resolve.
+
+**Superseded by bug 7.** The per-`node_id` guard only ever deduplicated
+*repeat* events for the *same* node. It did nothing for a burst spread
+across *many* nodes, which is the shape a profile change actually takes.
 
 ### 5. The apply-side race, closed with client timestamps
 **Looked like:** an occasional (not every drag) regression even with fixes
@@ -167,15 +171,65 @@ at all - that case still just always passes through.
 jumps in any of them, versus roughly 1-in-4 showing a brief self-correcting
 blip immediately beforehand.
 
+### 7. One click, 76 `pw-dump` calls
+**Looked like:** enable/disable took whole seconds - measured over the live
+WebSocket at **9.7s** from click to the card updating, against ~0.5s for
+every other control.
+**Was:** three separate causes stacked on one click.
+1. A single ALSA profile flip emits **147 pw-mon "changed" events across 72
+   distinct object ids** (ports and links, mostly). `on_node_changed` then
+   resolved each id independently, and each resolve ran its *own*
+   `pw-dump` - the fix-4 guard deduplicated only repeats of the same id,
+   which a burst like this barely contains. Measured against the fake:
+   **76 dumps for one click.**
+2. `list_nodes()` and `list_devices()` each ran their own `pw-dump`, even
+   though one dump already carries both. The enable/disable path paid for
+   three: one to find the Device, two more to rebuild the view.
+3. All of it ran on a box the level meters already kept at ~75% load.
+
+At ~100ms per dump (85ms to run, 17ms to parse 495KB of JSON on the Pi 4),
+(1) alone is ~7.6 seconds of subprocess work, queued 8-at-a-time through
+`asyncio.to_thread`'s default executor and saturating all four cores -
+which is also why the click's own critical path got starved.
+
+**Fix:** `pipewire.dump()` returns a `Graph` carrying nodes *and* devices
+from one call, passed down explicitly instead of re-fetched; and
+`on_node_changed` now only records the id, with `_drain_changed_nodes`
+waiting out the burst (`_WATCHER_COALESCE_SECONDS`, 150ms) and resolving
+the whole set against a single graph via `views.find_controls_for_nodes`.
+72 ids collapse to the one or two controls they actually represent.
+**Confirmed via:** 76 dumps → **1**; 9.7s → **0.55s** over the socket, and
+**798ms** from a real Chrome click to the card visibly updating.
+
+### 8. The state snapshot arriving behind the meters
+**Looked like:** a newly connected tab's first WebSocket message was a
+level frame, not its state snapshot. Surfaced immediately by a probe script
+that read the first message and found no `headsets` key in it.
+**Was:** `websocket_endpoint` registered the connection's queue, *then*
+built the snapshot (~600ms of `pw-dump` and `wpctl` on a Pi 4) and queued
+it. Anything broadcast during that window - and registering now also wakes
+the level meters, so frames reliably land there - queued *ahead* of it.
+Harmless for a level frame; not harmless for a control broadcast, which the
+late-arriving snapshot would then overwrite with its own older read.
+**Fix:** still register first, so nothing broadcast during the build is
+lost, but send the snapshot with a direct `await websocket.send_json(...)`
+before entering the receive/queue loop. See the `send_json` note below for
+why that one direct send is safe.
+
 ## Practical notes for future changes
 
 - If you touch `_throttled_apply`/`_throttle_worker`/`_accept_ts`, re-run
-  the stress tests before trusting it - reasoning about ordering here has a
-  proven track record of missing things. The tests aren't checked into the
-  repo yet (they lived in a scratch directory during development); write
-  fresh ones that inject artificial jitter into a faked resolve step and
-  assert both "never concurrent" and "never out of order", not just "ends
-  up correct eventually".
+  `pytest` before trusting it - reasoning about ordering here has a proven
+  track record of missing things. `tests/test_dashboard_state.py` covers
+  timestamp rejection; the jitter stress test described in fix 5 is still
+  not checked in, so for changes in that area write one fresh that injects
+  artificial jitter into a faked resolve step and asserts both "never
+  concurrent" and "never out of order", not just "ends up correct
+  eventually".
+- Assert subprocess *count*, not just behaviour. Every slowness bug in this
+  file was a subprocess-count bug, and `tests/fake_pipewire.py`'s
+  `session.count("pw-dump")` is the cheapest possible guard against the
+  next one.
 - Test drag stability with an actual browser driving real pointer events
   (Playwright or similar) against the real deployment, not just synthetic
   WebSocket messages - several of the bugs above only showed up under real
@@ -189,7 +243,10 @@ blip immediately beforehand.
   same connection. Route every broadcast source through
   `ConnectionManager.broadcast_nowait`, which only ever enqueues onto each
   connection's own `asyncio.Queue` - only the connection's own task (inside
-  `websocket_endpoint`) actually calls `send_json`. An earlier version let
+  `websocket_endpoint`) actually calls `send_json`. The single exception is
+  the initial snapshot (fix 8), sent directly *before* the receive/queue
+  loop starts, when nothing else can possibly be touching the socket yet.
+  An earlier version let
   background tasks call `send_json` directly, which corrupted Starlette's
   connection state and crashed with a "WebSocket is not connected" error on
   the next unrelated `receive_json()` call - a very confusing failure mode
