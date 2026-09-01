@@ -1,12 +1,24 @@
 # Bragi
 
-A small web UI for managing [sagepi](https://github.com/NickMarcha/deck-assistant)'s
-network audio bridge: which peers are connected, per-peer volume in each
-direction, and adding/removing Roc peers without hand-editing PipeWire
-config.
+A small web UI for managing a Raspberry Pi's network audio bridge: which
+peers are connected, per-peer volume in each direction, and adding or
+removing Roc peers without hand-editing PipeWire config. The Pi it runs on
+is `sagepi`, part of the [deck-assistant](https://github.com/NickMarcha/deck-assistant)
+fleet.
 
-Named after the Norse god of poetry and eloquence — fitting for something
+Named after the Norse god of poetry and eloquence, fitting for something
 that pushes voices around a network.
+
+## Docs
+
+- [`docs/audio-bridge.md`](docs/audio-bridge.md) — the PipeWire graph, the
+  Roc and VBAN transports, and the parts that took several tries to make
+  stable. Read this to understand what Bragi is controlling.
+- [`docs/deployment.md`](docs/deployment.md) — how this runs on `sagepi`
+  (Komodo git-sourced Stack, `tailscale serve`, the deploy webhook).
+- [`docs/realtime-control-plane.md`](docs/realtime-control-plane.md) — how
+  live updates work and the race conditions behind the odd-looking guards.
+- [`docs/backlog.md`](docs/backlog.md) — known bugs and deferred work.
 
 ## What it does
 
@@ -99,11 +111,14 @@ browser tab (`app/ws.py`) - see the linked doc for the actual design
 a plain form POST (htmx) - infrequent, no reason to put it on the socket.
 
 See `docker-compose.yml` for the exact bind mounts. In production this
-runs as a Komodo git-sourced Stack targeting the `sagepi` Server (see
-deck-assistant issue #061) rather than plain `docker compose`, but the
-compose file is what the Stack mirrors.
+runs as a Komodo git-sourced Stack targeting the `sagepi` Server rather
+than plain `docker compose`, but the compose file is what the Stack
+mirrors. See [`docs/deployment.md`](docs/deployment.md).
 
 ## Known limitations (v1)
+
+These are the design constraints. For open bugs and deferred features, see
+[`docs/backlog.md`](docs/backlog.md).
 
 - **Headset balance doesn't exist, on purpose.** WirePlumber's
   alsa-monitor treats the physical hardware mixer as authoritative and

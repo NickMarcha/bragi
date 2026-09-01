@@ -2,9 +2,9 @@
 
 A tray/taskbar app (Avalonia UI, .NET) for `sage-dev` and `sagedeck` that
 turns the Roc audio link to `sagepi` on/off and shows its status, without
-needing to open the Bragi web UI or touch PipeWire directly. See issue #061
-in the main `deck-assistant` repo for the full network-audio-bridge project
-this is part of.
+needing to open the Bragi web UI or touch PipeWire directly. See
+[`../docs/audio-bridge.md`](../docs/audio-bridge.md) for the network audio
+bridge this is part of.
 
 ## Components
 
@@ -27,9 +27,9 @@ is true even though it *looks* like it worked (no error, a module id is
 printed) — the node briefly exists and then silently vanishes.
 
 (The Bragi server's own `app/pipewire.py::load_module`/`peers.py` use this
-exact same one-shot `pw-cli load-module` pattern for hot-loading peers.
-Whether that has the same latent issue on `sagepi` wasn't investigated as
-part of this client work — worth checking separately.)
+exact same one-shot `pw-cli load-module` pattern for hot-loading peers, and
+it has the same latent bug there. Tracked in
+[`../docs/backlog.md`](../docs/backlog.md).)
 
 **The fix**: `bragi-roc-link.service` is `Type=notify`, and its
 `ExecStart` (`bragi-roc-link-run.sh`) *is* the long-lived pw-cli session:
