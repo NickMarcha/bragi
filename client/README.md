@@ -110,14 +110,13 @@ repo's GitHub Releases on the `linux` channel. Releases are cut by:
    `main` also carries server-only commits that shouldn't fire a client
    release), builds, packs via `vpk`, and publishes a GitHub Release.
 
-**Not yet verified**: `vpk pack` requires `mksquashfs` (`squashfs-tools`)
-to build the Linux AppImage, which isn't installed on sage-dev (would need
-`sudo pacman -S squashfs-tools`, not run as part of this work). The
-workflow installs it explicitly via `apt-get` on the runner, but the full
-pack step has only been checked against `vpk pack --help`'s documented
-flags, not run end-to-end. **Before trusting a real release**: either
-install `squashfs-tools` locally and dry-run `vpk pack` once, or just
-watch the first real `client-v0.1.0` Actions run closely.
+`client-v0.1.0` was cut on 2026-09-01 and the workflow ran clean end to end
+in 42s: `vpk pack` built `BragiClient.AppImage`, and the release carries
+`BragiClient-0.1.0-linux-full.nupkg` and `releases.linux.json` (the channel
+manifest `UpdateService.cs` reads). So the build-and-publish path is
+proven. An actual self-update from one installed build to the next still
+needs a second release (`client-v0.1.1`) to exist before it can be
+confirmed on a machine.
 
 ## Dashboard presence heartbeat
 
@@ -148,5 +147,6 @@ tray link flips the dashboard's sage-dev dot live, no page refresh.
   an app bug). Worth a quick check next time you're on the device
   directly, ideally also via a `~/.config/autostart/*.desktop` entry so it
   starts automatically at login (not set up yet on either machine).
-- Velopack self-update: wired into the app and workflow, not yet cut as a
-  real release (see above) or confirmed end-to-end.
+- Velopack self-update: `client-v0.1.0` released 2026-09-01, workflow runs
+  clean. The upgrade path itself is unconfirmed until a `client-v0.1.1`
+  exists to update to.
