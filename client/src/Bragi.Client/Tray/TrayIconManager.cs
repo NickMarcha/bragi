@@ -19,6 +19,7 @@ public sealed class TrayIconManager : IDisposable
     private readonly TrayIcon _trayIcon;
     private readonly NativeMenuItem _statusItem;
     private readonly NativeMenuItem _toggleItem;
+    private readonly NativeMenuItem _restartItem;
     private readonly NativeMenuItem _autostartItem;
 
     private readonly WindowIcon _disabledIcon = LoadIcon("tray-disabled.png");
@@ -32,6 +33,16 @@ public sealed class TrayIconManager : IDisposable
         _statusItem = new NativeMenuItem { Header = "Status: checking...", IsEnabled = false };
         _toggleItem = new NativeMenuItem { Header = "Enable Link", IsEnabled = false };
         _toggleItem.Click += async (_, _) => await _statusService.ToggleAsync();
+
+        // Manual recovery for the socket-loss failure mode (bragi-assistant
+        // #081): the unit and its PipeWire nodes can look fine (Enabled)
+        // while the Roc UDP sockets underneath are silently gone and audio
+        // has stopped. Always available (not gated on the current state)
+        // since the whole point is "audio's dead, I don't trust the status
+        // line, fix it anyway" - `systemctl restart` is a no-op-safe action
+        // even if the link was already healthy.
+        _restartItem = new NativeMenuItem { Header = "Restart Link", IsEnabled = false };
+        _restartItem.Click += async (_, _) => await _statusService.RestartAsync();
 
         var checkForUpdatesItem = new NativeMenuItem { Header = "Check for Updates" };
         checkForUpdatesItem.Click += (_, _) => UpdateService.CheckForUpdatesInteractive();
@@ -62,6 +73,7 @@ public sealed class TrayIconManager : IDisposable
             _statusItem,
             new NativeMenuItemSeparator(),
             _toggleItem,
+            _restartItem,
             new NativeMenuItemSeparator(),
             checkForUpdatesItem,
             _autostartItem,
@@ -95,26 +107,35 @@ public sealed class TrayIconManager : IDisposable
                 _trayIcon.Icon = _disabledIcon;
                 _toggleItem.IsEnabled = false;
                 _toggleItem.Header = "Enable Link";
+                _restartItem.IsEnabled = false;
                 break;
             case TrayState.Disabled:
                 _trayIcon.Icon = _disabledIcon;
                 _toggleItem.IsEnabled = true;
                 _toggleItem.Header = "Enable Link";
+                _restartItem.IsEnabled = true;
                 break;
             case TrayState.Enabling:
             case TrayState.Disabling:
                 _toggleItem.IsEnabled = false;
+                _restartItem.IsEnabled = false;
+                break;
+            case TrayState.Restarting:
+                _toggleItem.IsEnabled = false;
+                _restartItem.IsEnabled = false;
                 break;
             case TrayState.Enabled:
                 _trayIcon.Icon = _enabledIcon;
                 _toggleItem.IsEnabled = true;
                 _toggleItem.Header = "Disable Link";
+                _restartItem.IsEnabled = true;
                 break;
             case TrayState.Degraded:
             case TrayState.Error:
                 _trayIcon.Icon = _errorIcon;
                 _toggleItem.IsEnabled = true;
                 _toggleItem.Header = snapshot.State == TrayState.Degraded ? "Disable Link" : "Enable Link";
+                _restartItem.IsEnabled = true;
                 break;
         }
     }

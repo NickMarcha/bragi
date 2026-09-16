@@ -67,4 +67,28 @@ public sealed class RocLinkController
             return false;
         }
     }
+
+    /// <summary>
+    /// The recovery path for the socket-loss failure mode (bragi-assistant
+    /// #081): the systemd unit and its PipeWire nodes stay up and look fine,
+    /// but the Roc UDP sockets underneath silently disappear, so audio stops
+    /// with nothing in the tray's own health check to show for it (see
+    /// PipewireStatusChecker - it only confirms the node names exist, not
+    /// that they're actually passing audio). `systemctl restart` reloads the
+    /// modules fresh and has fixed every occurrence so far. Works whether
+    /// the unit is currently active, failed, or inactive - restart starts an
+    /// inactive unit rather than erroring.
+    /// </summary>
+    public async Task<bool> RestartAsync()
+    {
+        try
+        {
+            await ProcessRunner.RunOrThrowAsync("systemctl", ["--user", "restart", UnitName], TimeSpan.FromSeconds(15));
+            return true;
+        }
+        catch (ProcessRunException)
+        {
+            return false;
+        }
+    }
 }

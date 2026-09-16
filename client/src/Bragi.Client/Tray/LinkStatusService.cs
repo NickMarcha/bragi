@@ -11,6 +11,7 @@ public enum TrayState
     Disabled,
     Enabling,
     Disabling,
+    Restarting,
     Enabled,
     Degraded,
     Error,
@@ -134,6 +135,40 @@ public sealed class LinkStatusService : IDisposable
 
         // Re-check for real rather than assuming success, same spirit as
         // the server never trusting wpctl's own echo without a follow-up read.
+        await EvaluateAsync();
+    }
+
+    /// <summary>
+    /// Manual recovery action for the socket-loss failure mode (#081): the
+    /// node-presence check in ComputeSnapshotAsync can still read back
+    /// TrayState.Enabled while the underlying Roc UDP sockets are gone and
+    /// audio has actually stopped, since it only confirms the node names
+    /// exist. Restart doesn't try to detect that case - it's here so the
+    /// user has a menu action for "audio died, fix it" without opening a
+    /// terminal, same as the three prior manual `systemctl --user restart`
+    /// recoveries this issue has needed.
+    /// </summary>
+    public async Task RestartAsync()
+    {
+        await _lock.WaitAsync();
+        try
+        {
+            Current = new StatusSnapshot(TrayState.Restarting, "Restarting...");
+            StatusChanged?.Invoke(Current);
+
+            var ok = await _controller.RestartAsync();
+            if (!ok)
+            {
+                Current = new StatusSnapshot(TrayState.Error, "systemctl restart failed - check journalctl --user -u bragi-roc-link");
+                StatusChanged?.Invoke(Current);
+                return;
+            }
+        }
+        finally
+        {
+            _lock.Release();
+        }
+
         await EvaluateAsync();
     }
 
