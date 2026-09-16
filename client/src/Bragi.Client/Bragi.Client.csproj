@@ -6,7 +6,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Bumped + tagged as client-vX.Y.Z to cut a release - see
          .github/workflows/client-release.yml and client/README.md. -->
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <AssemblyName>Bragi.Client</AssemblyName>
   </PropertyGroup>
 
