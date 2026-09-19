@@ -144,6 +144,19 @@ def _headset_mic_source_name() -> str | None:
 def _roc_conf_block(peer: Peer) -> str:
     assert peer.ports is not None
     mic_source_name = _headset_mic_source_name() or "alsa_input.MISSING"
+    # node.dont-fallback + node.linger: without these, module-loopback's
+    # hardcoded PW_STREAM_FLAG_AUTOCONNECT means that if mic_source_name
+    # ever stops existing (disabled headset, reboot before the mic
+    # reconnects), WirePlumber's linking/find-defined-target.lua falls
+    # through to its normal default-source policy instead of just failing -
+    # and on this box that picked a HEADSET'S OWN OUTPUT MONITOR as the
+    # substitute "mic", silently routing whatever's playing on it (from
+    # every connected peer) back out to every other peer, sage's VBAN mic
+    # included. dont-fallback stops that fallback outright; linger keeps
+    # the node alive waiting rather than destroying it, so it relinks on
+    # its own the moment the real mic reappears - confirmed live on sagepi
+    # (disable/re-enable headset via this dashboard) rather than assumed
+    # from docs alone.
     return f"""\
     {{ name = libpipewire-module-roc-sink
       args = {{
@@ -177,6 +190,8 @@ def _roc_conf_block(peer: Peer) -> str:
           capture.props = {{
               target.object = "{mic_source_name}"
               node.name = "mic-to-{peer.name}-capture"
+              node.dont-fallback = true
+              node.linger = true
           }}
           playback.props = {{
               target.object = "{peer.outgoing_sink_name}"
@@ -298,6 +313,12 @@ def _hot_load_peer(peer: Peer) -> None:
                         "capture.props": {
                             "target.object": mic_source_name,
                             "node.name": f"mic-to-{peer.name}-capture",
+                            # See _roc_conf_block's comment - without these,
+                            # a later-missing mic falls back to whatever
+                            # sink happens to be active instead of just
+                            # going silent.
+                            "node.dont-fallback": True,
+                            "node.linger": True,
                         },
                         "playback.props": {
                             "target.object": peer.outgoing_sink_name,
