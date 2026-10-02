@@ -236,8 +236,9 @@ why that one direct send is safe.
   timing (throttle intervals, resolve latency, network round trips), not in
   a mocked unit test sending messages in a tight loop.
 - Never broadcast the *whole* dashboard state after a single action -
-  `views.build_state()` is ~11 sequential subprocess calls, ~625ms on a
-  Pi 4. Every targeted broadcast must go through
+  `views.build_state()` is a `pw-dump` plus a `wpctl` read per displayed
+  direction - concurrent since 2026-10, but still ~10 subprocesses (it was
+  ~625ms on a Pi 4 back to back). Every targeted broadcast must go through
   `views.headset_control_view`/`peer_control_view` (1-2 calls).
 - Never let more than one coroutine call `websocket.send_json()` on the
   same connection. Route every broadcast source through

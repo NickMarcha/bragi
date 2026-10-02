@@ -45,7 +45,10 @@ def peer_outgoing_node_name(peer: peers_module.Peer) -> str:
     return peer.outgoing_sink_name if peer.protocol == "roc" else "vban-outgoing"
 
 
-def direction_view(node_id: int | None, node_name: str | None = None) -> dict:
+Volumes = dict[int, tuple[float | None, bool]]
+
+
+def direction_view(node_id: int | None, node_name: str | None = None, volumes: Volumes | None = None) -> dict:
     """node_name, when given, marks this direction as stereo/pannable -
     only those directions get a balance slider. Headset directions are
     real ALSA hardware nodes and never pass node_name: WirePlumber's
@@ -58,10 +61,16 @@ def direction_view(node_id: int | None, node_name: str | None = None) -> dict:
     the FL channel, which is already skewed once balance != 0. Showing (or
     recomputing from) that skewed reading is what caused volume to ratchet
     down on every balance adjustment. muted/connected are unaffected by
-    channel skew, so those still come straight from wpctl."""
+    channel skew, so those still come straight from wpctl.
+
+    volumes, when given, is that wpctl reading already taken for this node
+    (see build_state) - otherwise it's read here, one call."""
     if node_id is None:
         return {"id": None, "volume": None, "muted": False, "connected": False, "balance": 0.0}
-    wpctl_volume, muted = pipewire.get_volume_mute(node_id)
+    if volumes is not None and node_id in volumes:
+        wpctl_volume, muted = volumes[node_id]
+    else:
+        wpctl_volume, muted = pipewire.get_volume_mute(node_id)
     view = {"id": node_id, "muted": muted, "connected": wpctl_volume is not None}
     if node_name:
         stored_volume, stored_balance = audio_state.get_state(node_name)
@@ -73,7 +82,7 @@ def direction_view(node_id: int | None, node_name: str | None = None) -> dict:
     return view
 
 
-def peer_view(graph: pipewire.Graph, peer: peers_module.Peer) -> dict:
+def peer_view(graph: pipewire.Graph, peer: peers_module.Peer, volumes: Volumes | None = None) -> dict:
     out_id = resolve_node_id(graph, peer, "outgoing")
     in_id = resolve_node_id(graph, peer, "incoming")
     return {
@@ -81,8 +90,8 @@ def peer_view(graph: pipewire.Graph, peer: peers_module.Peer) -> dict:
         "protocol": peer.protocol,
         "tailscale_ip": peer.tailscale_ip,
         "managed": peer.managed,
-        "outgoing": direction_view(out_id, peer_outgoing_node_name(peer)),
-        "incoming": direction_view(in_id, peer_incoming_node_name(peer)),
+        "outgoing": direction_view(out_id, peer_outgoing_node_name(peer), volumes),
+        "incoming": direction_view(in_id, peer_incoming_node_name(peer), volumes),
         # Only meaningful for peers with a Bragi Client tray app (currently
         # Roc peers only - VBAN's "sage" has no client yet, see
         # client/README.md). None (not False) for other protocols, so the
@@ -92,7 +101,9 @@ def peer_view(graph: pipewire.Graph, peer: peers_module.Peer) -> dict:
     }
 
 
-def headset_view(hs: headsets_module.Headset, device: pipewire.Device | None) -> dict:
+def headset_view(
+    hs: headsets_module.Headset, device: pipewire.Device | None, volumes: Volumes | None = None
+) -> dict:
     enabled = True
     device_id = None
     if device is not None:
@@ -104,8 +115,8 @@ def headset_view(hs: headsets_module.Headset, device: pipewire.Device | None) ->
         "label": hs.label,
         "enabled": enabled,
         "device_id": device_id,
-        "playback": direction_view(hs.playback_node_id),
-        "capture": direction_view(hs.capture_node_id),
+        "playback": direction_view(hs.playback_node_id, volumes=volumes),
+        "capture": direction_view(hs.capture_node_id, volumes=volumes),
     }
 
 
@@ -133,9 +144,18 @@ def get_peer(name: str) -> peers_module.Peer | None:
 def build_state() -> dict:
     graph = pipewire.dump()
     device_by_card = _device_by_card(graph.devices)
+    headsets = headsets_module.list_headsets(graph)
+    peers = peers_module.load_peers()
+    # Every displayed node's volume, read in one concurrent batch before any
+    # view is built - one wpctl per direction back to back was ~0.5s of a
+    # sagepi page load, growing by two calls with every peer.
+    node_ids = {i for h in headsets for i in (h.playback_node_id, h.capture_node_id)}
+    node_ids |= {resolve_node_id(graph, p, d) for p in peers for d in ("outgoing", "incoming")}
+    node_ids.discard(None)
+    volumes = pipewire.get_volume_mute_many(node_ids)
     return {
-        "headsets": [headset_view(h, device_by_card.get(h.key)) for h in headsets_module.list_headsets(graph)],
-        "peers": [peer_view(graph, p) for p in peers_module.load_peers()],
+        "headsets": [headset_view(h, device_by_card.get(h.key), volumes) for h in headsets],
+        "peers": [peer_view(graph, p, volumes) for p in peers],
         "viz_settings": {"enabled": viz_settings.get_enabled()},
     }
 

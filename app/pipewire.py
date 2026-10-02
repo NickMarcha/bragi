@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 
@@ -74,6 +75,17 @@ def get_volume_mute(node_id: int) -> tuple[float | None, bool]:
     if not m:
         return None, False
     return float(m.group(1)), bool(m.group(2))
+
+
+def get_volume_mute_many(node_ids: set[int]) -> dict[int, tuple[float | None, bool]]:
+    """get_volume_mute for several nodes at once, run concurrently - each
+    is its own wpctl process (~50ms on sagepi), so a whole dashboard's
+    worth of them back to back was most of the cost of building one."""
+    if not node_ids:
+        return {}
+    with ThreadPoolExecutor(max_workers=len(node_ids)) as pool:
+        ids = sorted(node_ids)
+        return dict(zip(ids, pool.map(get_volume_mute, ids)))
 
 
 @dataclass

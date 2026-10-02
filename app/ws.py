@@ -19,8 +19,9 @@ PipeWire graph, both still true and worth knowing before touching this file:
    application_state, crashing the connection with a "WebSocket is not
    connected" RuntimeError on the next receive.
 2. A broadcast must never rebuild the *whole* dashboard state
-   (views.build_state()) - that's ~11 sequential wpctl/pw-dump subprocess
-   spawns, ~625ms on a Pi 4. Doing that after every single throttled slider
+   (views.build_state()) - that's a pw-dump plus a wpctl per displayed
+   direction (concurrent now, but still ~10 subprocesses, and it was ~625ms
+   on a Pi 4 back to back). Doing that after every single throttled slider
    tick made "live while dragging" effectively ~1s-laggy, defeating the
    entire point of this rewrite. Every action broadcasts only the one
    control that changed (views.headset_control_view/peer_control_view,
@@ -463,7 +464,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     # Registered before the snapshot is built, so nothing broadcast during
     # the build is lost - but sent directly rather than queued, so the
     # snapshot is still the first thing this tab sees. build_state() takes
-    # ~600ms of pw-dump and wpctl on a Pi 4, and registering also wakes the
+    # a pw-dump plus a batch of wpctl reads, and registering also wakes the
     # level meters, so frames reliably land in this queue while it runs.
     # Queueing the snapshot behind them let a control broadcast arrive
     # before the state it belongs to, and the snapshot would then overwrite

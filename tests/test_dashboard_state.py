@@ -8,7 +8,9 @@ reason fake_pipewire's docstring gives.
 
 from __future__ import annotations
 
-from app import audio_state, views, ws
+import time
+
+from app import audio_state, pipewire, views, ws
 
 from .fake_pipewire import HEADSET_CARD_ID, SECOND_CARD_ID
 from .helpers import settle
@@ -42,6 +44,33 @@ def test_build_state_dumps_the_graph_once(session):
     views.build_state()
 
     assert session.count("pw-dump") == 1
+
+
+def test_build_state_reads_volumes_concurrently(session, monkeypatch):
+    """Run back to back, the per-direction wpctl calls were most of the
+    ~0.65s a page load and a WebSocket connect each took on sagepi (one
+    headset and three peers is eight of them), and every added peer made it
+    two calls slower. They are independent reads, so the snapshot should
+    cost about one of them, not the sum."""
+    delay = 0.1
+    fake_run = session.run
+
+    def slow_run(args, input_text=None):
+        if args[:2] == ["wpctl", "get-volume"]:
+            time.sleep(delay)
+        return fake_run(args, input_text)
+
+    monkeypatch.setattr(pipewire, "_run", slow_run)
+
+    started = time.monotonic()
+    state = views.build_state()
+    elapsed = time.monotonic() - started
+
+    reads = session.count("wpctl", "get-volume")
+    assert reads == 8
+    assert elapsed < 3 * delay, f"{reads} volume reads took {elapsed:.2f}s - still sequential"
+    sagedeck = next(p for p in state["peers"] if p["name"] == "sagedeck")
+    assert sagedeck["incoming"]["connected"] is True
 
 
 async def test_setting_a_headset_volume_reaches_the_hardware(session, broadcasts):

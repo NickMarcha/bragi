@@ -13,7 +13,6 @@ from . import knob_watcher
 from . import level_meter
 from . import peer_presence
 from . import peers as peers_module
-from . import pipewire
 from . import views
 from . import watcher
 from . import ws
@@ -82,9 +81,8 @@ def add_peer(request: Request, name: str = Form(...), tailscale_ip: str = Form(.
         raise HTTPException(400, str(exc)) from exc
     except peers_module.ConfigWriteError as exc:
         raise HTTPException(502, str(exc)) from exc
-    graph = pipewire.dump()
-    views_list = [views.peer_view(graph, p) for p in peers_module.load_peers()]
-    return templates.TemplateResponse(request, "_peers_list.html", {"peers": views_list})
+    state = views.build_state()
+    return templates.TemplateResponse(request, "_peers_list.html", {"peers": state["peers"]})
 
 
 @app.post("/peers/{name}/delete", response_class=HTMLResponse)
