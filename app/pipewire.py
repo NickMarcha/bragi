@@ -4,6 +4,9 @@ Bragi never talks to the PipeWire socket directly - it shells out to the
 same CLI tools a human would use, on purpose. That keeps this module small
 and lets `wpctl`/`pw-cli` (which already know how to encode Props params
 correctly) do the hard part.
+
+The one piece of state here is a volume/mute cache (see _volumes), which
+watcher.py keeps honest from pw-mon's event stream.
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
@@ -62,11 +66,22 @@ def _parse_node(obj: dict) -> Node | None:
 _VOLUME_RE = re.compile(r"Volume:\s*([0-9.]+)\s*(\[MUTED\])?")
 
 
-def get_volume_mute(node_id: int) -> tuple[float | None, bool]:
-    """Volume/mute for a single node. Deliberately not batched - wpctl has
-    no bulk query, and pw-dump's raw Props volume uses a different (cubic)
-    scale than what wpctl reads/writes, so it can't be substituted here
-    without silently drifting from what `wpctl set-volume` actually does."""
+# Last wpctl reading per node id. Volume and mute only change through
+# Bragi's own writes below (each forgets its node once done) or something
+# pw-mon reports (watcher.py forgets the id, and everything whenever pw-mon
+# itself restarts) - so a reading is good until one of those says
+# otherwise, and a page load stops paying a wpctl per fader.
+#
+# _volume_epoch counts forgets per node. A read only stores its result if
+# no forget landed while it was running: one that started before a change
+# and finished after it is holding the old value.
+_volumes: dict[int, tuple[float, bool]] = {}
+_volume_epoch: dict[int, int] = {}
+_global_epoch = 0
+_volume_lock = threading.Lock()
+
+
+def _read_volume_mute(node_id: int) -> tuple[float | None, bool]:
     try:
         out = _run(["wpctl", "get-volume", str(node_id)])
     except PipewireError:
@@ -77,15 +92,52 @@ def get_volume_mute(node_id: int) -> tuple[float | None, bool]:
     return float(m.group(1)), bool(m.group(2))
 
 
+def get_volume_mute(node_id: int) -> tuple[float | None, bool]:
+    """Volume/mute for a single node, from the cache above when it has one.
+    Deliberately not batched - wpctl has no bulk query, and pw-dump's raw
+    Props volume uses a different (cubic) scale than what wpctl
+    reads/writes, so it can't be substituted here without silently
+    drifting from what `wpctl set-volume` actually does.
+
+    A failed read (node gone, wpctl error) is returned but never stored."""
+    with _volume_lock:
+        cached = _volumes.get(node_id)
+        if cached is not None:
+            return cached
+        epoch = (_global_epoch, _volume_epoch.get(node_id, 0))
+    volume, muted = _read_volume_mute(node_id)
+    if volume is not None:
+        with _volume_lock:
+            if (_global_epoch, _volume_epoch.get(node_id, 0)) == epoch:
+                _volumes[node_id] = (volume, muted)
+    return volume, muted
+
+
+def forget_volume(node_id: int) -> None:
+    with _volume_lock:
+        _volumes.pop(node_id, None)
+        _volume_epoch[node_id] = _volume_epoch.get(node_id, 0) + 1
+
+
+def forget_volumes() -> None:
+    global _global_epoch
+    with _volume_lock:
+        _volumes.clear()
+        _global_epoch += 1
+
+
 def get_volume_mute_many(node_ids: set[int]) -> dict[int, tuple[float | None, bool]]:
-    """get_volume_mute for several nodes at once, run concurrently - each
-    is its own wpctl process (~50ms on sagepi), so a whole dashboard's
-    worth of them back to back was most of the cost of building one."""
-    if not node_ids:
-        return {}
-    with ThreadPoolExecutor(max_workers=len(node_ids)) as pool:
-        ids = sorted(node_ids)
-        return dict(zip(ids, pool.map(get_volume_mute, ids)))
+    """get_volume_mute for several nodes at once, with the ones the cache
+    can't answer read concurrently - each is its own wpctl process (~50ms
+    on sagepi), so a whole dashboard's worth of them back to back was most
+    of the cost of building one."""
+    with _volume_lock:
+        result = {i: _volumes[i] for i in node_ids if i in _volumes}
+    missing = sorted(node_ids - result.keys())
+    if missing:
+        with ThreadPoolExecutor(max_workers=len(missing)) as pool:
+            result.update(zip(missing, pool.map(get_volume_mute, missing)))
+    return result
 
 
 @dataclass
@@ -164,7 +216,13 @@ def dump() -> Graph:
 
 
 def set_device_profile(device_id: int, profile_index: int) -> None:
-    _run(["wpctl", "set-profile", str(device_id), str(profile_index)])
+    """A profile flip tears down and recreates the card's nodes, so no
+    cached volume can be assumed to still belong to the node it was read
+    from."""
+    try:
+        _run(["wpctl", "set-profile", str(device_id), str(profile_index)])
+    finally:
+        forget_volumes()
 
 
 def find_node_id(nodes: list[Node], name: str, media_class_prefix: str | None = None) -> int | None:
@@ -178,7 +236,10 @@ def find_node_id(nodes: list[Node], name: str, media_class_prefix: str | None = 
 
 def set_volume(node_id: int, volume: float) -> None:
     volume = max(0.0, min(1.5, volume))
-    _run(["wpctl", "set-volume", str(node_id), f"{volume:.2f}"])
+    try:
+        _run(["wpctl", "set-volume", str(node_id), f"{volume:.2f}"])
+    finally:
+        forget_volume(node_id)
 
 
 def set_channel_volumes(node_id: int, volume: float, balance: float) -> None:
@@ -198,16 +259,25 @@ def set_channel_volumes(node_id: int, volume: float, balance: float) -> None:
     left = volume * min(1.0, 1.0 - balance)
     right = volume * min(1.0, 1.0 + balance)
     props = json.dumps({"channelVolumes": [left**3, right**3]})
-    _run(["pw-cli", "set-param", str(node_id), "Props", props])
+    try:
+        _run(["pw-cli", "set-param", str(node_id), "Props", props])
+    finally:
+        forget_volume(node_id)
 
 
 def set_mute(node_id: int, muted: bool) -> None:
-    _run(["wpctl", "set-mute", str(node_id), "1" if muted else "0"])
+    try:
+        _run(["wpctl", "set-mute", str(node_id), "1" if muted else "0"])
+    finally:
+        forget_volume(node_id)
 
 
 def load_module(name: str, args: dict) -> int:
     """Hot-load a module into the live daemon, returns the new module id."""
-    out = _run(["pw-cli", "load-module", name, json.dumps(args)])
+    try:
+        out = _run(["pw-cli", "load-module", name, json.dumps(args)])
+    finally:
+        forget_volumes()  # new nodes can take ids the cache has readings for
     m = re.search(r"id:\s*(\d+)", out) or re.search(r"^(\d+)", out.strip())
     if not m:
         raise PipewireError(f"could not parse module id from: {out!r}")
@@ -215,4 +285,7 @@ def load_module(name: str, args: dict) -> int:
 
 
 def unload_module(module_id: int) -> None:
-    _run(["pw-cli", "destroy", str(module_id)])
+    try:
+        _run(["pw-cli", "destroy", str(module_id)])
+    finally:
+        forget_volumes()

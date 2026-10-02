@@ -45,6 +45,7 @@ def reset_ws_state():
     ws._drain_task = None
     level_meter._levels.clear()
     level_meter._stopped.clear()
+    pipewire.forget_volumes()
 
 
 @pytest.fixture

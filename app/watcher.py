@@ -19,9 +19,12 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 
+from . import pipewire
+
 logger = logging.getLogger("bragi.watcher")
 
 _ID_RE = re.compile(r"^\tid:\s*(\d+)")
+_EVENTS = ("added:", "removed:", "changed:")
 
 OnChange = Callable[[int], Awaitable[None]]
 
@@ -42,17 +45,24 @@ async def _read_events(proc: asyncio.subprocess.Process, on_change: OnChange) ->
     per node_id to avoid piling up redundant concurrent resolves from this
     now-unblocked dispatch."""
     assert proc.stdout is not None
-    saw_changed = False
+    event = None
     async for raw_line in proc.stdout:
         line = raw_line.decode(errors="replace").rstrip("\n")
-        if line == "changed:":
-            saw_changed = True
+        if line in _EVENTS:
+            event = line
             continue
-        if saw_changed:
-            saw_changed = False
+        if event is not None:
             m = _ID_RE.match(line)
             if m:
-                asyncio.create_task(on_change(int(m.group(1))))
+                node_id = int(m.group(1))
+                # Any of the three can mean pipewire.py's cached volume for
+                # this id is wrong - removed/added included, since PipeWire
+                # reuses a destroyed object's id. Only "changed" is a change
+                # worth showing a dashboard tab, though.
+                pipewire.forget_volume(node_id)
+                if event == "changed:":
+                    asyncio.create_task(on_change(node_id))
+            event = None
 
 
 async def watch(on_change: OnChange) -> None:
@@ -66,6 +76,9 @@ async def watch(on_change: OnChange) -> None:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
+            # Whatever changed while no pw-mon was running was never
+            # reported, so no cached volume from before can be trusted.
+            pipewire.forget_volumes()
             await _read_events(proc, on_change)
         except asyncio.CancelledError:
             raise
