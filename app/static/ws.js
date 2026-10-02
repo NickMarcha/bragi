@@ -342,8 +342,8 @@
     if (!opts.silent) setReadout(fader.closest(".strip"), value);
   }
 
-  function wireFaders() {
-    document.querySelectorAll('.fader[data-action="volume"]').forEach((fader) => {
+  function wireFaders(root) {
+    root.querySelectorAll('.fader[data-action="volume"]').forEach((fader) => {
       const max = parseFloat(fader.dataset.max || "1.5");
       const sendThrottled = throttle((value) => {
         const ts = nextTs();
@@ -410,8 +410,8 @@
     dot.style.left = `${x}%`;
   }
 
-  function wirePads() {
-    document.querySelectorAll('.pad[data-action="balance-pad"]').forEach((pad) => {
+  function wirePads(root) {
+    root.querySelectorAll('.pad[data-action="balance-pad"]').forEach((pad) => {
       const sendBalance = throttle((balance) => {
         const ts = nextTs();
         lastSentTs.set(tsKeyFor(pad.dataset.target, pad.dataset.key, pad.dataset.direction), ts);
@@ -479,13 +479,14 @@
     };
   }
 
-  function wireControls() {
-    wireFaders();
-    wirePads();
-    wireUnitToggle();
-    wireSettingsDialog();
+  // Everything inside one card: run for the whole page on load, and again
+  // for whatever htmx swaps in (see the htmx:afterSwap listener below) -
+  // freshly rendered cards carry no listeners of their own.
+  function wireControls(root) {
+    wireFaders(root);
+    wirePads(root);
 
-    document.querySelectorAll('button[data-action="mute"]').forEach((el) => {
+    root.querySelectorAll('button[data-action="mute"]').forEach((el) => {
       el.addEventListener("click", () => {
         send({
           action: "toggle_mute",
@@ -496,7 +497,7 @@
       });
     });
 
-    document.querySelectorAll('button[data-action="toggle_enabled"]').forEach((el) => {
+    root.querySelectorAll('button[data-action="toggle_enabled"]').forEach((el) => {
       el.addEventListener("click", () => {
         send({
           action: "toggle_enabled",
@@ -508,11 +509,19 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    wireControls();
+    wireControls(document);
+    wireUnitToggle();
+    wireSettingsDialog();
     connect();
   });
 
   // Adding or removing a peer swaps the whole peers list (the one place
-  // htmx still owns), which detaches every cached .level-fill in it.
-  document.addEventListener("htmx:afterSwap", () => levelFills.clear());
+  // htmx still owns). Every peer card in it is new: none of them has a
+  // listener until it's wired, so without this every peer's faders and
+  // mute buttons went dead after any add or remove, until a reload. The
+  // swap also detaches every cached .level-fill.
+  document.addEventListener("htmx:afterSwap", (evt) => {
+    levelFills.clear();
+    wireControls(evt.detail.target);
+  });
 })();

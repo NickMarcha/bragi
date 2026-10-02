@@ -270,22 +270,3 @@ def set_mute(node_id: int, muted: bool) -> None:
         _run(["wpctl", "set-mute", str(node_id), "1" if muted else "0"])
     finally:
         forget_volume(node_id)
-
-
-def load_module(name: str, args: dict) -> int:
-    """Hot-load a module into the live daemon, returns the new module id."""
-    try:
-        out = _run(["pw-cli", "load-module", name, json.dumps(args)])
-    finally:
-        forget_volumes()  # new nodes can take ids the cache has readings for
-    m = re.search(r"id:\s*(\d+)", out) or re.search(r"^(\d+)", out.strip())
-    if not m:
-        raise PipewireError(f"could not parse module id from: {out!r}")
-    return int(m.group(1))
-
-
-def unload_module(module_id: int) -> None:
-    try:
-        _run(["pw-cli", "destroy", str(module_id)])
-    finally:
-        forget_volumes()

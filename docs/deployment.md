@@ -65,6 +65,27 @@ One-time setup so `tailscale serve` does not need sudo:
 sudo tailscale set --operator=sage
 ```
 
+## Host units for managed peers
+
+Peers added from the dashboard don't run inside the container. Bragi writes
+them to `~/.local/share/bragi/data/peers.conf` (the data bind mount), a
+standalone PipeWire client config, and three `systemd --user` units on the
+host run it:
+
+| Unit | Does |
+|---|---|
+| `bragi-peers.service` | `pipewire -c peers.conf`, a separate process whose nodes join the main daemon, like `filter-chain.service`. `BindsTo=pipewire.service`, so it follows daemon restarts. |
+| `bragi-peers.path` | Watches `peers.conf` and starts `bragi-peers-reload.service` when it changes. |
+| `bragi-peers-reload.service` | One-shot `systemctl --user restart bragi-peers.service`. A path unit can only *start* a unit, which does nothing to one already running. |
+
+Bragi only writes the file when its content changes, so a redeploy doesn't
+restart the peers. Install once with `host/systemd/install.sh`, as `sage`.
+
+Earlier versions wrote `~/.config/pipewire/pipewire.conf.d/70-bragi-peers.conf`
+and hot-loaded peers with a one-shot `pw-cli load-module`, whose modules die
+with that process. That file must not come back: the main daemon would load
+the same peers as `bragi-peers.service`, on the same ports.
+
 ## Deploy webhook
 
 A push to `main` redeploys the Stack in seconds instead of waiting for the

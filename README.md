@@ -57,9 +57,11 @@ not visibly glitch.
     balance pad (drag horizontally to pan; right-click either control to
     reset - fader to unity, pad to centered).
 - **Add/remove Roc peers** (Linux/`sagedeck`/`sage-dev`-style) from the UI.
-  New peers are hot-loaded into the live PipeWire graph immediately *and*
-  written to a dedicated config file, so they survive a
-  `pipewire.service` restart or reboot without Bragi needing to be running.
+  Bragi writes them to its own config file, which a host-side systemd
+  unit runs as a separate PipeWire client and restarts whenever the file
+  changes (`host/systemd/`). So a new peer is live within a second or so,
+  and it survives a `pipewire.service` restart, a reboot, or a Bragi
+  redeploy without Bragi needing to be running.
   Hand-configured peers (seeded to match the current deployment -
   `sagedeck`, `sage-dev` via Roc; `sage` via VBAN) show up too, with
   working volume control, but can't be removed from the UI.
@@ -97,10 +99,11 @@ VBAN all stay bare-metal on the host - only this UI runs in Docker.
 │  PipeWire + WirePlumber + Roc modules + VBAN         │
 │  /dev/input/eventN (headset volume-knob HID)         │
 │  ~/.config/pipewire/pipewire.conf.d/*.conf           │
+│  bragi-peers.service: `pipewire -c peers.conf`       │
 └───────────────────┬───────────────────────────────--┘
                      │ /run/user/1000 (socket) bind-mounted
                      │ /dev/input device-mapped (cgroup access, not just visible)
-                     │ pipewire.conf.d bind-mounted (write access)
+                     │ ~/.local/share/bragi/data bind-mounted (peers.conf)
 ┌────────────────────▼─────────────────────────────---┐
 │  Docker: bragi (this repo)                           │
 │  FastAPI + WebSocket, shells out to pw-dump/wpctl/   │
@@ -140,11 +143,10 @@ These are the design constraints. For open bugs and deferred features, see
   second VBAN peer would need a different disambiguation strategy
   (probably: give up on PipeWire-level naming and track VBAN peers by PID
   or by wrapping each in a differently-named systemd service).
-- **Removing a peer added earlier this session, after Bragi itself
-  restarts, doesn't hot-unload it.** The persisted config file is still
-  correctly rewritten without that peer, but the *live* PipeWire modules
-  linger until the next `pipewire.service` restart, because the module IDs
-  needed to unload them live only in Bragi's process memory, not on disk.
+- **Adding or removing one managed peer briefly drops all of them.** The
+  host unit restarts the whole `peers.conf` process to apply a change -
+  about a second of silence on every Bragi-managed peer, none on the
+  hand-configured ones.
 - Hand-configured peers (seeded in `app/peers.py`'s `_seed_peers()`) can't
   be removed from the UI at all - only their volume is controllable. Edit
   `~/.config/pipewire/pipewire.conf.d/` on `sagepi` directly for those.
@@ -182,8 +184,10 @@ docker compose up -d --build
 expects, on the host:
 - User `sage` (uid 1000) with an active PipeWire session at
   `/run/user/1000/pipewire-0`.
-- `~/.config/pipewire/pipewire.conf.d/` writable by that user.
-- `~/.local/share/bragi/data/` for the persisted peer registry + balance state.
+- `~/.local/share/bragi/data/` for the persisted peer registry, balance
+  state, and `peers.conf`.
+- The `host/systemd/` units installed once (`host/systemd/install.sh`), or
+  peers added from the dashboard are written but never run.
 - `/dev/input/*` readable, for the knob watcher (see `app/knob_watcher.py`).
   Needs the host's `input` group's GID added via `group_add` (996 on
   sagepi - `getent group input` to confirm on any other host) *and* the

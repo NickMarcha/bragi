@@ -5,10 +5,20 @@ seeded here to match what's already deployed on sagepi - Bragi controls
 their volume like any other peer, but won't rewrite their config unless
 you remove/re-add them through the UI. Peers added *through* Bragi get a
 dedicated, Bragi-owned config file that's safe to regenerate freely.
+
+Bragi never loads a managed peer's modules itself. It only writes that file
+(MANAGED_CONF_FILE), a standalone PipeWire client config. On sagepi a
+systemd --user unit runs it as its own process (`pipewire -c`, the way
+filter-chain runs), and a path unit restarts that process whenever the
+file changes - see host/systemd/. The earlier hot-load ran a one-shot
+`pw-cli load-module`, whose modules die with the pw-cli process the moment
+it exits, with no error, so a peer added from the dashboard never actually
+reached the graph until the next pipewire.service restart.
 """
 
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -19,9 +29,10 @@ from . import pipewire
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 PEERS_FILE = DATA_DIR / "peers.yaml"
-MANAGED_CONF_FILE = Path(
-    "/host-pipewire-conf.d/70-bragi-peers.conf"
-)  # bind-mounted, see Dockerfile/README
+# In the data dir, so the container needs no mount beyond the one it has.
+# Deliberately not in pipewire.conf.d: the main daemon would load it too,
+# binding every managed peer's ports twice.
+MANAGED_CONF_FILE = DATA_DIR / "peers.conf"
 
 # First free port block after the hand-allocated 10001-10033 range
 # documented in issue #061 (sagedeck/sage-dev). Each Roc peer needs 6 ports
@@ -29,8 +40,9 @@ MANAGED_CONF_FILE = Path(
 _PORT_BASE = 10041
 _PORT_BLOCK_SIZE = 10
 
+logger = logging.getLogger("bragi.peers")
+
 _lock = threading.Lock()
-_live_module_ids: dict[str, list[int]] = {}  # peer name -> module ids loaded this session
 
 
 @dataclass
@@ -181,7 +193,6 @@ def _roc_conf_block(peer: Peer) -> str:
           source.props = {{
               node.name = "{peer.incoming_source_name}"
               node.description = "{peer.name} (Roc, via Bragi)"
-              media.class = "Audio/Source"
           }}
       }}
     }}
@@ -206,23 +217,69 @@ class ConfigWriteError(RuntimeError):
     pass
 
 
+# What `pipewire -c` needs to run as a client of the main daemon rather than
+# a daemon of its own: the native protocol to reach it, client-node and
+# adapter to create the stream nodes the Roc and loopback modules make. Same
+# preamble as PipeWire's own filter-chain.conf. No core.daemon, which is
+# what would make it a second daemon.
+_CONF_PREAMBLE = """\
+# Written by Bragi (app/peers.py) - edits here are overwritten.
+context.properties = {
+    log.level = 0
+}
+context.spa-libs = {
+    audio.convert.* = audioconvert/libspa-audioconvert
+    support.*       = support/libspa-support
+}
+context.modules = [
+    { name = libpipewire-module-rt
+      args = { nice.level = -11 }
+      flags = [ ifexists nofail ]
+    }
+    { name = libpipewire-module-protocol-native }
+    { name = libpipewire-module-client-node }
+    { name = libpipewire-module-adapter }
+"""
+
+
 def _regenerate_managed_conf(peers: list[Peer]) -> None:
     managed = [p for p in peers if p.managed and p.protocol == "roc"]
     blocks = "\n".join(_roc_conf_block(p) for p in managed)
-    content = f"context.modules = [\n{blocks}]\n"
+    content = f"{_CONF_PREAMBLE}{blocks}]\n"
+    # Unchanged content is left alone: the path unit restarts every managed
+    # peer on any write to this file, so writing it anyway would drop their
+    # audio for nothing (sync_managed_conf runs on every Bragi startup).
+    try:
+        if MANAGED_CONF_FILE.exists() and MANAGED_CONF_FILE.read_text() == content:
+            return
+    except OSError:
+        pass
     try:
         MANAGED_CONF_FILE.parent.mkdir(parents=True, exist_ok=True)
         MANAGED_CONF_FILE.write_text(content)
     except OSError as exc:
-        # Most likely the pipewire.conf.d bind mount is missing/misconfigured
-        # (or this is local dev without it). The peer registry (peers.yaml)
-        # and any hot-load already succeeded/failed independently of this -
-        # surface it clearly rather than a bare 500.
+        # The peer registry (peers.yaml) was already saved - surface this
+        # clearly rather than a bare 500, since without the file the peer
+        # never reaches the graph.
         raise ConfigWriteError(
-            f"could not write {MANAGED_CONF_FILE} ({exc}) - the peer was still "
-            "saved and hot-loaded if possible, but won't survive a "
-            "pipewire.service restart until this is fixed"
+            f"could not write {MANAGED_CONF_FILE} ({exc}) - the peer was saved "
+            "but won't reach the audio graph until this is fixed"
         ) from exc
+
+
+def sync_managed_conf() -> None:
+    """Brings MANAGED_CONF_FILE in line with peers.yaml - run on startup, so
+    a fresh install or a change to the template itself reaches sagepi
+    without waiting for the next add or remove."""
+    with _lock:
+        peers = load_peers()
+        # With no mic to name, every loopback would target a node that
+        # doesn't exist (see _roc_conf_block) - starting while the headset
+        # is disabled must not replace a file that names the real one.
+        if any(p.managed for p in peers) and _headset_mic_source_name() is None:
+            logger.warning("no headset mic in the graph - leaving %s as it is", MANAGED_CONF_FILE)
+            return
+        _regenerate_managed_conf(peers)
 
 
 def add_roc_peer(name: str, tailscale_ip: str) -> Peer:
@@ -243,7 +300,6 @@ def add_roc_peer(name: str, tailscale_ip: str) -> Peer:
         peers.append(peer)
         save_peers(peers)
         _regenerate_managed_conf(peers)
-        _hot_load_peer(peer)
         return peer
 
 
@@ -258,86 +314,6 @@ def remove_peer(name: str) -> None:
                 f"'{name}' was hand-configured outside Bragi - remove it by editing "
                 "sagepi's pipewire.conf.d directly, not through the UI"
             )
-        _hot_unload_peer(peer)
         peers = [p for p in peers if p.name != name]
         save_peers(peers)
         _regenerate_managed_conf(peers)
-
-
-def _hot_load_peer(peer: Peer) -> None:
-    assert peer.ports is not None
-    mic_source_name = _headset_mic_source_name()
-    module_ids = []
-    try:
-        module_ids.append(
-            pipewire.load_module(
-                "libpipewire-module-roc-sink",
-                {
-                    "remote.ip": peer.tailscale_ip,
-                    "remote.source.port": peer.ports.mic_source,
-                    "remote.repair.port": peer.ports.mic_repair,
-                    "remote.control.port": peer.ports.mic_control,
-                    "fec.code": "disable",
-                    "sink.name": peer.outgoing_sink_name,
-                    "sink.props": {
-                        "node.name": peer.outgoing_sink_name,
-                        "node.description": f"{peer.name} (Roc, via Bragi)",
-                    },
-                },
-            )
-        )
-        module_ids.append(
-            pipewire.load_module(
-                "libpipewire-module-roc-source",
-                {
-                    "local.ip": "0.0.0.0",
-                    "local.source.port": peer.ports.playback_source,
-                    "local.repair.port": peer.ports.playback_repair,
-                    "local.control.port": peer.ports.playback_control,
-                    "fec.code": "disable",
-                    "sess.latency.msec": 40,
-                    "source.name": peer.incoming_source_name,
-                    "source.props": {
-                        "node.name": peer.incoming_source_name,
-                        "node.description": f"{peer.name} (Roc, via Bragi)",
-                        "media.class": "Audio/Source",
-                    },
-                },
-            )
-        )
-        if mic_source_name:
-            module_ids.append(
-                pipewire.load_module(
-                    "libpipewire-module-loopback",
-                    {
-                        "capture.props": {
-                            "target.object": mic_source_name,
-                            "node.name": f"mic-to-{peer.name}-capture",
-                            # See _roc_conf_block's comment - without these,
-                            # a later-missing mic falls back to whatever
-                            # sink happens to be active instead of just
-                            # going silent.
-                            "node.dont-fallback": True,
-                            "node.linger": True,
-                        },
-                        "playback.props": {
-                            "target.object": peer.outgoing_sink_name,
-                            "node.name": f"mic-to-{peer.name}-playback",
-                        },
-                    },
-                )
-            )
-        _live_module_ids[peer.name] = module_ids
-    except pipewire.PipewireError:
-        # Hot-load failed (e.g. Bragi can't reach the PipeWire socket) - the
-        # config file is still written, so it'll come up on the next
-        # pipewire.service restart even though this attempt didn't apply live.
-        pass
-
-
-def _hot_unload_peer(peer: Peer) -> None:
-    for module_id in _live_module_ids.pop(peer.name, []):
-        try:
-            pipewire.unload_module(module_id)
-        except pipewire.PipewireError:
-            pass

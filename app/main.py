@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -17,9 +18,15 @@ from . import views
 from . import watcher
 from . import ws
 
+logger = logging.getLogger("bragi")
+
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
+    try:
+        await asyncio.to_thread(peers_module.sync_managed_conf)
+    except peers_module.ConfigWriteError:
+        logger.exception("managed peers config not written")
     tasks = [
         asyncio.create_task(watcher.watch(ws.on_node_changed)),
         asyncio.create_task(knob_watcher.watch(ws.broadcast_headset_volume_change)),

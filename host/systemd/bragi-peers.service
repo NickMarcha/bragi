@@ -1,0 +1,17 @@
+[Unit]
+Description=Bragi-managed Roc peers (the dashboard's peers.conf, as its own PipeWire client)
+Documentation=https://github.com/NickMarcha/bragi/blob/main/docs/deployment.md
+# Same shape as PipeWire's own filter-chain.service: a separate process
+# whose modules' nodes join the main daemon's graph. Bound to the daemon so
+# a pipewire.service restart takes this down and brings it back with it.
+After=pipewire.service wireplumber.service
+BindsTo=pipewire.service
+ConditionPathExists=%h/.local/share/bragi/data/peers.conf
+
+[Service]
+ExecStart=/usr/bin/pipewire -c %h/.local/share/bragi/data/peers.conf
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=pipewire.service

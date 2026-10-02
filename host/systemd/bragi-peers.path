@@ -1,0 +1,11 @@
+[Unit]
+Description=Restart Bragi-managed Roc peers when the dashboard rewrites peers.conf
+
+[Path]
+# Bragi only writes the file when its content changes (app/peers.py), so
+# this fires on a real add/remove, not on every Bragi redeploy.
+PathChanged=%h/.local/share/bragi/data/peers.conf
+Unit=bragi-peers-reload.service
+
+[Install]
+WantedBy=default.target

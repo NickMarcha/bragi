@@ -41,57 +41,6 @@ plus a wait back on the click path that was just brought from 9.7s to
 0.55s. Worth revisiting if it turns out to be common - the recovery above
 is a one-liner in the meantime.
 
-### UI-added peers never reach the live PipeWire graph
-
-`app/pipewire.py:189` `load_module()` runs `pw-cli load-module` as a
-one-shot `subprocess`. A module loaded that way lives inside that pw-cli
-process's connection to the daemon and is destroyed the instant the process
-exits. No error is reported.
-
-So `_hot_load_peer()` in `app/peers.py` "succeeds" (a module id comes back,
-`peers.yaml` and the generated `70-bragi-peers.conf` are both written
-correctly), but nothing exists in the live graph until the next
-`systemctl --user restart pipewire.service` on `sagepi` picks up the config
-file the normal way.
-
-This is the same trap the client-side systemd unit already works around with
-a long-lived pw-cli session (see
-[`audio-bridge.md`](audio-bridge.md#the-client-side-systemd-unit) and
-`client/README.md`). The server needs the same treatment: hold one pw-cli
-session open for the lifetime of the process, or have the add-peer flow
-trigger its own `pipewire.service` restart.
-
-Found while testing an Android peer (deck-assistant #061, "Android Peer
-Attempt"). Not yet fixed.
-
-### UI-added peers are misclassified and never auto-link to the headset
-
-`app/peers.py` sets `media.class = "Audio/Source"` on the `roc-source`
-module for UI-added peers, in two places: `_roc_conf_block()` at line 171
-(the config-file template) and `_hot_load_peer()` at line 288 (the hot-load
-dict).
-
-`pw-dump` confirms the effect: a hand-configured working peer is
-`Stream/Output/Audio`; a UI-added one is `Audio/Source`. WirePlumber's
-default-sink auto-link policy only fires for `Stream/Output/Audio`. An
-`Audio/Source` node is treated like a capture device, which nothing routes
-anywhere, so the peer's incoming audio never reaches the headset even when
-the network path is fine.
-
-Fix: delete the `media.class` override in both spots so the module keeps its
-real default (`Stream/Output/Audio`), matching the hand-configured peers
-that already work.
-
-Even with the ports right, this bug alone produces total silence on a
-UI-added peer. Found in the same #061 Android investigation. Not yet fixed.
-
-### Removing a session-added peer after a Bragi restart does not hot-unload it
-
-The persisted config file is rewritten without the peer, but the live
-PipeWire modules linger until the next `pipewire.service` restart, because
-the module ids needed to unload them only exist in Bragi's process memory,
-not on disk. Already listed in the README's known limitations.
-
 ## Operational
 
 ### vban-sage.service should not need a manual restart
@@ -142,14 +91,22 @@ comes back, the second headset's mic capture side still needs wiring.
 
 ### Android peer (Roc Droid)
 
-Parked. Roc Droid hardcodes ports 10001/10002 and the RS8M FEC protocol in
-the app (`SenderReceiverService.kt`), with no editable port fields and no
-plain-RTP option. Every other peer here runs `fec.code = disable`, which
-expects plain RTP. It also connects no control/RTCP endpoint, while Bragi's
-model assumes a six-port block per Roc peer. Interop needs the two bugs
-above fixed plus `fairphone` hand-configured on `sagepi` like the `sage`
-VBAN peer (`local.source.port = 10001`, `local.repair.port = 10002`,
-`fec.code = "rs8m"`, no control port, no `media.class` override).
+Roc Droid itself is a dead end here. It hardcodes ports 10001/10002 and the
+RS8M FEC protocol in the app (`SenderReceiverService.kt`), with no editable
+port fields and no plain-RTP option, and connects no control/RTCP endpoint,
+while every other peer runs `fec.code = disable` on a six-port block.
+
+The plan (2026-10) is a new Android app instead of a fork: a thin client
+that takes a Bragi URL over Tailscale, holds the Roc sender/receiver in a
+foreground service, and gets its ports and on/off state from Bragi.
+Android 14+ won't let a background app start the mic, so the user starts
+the service once and the dashboard toggles the streams inside it. Tech
+stack not chosen yet; F-Droid publishing and easy updates are requirements.
+
+The two server bugs that broke the first attempt (UI-added peers never
+reaching the graph, and their incoming stream forced to `Audio/Source`) are
+fixed: managed peers now run from `data/peers.conf` under the host's
+`bragi-peers.service`.
 
 ### Windows tray client
 

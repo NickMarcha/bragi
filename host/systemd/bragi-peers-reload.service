@@ -1,0 +1,9 @@
+[Unit]
+Description=Apply a rewritten Bragi peers.conf
+
+[Service]
+# A path unit can only *start* its unit, which is a no-op for one already
+# running - hence this one-shot doing the restart. `restart`, not
+# `try-restart`, so the first peer added on a fresh install starts it too.
+Type=oneshot
+ExecStart=/usr/bin/systemctl --user restart bragi-peers.service

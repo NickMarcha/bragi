@@ -27,6 +27,7 @@ def data_dir(tmp_path, monkeypatch):
     peers without checking a fixture file in."""
     monkeypatch.setattr(peers_module, "DATA_DIR", tmp_path)
     monkeypatch.setattr(peers_module, "PEERS_FILE", tmp_path / "peers.yaml")
+    monkeypatch.setattr(peers_module, "MANAGED_CONF_FILE", tmp_path / "peers.conf")
     monkeypatch.setattr(audio_state, "STATE_FILE", tmp_path / "balance.yaml")
     monkeypatch.setattr(viz_settings, "SETTINGS_FILE", tmp_path / "viz_settings.yaml")
     return tmp_path
