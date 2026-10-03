@@ -108,6 +108,14 @@ reaching the graph, and their incoming stream forced to `Audio/Source`) are
 fixed: managed peers now run from `data/peers.conf` under the host's
 `bragi-peers.service`.
 
+### Desktop tray controls need a desktop-shell check
+
+Included in client 0.1.3. Desktop-shell rendering and browser launching
+still need a check on an installed client.
+The `Volume` menu opens sliders and mute controls for this device's Bragi
+link, other peers, and headsets. `Open web UI` opens the configured server.
+See [`client/README.md`](../client/README.md#volume-and-web-ui).
+
 ### Windows tray client
 
 `sage`'s VBAN link has no enable/disable/status control outside the web UI.

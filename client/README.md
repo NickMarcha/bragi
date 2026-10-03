@@ -14,6 +14,58 @@ bridge this is part of.
   The tray app only ever calls `systemctl --user start/stop/is-active` on
   this unit — it never talks to PipeWire directly.
 
+## Volume and web UI
+
+The tray menu includes `Volume` and `Open web UI`:
+
+```text
+Volume
+  This device
+  Output
+  Input
+  Other devices
+    <peer or headset>
+      Output
+      Input
+Open web UI
+```
+
+`This device` is a section label. Output or Input opens a small window
+with both sliders and mute buttons, focusing the selected direction.
+Volumes range from 0% to 150%, matching the dashboard.
+
+For peers, Output controls audio sent from that computer to the headset.
+Input controls the headset microphone received by that computer. These are
+Bragi link volumes. For headsets under Other devices, Output controls the
+speakers and Input controls the microphone.
+
+The menu identifies this device with `PEER_NAME` and derives the web UI
+and control URLs from `BRAGI_WS_URL`, such as
+`wss://sagepi.tail08dfa.ts.net/ws/peer`. No additional configuration is
+needed on already configured clients. Missing or invalid server settings
+disable the new controls; a missing peer name disables this device's items.
+
+Opening the tray menu refreshes the device list. Each volume window keeps
+a dashboard WebSocket open for live changes and reconnects after a network
+interruption. Unavailable directions and disconnected controls are disabled.
+Closing the window closes that connection. An idle tray only fetches a
+short snapshot, so it does not keep the server's audio meters running.
+
+## Client tests
+
+```bash
+dotnet test client/Bragi.Client.slnx -c Release
+```
+
+Run from the repository root with the .NET 10 SDK. The tests use Avalonia's
+headless UI and a local WebSocket server to check direction mapping,
+slider and mute actions, stale updates, reconnects, offline controls,
+menu discovery, and configured-server URLs. They do not require PipeWire
+or a desktop session. Run them before releasing client changes.
+
+Desktop-shell tray rendering and opening the user's browser still need a
+manual check on the installed client.
+
 ## Why the systemd unit isn't a `oneshot`
 
 The obvious design — a `Type=oneshot` unit whose `ExecStart` runs

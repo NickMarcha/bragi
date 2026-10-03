@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Bragi.Client/Bragi.Client.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Bragi.Client.Tests/Bragi.Client.Tests.csproj" />
+  </Folder>
 </Solution>

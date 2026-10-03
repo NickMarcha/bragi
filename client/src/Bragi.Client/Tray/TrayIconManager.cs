@@ -4,6 +4,8 @@ using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Bragi.Client.Config;
+using Bragi.Client.Volume;
 
 namespace Bragi.Client.Tray;
 
@@ -21,6 +23,7 @@ public sealed class TrayIconManager : IDisposable
     private readonly NativeMenuItem _toggleItem;
     private readonly NativeMenuItem _restartItem;
     private readonly NativeMenuItem _autostartItem;
+    private readonly VolumeMenu _volumeMenu;
 
     private readonly WindowIcon _disabledIcon = LoadIcon("tray-disabled.png");
     private readonly WindowIcon _enabledIcon = LoadIcon("tray-enabled.png");
@@ -29,6 +32,7 @@ public sealed class TrayIconManager : IDisposable
     public TrayIconManager(LinkStatusService statusService)
     {
         _statusService = statusService;
+        _volumeMenu = new VolumeMenu(RocLinkConfig.TryLoad());
 
         _statusItem = new NativeMenuItem { Header = "Status: checking...", IsEnabled = false };
         _toggleItem = new NativeMenuItem { Header = "Enable Link", IsEnabled = false };
@@ -75,11 +79,15 @@ public sealed class TrayIconManager : IDisposable
             _toggleItem,
             _restartItem,
             new NativeMenuItemSeparator(),
+            _volumeMenu.Item,
+            _volumeMenu.WebUiItem,
+            new NativeMenuItemSeparator(),
             checkForUpdatesItem,
             _autostartItem,
             new NativeMenuItemSeparator(),
             quitItem,
         };
+        menu.NeedsUpdate += (_, _) => _volumeMenu.Refresh();
 
         _trayIcon = new TrayIcon
         {
@@ -149,6 +157,7 @@ public sealed class TrayIconManager : IDisposable
 
     public void Dispose()
     {
+        _volumeMenu.Dispose();
         _statusService.StatusChanged -= OnStatusChanged;
         _trayIcon.IsVisible = false;
         _trayIcon.Dispose();
