@@ -53,3 +53,14 @@ Report on GitHub opens an Android bug form with a problem-area dropdown and
 required description, reproduction steps, and expected behavior. App version,
 device details, and recent diagnostics are filled in. Submitted reports receive
 bug and android labels automatically.
+
+## 0.1.6 playback diagnostics
+
+Diagnostics records the receiver address and playback buffer size, then reports
+decoded audio levels, silent chunks, read timing, Android playback underruns,
+played frames, and output route every five seconds while listening. These
+measurements help investigate choppy playback reported in issue #1. No audio
+recordings are stored or uploaded. Playback timing is unchanged in this build.
+
+If sending works but listening is silent, check that the phone address in Bragi
+matches the current IPv4 address shown by Tailscale.

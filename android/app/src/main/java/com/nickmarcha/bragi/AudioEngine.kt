@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.media.*
 import android.media.projection.MediaProjection
 import android.os.Process
+import android.os.SystemClock
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +13,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.rocstreaming.roctoolkit.*
 import kotlin.math.max
+import kotlin.math.abs
 
 /** Android devices clock the PCM loops; Roc uses its external clock to avoid clock drift. */
 class AudioEngine(
@@ -129,19 +131,53 @@ class AudioEngine(
                     RocReceiver(context, receiverConfig).use { roc ->
                         roc.bind(Slot.DEFAULT, Interface.AUDIO_SOURCE, Endpoint("rtp://$localIp:${config.receiveSourcePort}"))
                         roc.bind(Slot.DEFAULT, Interface.AUDIO_CONTROL, Endpoint("rtcp://$localIp:${config.receiveControlPort}"))
+                        Diagnostics.record("Receiver bound to $localIp:${config.receiveSourcePort}; target latency=40ms")
+                        check(playback.state == AudioTrack.STATE_INITIALIZED) { "Audio playback could not initialize." }
                         if (!running.get()) return
                         playback.play()
+                        Diagnostics.record("Playback started; rate=${playback.sampleRate}; buffer frames=${playback.bufferSizeInFrames}")
                         receiving.set(true)
                         onStatus(sending.get(), receiving.get(), null)
                         val samples = FloatArray(882)
+                        var reportAt = SystemClock.elapsedRealtime()
+                        var previousReadAt = reportAt
+                        var largestReadGapMs = 0L
+                        var chunks = 0
+                        var silentChunks = 0
+                        var peak = 0f
+                        var previousUnderruns = playback.underrunCount
+                        var previousHead = playback.playbackHeadPosition.toLong() and 0xffffffffL
                         while (running.get()) {
+                            val readAt = SystemClock.elapsedRealtime()
+                            largestReadGapMs = max(largestReadGapMs, readAt - previousReadAt)
+                            previousReadAt = readAt
                             roc.read(samples)
+                            var chunkPeak = 0f
+                            for (sample in samples) chunkPeak = max(chunkPeak, abs(sample))
+                            peak = max(peak, chunkPeak)
+                            chunks++
+                            if (chunkPeak == 0f) silentChunks++
                             var offset = 0
                             while (running.get() && offset < samples.size) {
                                 val written = playback.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
                                 if (written < 0) throw IOException("Audio playback failed ($written).")
                                 if (written == 0) throw IOException("Audio playback stopped accepting samples.")
                                 offset += written
+                            }
+                            val now = SystemClock.elapsedRealtime()
+                            if (now - reportAt >= 5000) {
+                                val underruns = playback.underrunCount
+                                val head = playback.playbackHeadPosition.toLong() and 0xffffffffL
+                                val advanced = (head - previousHead) and 0xffffffffL
+                                val route = playback.routedDevice
+                                Diagnostics.record("Playback health: elapsedMs=${now - reportAt}; decodedFrames=${chunks * 441}; silentChunks=$silentChunks/$chunks; peak=$peak; largestReadGapMs=$largestReadGapMs; underruns=${underruns - previousUnderruns}; playedFrames=$advanced; state=${playback.playState}; route=${route?.type}:${route?.productName}")
+                                reportAt = now
+                                previousUnderruns = underruns
+                                previousHead = head
+                                largestReadGapMs = 0
+                                chunks = 0
+                                silentChunks = 0
+                                peak = 0f
                             }
                         }
                     }
