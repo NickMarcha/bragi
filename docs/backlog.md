@@ -106,7 +106,13 @@ The first app is implemented in native Kotlin under `android/`, with selectable
 device playback or phone microphone, Bragi registration and remote stream toggles,
 and GitHub APK update checks. Build, unit tests, and lint pass. Real-device audio,
 screen-off operation, capture-consent loss, reconnect, and install/update testing
-remain pending. The published Roc native libraries use 4 KiB alignment; rebuild
+remain pending. The user confirmed microphone and device-audio capture on 0.1.0.
+Stop appeared to close the app; persistent Diagnostics/Copy logs shipped in 0.1.1
+to capture the failure without ADB. The crash is still awaiting evidence.
+
+Version 0.1.2 receives the Pi headset playback mix, and the web UI selects the Pi
+mic or a phone mic for desktop input. Linux Roc and Windows VBAN links were
+verified on the deployed graph. Listening tests for the new routes remain pending. The published Roc native libraries use 4 KiB alignment; rebuild
 and validate them before supporting 16 KiB-page phones. F-Droid source builds and
 reproducibility remain backlog work. See
 [`android-stack-options.md`](android-stack-options.md) and

@@ -1,7 +1,11 @@
 # Android stack options
 
 Research checked 2026-10-03. A Kotlin app is implemented under `android/`.
-Build, unit tests, and lint pass; real-device audio remains unverified.
+Build, unit tests, and lint pass. The user confirmed microphone capture and
+eligible device-audio capture on release 0.1.0. Stop appeared to close the app;
+0.1.1 added persistent diagnostics to collect the failure. Version 0.1.2 adds
+headset playback reception and a desktop microphone selector. The deployed
+PipeWire links were verified; those new audio paths still need listening tests.
 
 ## Recommendation
 

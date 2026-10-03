@@ -15,6 +15,23 @@ the parts that took several tries to make stable.
 The original build log is deck-assistant issue #061. This doc is the
 distilled version that lives with the code.
 
+## Android headset routing
+
+Android peers receive the headset's playback monitor, rather than the microphone
+feed sent to desktop peers. The managed loopback pins the headset output by name
+and uses `stream.capture.sink = true`. The phone can send microphone capture or
+eligible device audio. Microphone mode exposes an `Audio/Source` node on the Pi;
+device-audio mode keeps `Stream/Output/Audio` and plays through the headset.
+
+The web UI's Microphone for desktops selector persists a source in
+`data/microphone.json`. `app/microphone.py` connects the selected source to desktop
+Roc sinks and the VBAN capture stream, removing their previous input links. Mono
+headset audio feeds both stereo channels; the stereo phone microphone's left
+channel feeds the mono VBAN capture stream. Android outgoing sinks are excluded.
+An unavailable selected microphone leaves the desktops silent instead of falling
+back to another source. The supervisor restores links after nodes reconnect.
+Existing host mic links are untouched until the selector is first used.
+
 ## Two protocols, on purpose
 
 Roc for the Linux peers, VBAN for the Windows one. Both run on `sagepi` at
