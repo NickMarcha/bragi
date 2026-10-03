@@ -39,3 +39,10 @@ NetworkOnMainThreadException came from closing a pooled TLS connection in servic
 teardown. Connection cleanup now runs on the IO dispatcher, alongside asynchronous
 audio shutdown. A regression test opens a real pooled connection and checks that
 its socket is closed off the lifecycle thread. Diagnostics remain available.
+
+## 0.1.4 diagnostic reporting
+
+Diagnostics now has Clear logs and Report on GitHub. Reporting opens a prefilled
+issue with app/device details and a recent log excerpt, and copies the complete
+log for optional pasting. Review and submit the issue in your browser. The Stop
+crash fix from 0.1.3 is included.

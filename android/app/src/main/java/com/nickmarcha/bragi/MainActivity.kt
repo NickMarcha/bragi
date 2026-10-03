@@ -135,12 +135,35 @@ class MainActivity : ComponentActivity() {
             setTextIsSelectable(true)
             setPadding(dp(16), dp(16), dp(16), dp(16))
         }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(Button(this@MainActivity).apply {
+                this.text = "Report on GitHub"
+                setOnClickListener {
+                    copyDiagnostics(logs)
+                    val device = "${Build.MANUFACTURER} ${Build.MODEL}; Android ${Build.VERSION.RELEASE} API ${Build.VERSION.SDK_INT}"
+                    val url = diagnosticsIssueUrl(logs, BuildConfig.VERSION_NAME, device)
+                    runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url.toString()))) }
+                        .onFailure { Toast.makeText(this@MainActivity, "Could not open GitHub. Logs copied.", Toast.LENGTH_LONG).show() }
+                }
+            })
+            addView(ScrollView(this@MainActivity).apply { addView(text) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(320)))
+        }
         AlertDialog.Builder(this).setTitle("Diagnostics")
-            .setView(ScrollView(this).apply { addView(text) })
-            .setNeutralButton("Copy logs") { _, _ ->
-                getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Bragi diagnostics", logs))
-                Toast.makeText(this, "Logs copied", Toast.LENGTH_SHORT).show()
+            .setView(panel)
+            .setNeutralButton("Copy logs") { _, _ -> copyDiagnostics(logs) }
+            .setNegativeButton("Clear logs") { _, _ ->
+                if (Diagnostics.clear()) {
+                    Toast.makeText(this, "Logs cleared", Toast.LENGTH_SHORT).show()
+                    showDiagnostics()
+                } else Toast.makeText(this, "Could not clear logs", Toast.LENGTH_SHORT).show()
             }.setPositiveButton("Close", null).show()
+    }
+
+    private fun copyDiagnostics(logs: String) {
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Bragi diagnostics", logs))
+        Toast.makeText(this, "Logs copied", Toast.LENGTH_SHORT).show()
     }
 
     private fun mode() = if (modes.checkedRadioButtonId == deviceAudioId) CaptureMode.DEVICE_AUDIO else CaptureMode.MICROPHONE

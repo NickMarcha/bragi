@@ -80,7 +80,11 @@ Stop, reopen Bragi if it closes, then copy the log. Repeat in the other capture
 mode if possible. Logs are stored privately and capped at about 256 KiB. They
 include app/device versions, service events, Java exception stacks, and Android
 process-exit details on Android 11 or later. Native crash/ANR traces are included
-when Android makes them available. There is no automatic log upload.
+when Android makes them available. Clear logs erases the stored log. Report on
+GitHub opens a prefilled issue with device details and a bounded recent log
+excerpt, and copies the full log to the clipboard. Review and submit the issue in
+the browser, pasting the full log if needed. There is no automatic issue submission
+or background log upload.
 
 ## Native dependency limits
 

@@ -23,6 +23,14 @@ object Diagnostics {
     fun read(): String = runCatching { file?.readText() ?: "No diagnostics recorded." }
         .getOrElse { "Could not read diagnostics: ${it.message}" }
 
+    @Synchronized
+    fun clear(): Boolean = runCatching {
+        val target = file ?: return false
+        target.writeText("")
+        record("Diagnostics cleared")
+        true
+    }.getOrElse { false }
+
     fun initialize(app: Application) {
         file = File(app.filesDir, "diagnostics.log")
         val original = Thread.getDefaultUncaughtExceptionHandler()
