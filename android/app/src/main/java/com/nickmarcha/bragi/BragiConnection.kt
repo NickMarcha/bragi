@@ -31,6 +31,15 @@ class BragiConnection(private val base: HttpUrl, private val name: String) {
         }
     }
 
+    suspend fun setStreams(send: Boolean, receive: Boolean) = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("send_enabled", send).put("receive_enabled", receive)
+        val request = Request.Builder().url(base.endpoint("api/peers/$name/streams"))
+            .post(body.toString().toRequestBody("application/json".toMediaType())).build()
+        http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("Stream control failed (${response.code}).")
+        }
+    }
+
     private sealed interface Event {
         data class Message(val text: String) : Event
         data class Closed(val reason: String, val terminal: Boolean = false) : Event

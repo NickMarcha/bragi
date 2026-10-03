@@ -3,7 +3,7 @@
 Native Kotlin client for Android 10 or later. Connect Tailscale, enter the HTTPS
 Bragi URL and the phone's Tailscale IPv4 address, choose a source, and start the
 audio service. Bragi registers the peer and supplies its Roc ports and desired
-stream state. The web UI can pause sending and enable headset-microphone playback
+stream state. The web UI can pause sending and enable headset audio playback
 while the service is running. Receiving starts disabled for a newly registered peer.
 
 Microphone capture uses AudioRecord. Device audio uses AudioPlaybackCapture and
@@ -11,8 +11,11 @@ requires Android's MediaProjection consent each time the service starts. Apps ca
 block capture, and calls are not guaranteed to be capturable. Change sources by
 stopping and restarting. The persistent notification has a Stop action. After
 process death, open the app and start again. It does not start capture on boot.
-Listening to the Pi microphone plays it through AudioTrack; it does not make it
-available as another app's microphone.
+The Listen to Bragi audio button plays the same mix as the Pi headset, through
+AudioTrack. In the web UI, Microphone for desktops selects the Pi headset mic or a
+phone running in microphone mode. Phone microphone input is not played through
+the headset; device-audio input still is. A selected unavailable microphone stays
+silent. Android itself does not expose received audio as another app's microphone.
 
 ## Build and checks
 

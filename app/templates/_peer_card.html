@@ -31,7 +31,7 @@
     <div class="strips">
       <div class="strip" data-direction="outgoing">
         <span class="strip-label">
-          <span>Mic</span>
+          <span>{{ "Headset audio" if view.client_kind == "android" else "Mic" }}</span>
           <span class="arrow">&rarr;</span>
           <span>{{ view.name }}</span>
           <span class="offline" {% if view.outgoing.connected %}hidden{% endif %}>&middot;off</span>
@@ -54,7 +54,7 @@
         <span class="strip-label">
           <span>{{ view.name }}</span>
           <span class="arrow">&rarr;</span>
-          <span>headset</span>
+          <span>{{ "microphone" if view.client_kind == "android" and view.capture_mode == "microphone" else "headset" }}</span>
           <span class="offline" {% if view.incoming.connected %}hidden{% endif %}>&middot;off</span>
         </span>
         <div class="pad" data-target="peer" data-key="{{ view.name }}" data-direction="incoming" data-action="balance-pad">
@@ -80,7 +80,7 @@
         {{ "Send microphone" if view.capture_mode == "microphone" else "Send device audio" }}
       </button>
       <button class="client-control-btn {{ 'active' if view.receive_enabled }}" data-action="toggle-stream"
-              data-key="{{ view.name }}" data-stream="receive">Listen to headset mic</button>
+              data-key="{{ view.name }}" data-stream="receive">Listen to headset audio</button>
       <p class="client-stream-status">
         {% if view.client_status and view.client_status.error %}{{ view.client_status.error }}
         {% elif view.client_status %}{{ "Sending" if view.client_status.send_active else "Sender paused" }} · {{ "Listening" if view.client_status.receive_active else "Receiver paused" }}

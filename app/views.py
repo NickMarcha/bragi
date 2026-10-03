@@ -5,6 +5,7 @@ the initial server-rendered page (main.py) and every WebSocket broadcast
 
 from __future__ import annotations
 
+from . import microphone
 from . import audio_state
 from . import headsets as headsets_module
 from . import peer_presence
@@ -163,6 +164,7 @@ def build_state() -> dict:
         "headsets": [headset_view(h, device_by_card.get(h.key), volumes) for h in headsets],
         "peers": [peer_view(graph, p, volumes) for p in peers],
         "viz_settings": {"enabled": viz_settings.get_enabled()},
+        "microphone": microphone.view(),
     }
 
 

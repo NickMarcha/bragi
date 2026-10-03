@@ -24,10 +24,11 @@ class BragiService : Service() {
     private var wakeRenewal: Job? = null
 
     data class State(val running: Boolean = false, val connection: String = "Stopped",
-                     val sending: Boolean = false, val receiving: Boolean = false, val error: String? = null)
+                     val sending: Boolean = false, val receiving: Boolean = false, val sendEnabled: Boolean = true, val listenEnabled: Boolean = false, val error: String? = null)
     companion object {
         private val mutableState = MutableStateFlow(State())
         val state = mutableState.asStateFlow()
+        const val LISTEN = "com.nickmarcha.bragi.LISTEN"
         const val STOP = "com.nickmarcha.bragi.STOP"
         const val CHANNEL = "bragi-audio"
         const val NOTIFICATION = 1
@@ -37,6 +38,19 @@ class BragiService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) { Diagnostics.record("Stop tapped in notification"); stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == LISTEN) {
+            if (session == null) { stopSelf(); return START_NOT_STICKY }
+            val enabled = intent.getBooleanExtra("enabled", false)
+            scope.launch {
+                try { connection?.setStreams(mutableState.value.sendEnabled, enabled) }
+                catch (e: CancellationException) { throw e }
+                catch (e: Exception) {
+                    Diagnostics.record("Could not change listening", e)
+                    mutableState.value = mutableState.value.copy(error = e.message)
+                }
+            }
+            return START_NOT_STICKY
+        }
         if (intent == null) { stopSelf(); return START_NOT_STICKY }
         if (session != null) return START_NOT_STICKY
         try {
@@ -86,11 +100,11 @@ class BragiService : Service() {
                                     error = error ?: mutableState.value.error)
                                 connection?.status(send, receive, error ?: mutableState.value.error)
                             }
-                            mutableState.value = mutableState.value.copy(error = null)
+                            mutableState.value = mutableState.value.copy(error = null, sendEnabled = config.sendEnabled, listenEnabled = config.receiveEnabled)
                             engine!!.apply(config.sendEnabled, config.receiveEnabled)
                         },
                         onStreams = { send, receive ->
-                            mutableState.value = mutableState.value.copy(error = null)
+                            mutableState.value = mutableState.value.copy(error = null, sendEnabled = send, listenEnabled = receive)
                             engine?.apply(send, receive)
                         },
                         onDisconnected = { withContext(NonCancellable) { engine?.stop() } },

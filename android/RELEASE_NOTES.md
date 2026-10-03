@@ -22,3 +22,12 @@ traces are collected on the next launch on Android 11 or later.
 Microphone and device-audio sending were confirmed working by the user on 0.1.0.
 The reported Stop crash is still under investigation. Routing phone microphone
 input to desktops and headset playback audio to the phone is being implemented.
+
+## 0.1.2 headset routing
+
+The Listen to Bragi audio button receives the same audio mix as the Pi headset.
+In the web UI, Microphone for desktops selects the Pi headset microphone or a
+phone running in microphone mode. Phone microphone capture feeds microphone
+input rather than headset playback; device-audio capture still feeds playback.
+The Stop issue remains under investigation. Diagnostics and Copy logs remain
+available.

@@ -1,0 +1,12 @@
+<h2>Microphone for desktops</h2>
+<form hx-post="/audio/microphone" hx-target="#microphone-routing" hx-swap="innerHTML">
+  <label>Source
+    <select name="source">
+      {% for option in microphone.options %}
+      <option value="{{ option.key }}" {% if microphone.source == option.key %}selected{% endif %}>{{ option.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Use microphone</button>
+</form>
+<p class="hint">Select a phone running in microphone mode, or the Pi headset mic. An unavailable selected mic stays silent.</p>

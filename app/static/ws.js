@@ -73,7 +73,11 @@
       else if (msg.type === "peer_presence") applyPeerPresence(msg);
       else if (msg.type === "peer_streams") applyPeerStreams(msg);
       else if (msg.type === "peer_status") applyPeerStatus(msg);
-      else if (msg.type === "peer_registry") htmx.ajax("GET", "/peers", { target: "#peers", swap: "innerHTML" });
+      else if (msg.type === "peer_registry") {
+        htmx.ajax("GET", "/peers", { target: "#peers", swap: "innerHTML" });
+        htmx.ajax("GET", "/audio/microphone", { target: "#microphone-routing", swap: "innerHTML" });
+      }
+      else if (msg.type === "microphone") htmx.ajax("GET", "/audio/microphone", { target: "#microphone-routing", swap: "innerHTML" });
       else if (msg.type === "levels") applyLevels(msg);
       else if (msg.type === "viz_settings") applyVizSettings(msg);
     });

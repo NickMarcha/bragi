@@ -95,5 +95,18 @@ def test_phone_cards_offer_stream_controls_but_desktop_cards_do_not(session):
     register(client, capture_mode='device_audio')
     html = client.get('/peers').text
     assert 'Send device audio' in html
-    assert 'Listen to headset mic' in html
+    assert 'Listen to headset audio' in html
     assert html.count('class="client-controls"') == 1
+
+
+def test_android_microphone_is_a_source_and_receives_headset_playback(session):
+    client = TestClient(app)
+    register(client)
+    text = peers.MANAGED_CONF_FILE.read_text()
+    assert 'media.class = "Audio/Source"' in text
+    assert 'stream.capture.sink = true' in text
+    assert 'target.object = "alsa_output.usb-' in text
+    register(client, capture_mode='device_audio')
+    text = peers.MANAGED_CONF_FILE.read_text()
+    assert 'media.class = "Audio/Source"' not in text
+    assert 'stream.capture.sink = true' in text

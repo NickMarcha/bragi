@@ -157,9 +157,20 @@ def _headset_mic_source_name() -> str | None:
     return None
 
 
+def _headset_playback_name() -> str | None:
+    for node in pipewire.dump().nodes:
+        if node.media_class == "Audio/Sink" and node.name.startswith("alsa_output.usb-"):
+            return node.name
+    return None
+
+
 def _roc_conf_block(peer: Peer) -> str:
     assert peer.ports is not None
     mic_source_name = _headset_mic_source_name() or "alsa_input.MISSING"
+    android = peer.client_kind == "android"
+    capture_target = (_headset_playback_name() or "alsa_output.MISSING") if android else mic_source_name
+    capture_monitor = "stream.capture.sink = true" if android else ""
+    source_kind = 'media.class = "Audio/Source" node.virtual = true' if android and peer.capture_mode == "microphone" else ""
     # node.dont-fallback + node.linger: without these, module-loopback's
     # hardcoded PW_STREAM_FLAG_AUTOCONNECT means that if mic_source_name
     # ever stops existing (disabled headset, reboot before the mic
@@ -197,13 +208,15 @@ def _roc_conf_block(peer: Peer) -> str:
           source.props = {{
               node.name = "{peer.incoming_source_name}"
               node.description = "{peer.name} (Roc, via Bragi)"
+              {source_kind}
           }}
       }}
     }}
     {{ name = libpipewire-module-loopback
       args = {{
           capture.props = {{
-              target.object = "{mic_source_name}"
+              target.object = "{capture_target}"
+              {capture_monitor}
               node.name = "mic-to-{peer.name}-capture"
               node.dont-fallback = true
               node.linger = true

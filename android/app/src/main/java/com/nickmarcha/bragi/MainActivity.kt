@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var modes: RadioGroup
     private lateinit var start: Button
     private lateinit var stop: Button
+    private lateinit var listen: Button
     private lateinit var status: TextView
     private lateinit var updates: Button
     private var availableUpdate: AppUpdate? = null
@@ -89,11 +90,20 @@ class MainActivity : ComponentActivity() {
         status = text("Stopped")
         start = Button(this).apply { text = "Start audio service"; panel.addView(this); setOnClickListener { prepareStart() } }
         stop = Button(this).apply { text = "Stop"; panel.addView(this); setOnClickListener { Diagnostics.record("Stop tapped in app"); this@MainActivity.stopService(Intent(this@MainActivity, BragiService::class.java)) } }
+        listen = Button(this).apply {
+            text = "Listen to Bragi audio"
+            panel.addView(this)
+            setOnClickListener {
+                val enabled = !BragiService.state.value.listenEnabled
+                startService(Intent(this@MainActivity, BragiService::class.java)
+                    .setAction(BragiService.LISTEN).putExtra("enabled", enabled))
+            }
+        }
         Button(this).apply { text = "Open web UI"; panel.addView(this); setOnClickListener {
             runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(serverUrl(server.text.toString()).toString()))) }
                 .onFailure { status.text = it.message }
         } }
-        text("Start once here, then use the web UI to pause sending or listen to the headset microphone. Stop and restart to change the audio source.", 13f)
+        text("Start once here, then use the web UI to pause sending or listen to the headset audio. Stop and restart to change the audio source.", 13f)
         text("Updates", 18f)
         text("Version ${BuildConfig.VERSION_NAME}", 13f)
         updates = Button(this).apply { text = "Check for updates"; panel.addView(this); setOnClickListener {
@@ -105,6 +115,8 @@ class MainActivity : ComponentActivity() {
                 val disabled = state.running
                 start.isEnabled = !disabled
                 stop.isEnabled = disabled
+                listen.isEnabled = disabled
+                listen.text = if (state.listenEnabled) "Pause Bragi audio" else "Listen to Bragi audio"
                 server.isEnabled = !disabled; name.isEnabled = !disabled; ip.isEnabled = !disabled
                 for (i in 0 until modes.childCount) modes.getChildAt(i).isEnabled = !disabled
                 status.text = listOfNotNull(state.connection,

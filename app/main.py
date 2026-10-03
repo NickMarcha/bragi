@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 
+from . import microphone
 from . import knob_watcher
 from . import level_meter
 from . import peer_control
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(watcher.watch(ws.on_node_changed)),
         asyncio.create_task(knob_watcher.watch(ws.broadcast_headset_volume_change)),
         asyncio.create_task(level_meter.supervise()),
+        asyncio.create_task(microphone.supervise()),
     ]
     yield
     for task in tasks:
@@ -112,6 +114,23 @@ async def set_peer_streams(name: str, settings: StreamSettings):
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
     return peer_control.publish_streams(peer)
+
+
+@app.get("/audio/microphone", response_class=HTMLResponse)
+def microphone_controls(request: Request):
+    return templates.TemplateResponse(request, "_microphone.html", {'microphone': microphone.view()})
+
+
+@app.post("/audio/microphone", response_class=HTMLResponse)
+def select_microphone(request: Request, source: str = Form(...)):
+    try:
+        microphone.select(source)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except peers_module.pipewire.PipewireError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    ws.manager.broadcast_nowait({'type': 'microphone'})
+    return microphone_controls(request)
 
 
 @app.post("/peers", response_class=HTMLResponse)
