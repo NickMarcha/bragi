@@ -81,8 +81,10 @@ mode if possible. Logs are stored privately and capped at about 256 KiB. They
 include app/device versions, service events, Java exception stacks, and Android
 process-exit details on Android 11 or later. Native crash/ANR traces are included
 when Android makes them available. Clear logs erases the stored log. Report on
-GitHub opens a prefilled issue with device details and a bounded recent log
-excerpt, and copies the full log to the clipboard. Review and submit the issue in
+GitHub opens the Android bug form with app version, device details, and a bounded
+recent log excerpt, and copies the full log to the clipboard. The form requires a
+problem area, description, reproduction steps, and expected behavior. GitHub adds
+`bug` and `android` labels automatically. Review and submit the issue in
 the browser, pasting the full log if needed. There is no automatic issue submission
 or background log upload.
 

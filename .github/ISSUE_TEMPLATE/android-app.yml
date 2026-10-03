@@ -1,0 +1,71 @@
+name: Android app bug
+description: Report a problem with the Bragi Android app.
+title: "[Android] "
+labels: [bug, android]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports opened from Bragi Diagnostics include app version, device details,
+        and recent logs. Describe the problem and how to reproduce it below.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Problem area
+      options:
+        - Receiving Bragi audio
+        - Sending microphone audio
+        - Sending device audio
+        - Connection or reconnect
+        - Starting or stopping the service
+        - Permissions
+        - App updates
+        - App interface or diagnostics
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      placeholder: Describe what the app did and any error you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Choose an audio source and start the service.
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: What should have happened?
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Bragi app version
+      placeholder: e.g. 0.1.5
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Phone and Android version
+      placeholder: e.g. Fairphone FP5; Android 15 API 35
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Diagnostics
+      description: |
+        Bragi fills in a recent excerpt and copies the full log to your clipboard.
+        You can paste the full log here if more context is needed.
+      render: text

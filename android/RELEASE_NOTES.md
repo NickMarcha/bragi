@@ -46,3 +46,10 @@ Diagnostics now has Clear logs and Report on GitHub. Reporting opens a prefilled
 issue with app/device details and a recent log excerpt, and copies the complete
 log for optional pasting. Review and submit the issue in your browser. The Stop
 crash fix from 0.1.3 is included.
+
+## 0.1.5 structured issue reports
+
+Report on GitHub opens an Android bug form with a problem-area dropdown and
+required description, reproduction steps, and expected behavior. App version,
+device details, and recent diagnostics are filled in. Submitted reports receive
+bug and android labels automatically.
