@@ -70,6 +70,15 @@ listed above. The workflow restores the key in the runner's temporary directory
 and removes it after the build. Keep a secure backup outside GitHub too.
 The initial signing key is stored privately outside this checkout.
 
+## Diagnostics
+
+Open Diagnostics and tap Copy logs. To report the Stop issue, start audio, tap
+Stop, reopen Bragi if it closes, then copy the log. Repeat in the other capture
+mode if possible. Logs are stored privately and capped at about 256 KiB. They
+include app/device versions, service events, Java exception stacks, and Android
+process-exit details on Android 11 or later. Native crash/ANR traces are included
+when Android makes them available. There is no automatic log upload.
+
 ## Native dependency limits
 
 The app uses the MIT-licensed Maven Central `roc-android:0.2.1` AAR with its bundled
@@ -86,8 +95,13 @@ Google Play Services.
 
 ## Device validation still needed
 
-Build, JVM unit tests, and Android lint pass. No usable Android device was connected
-for the initial implementation. Before publishing:
+Build, JVM unit tests, and Android lint pass. The user tested release 0.1.0 on a
+phone and confirmed microphone capture and eligible device-audio capture through
+the Pi headset. Device-audio capture continued while local playback was muted.
+Stop appeared to close the app, and phone playback of the Bragi audio mix was
+missing. Crash logs and a repeatable Stop test are still needed.
+
+Remaining device checks:
 
 - Test microphone and eligible app audio through the Pi headset over Tailscale.
 - Test receiver playback, pause/resume from the web UI, and source changes.

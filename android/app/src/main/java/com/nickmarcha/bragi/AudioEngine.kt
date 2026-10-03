@@ -48,6 +48,7 @@ class AudioEngine(
             Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
             try { if (send) sendAudio() else receiveAudio() }
             catch (error: Throwable) {
+                Diagnostics.record("${if (send) "Sender" else "Receiver"} worker failed", error)
                 if (running.get()) onStatus(sending.get(), receiving.get(), "${if (send) "Sender" else "Receiver"}: ${error.message ?: error.javaClass.simpleName}")
             } finally {
                 if (send) sending.set(false) else receiving.set(false)
@@ -57,11 +58,13 @@ class AudioEngine(
         val isAlive get() = thread.isAlive
         fun start() = thread.start()
         fun stop() {
+            Diagnostics.record("Stopping ${if (send) "sender" else "receiver"} worker")
             running.set(false)
             runCatching { record?.stop() }
             runCatching { track?.pause(); track?.flush() }
             thread.interrupt()
             thread.join(4000)
+            Diagnostics.record("Worker join completed; alive=${thread.isAlive}")
             check(!thread.isAlive) { "Audio did not stop. Restart Bragi before starting another stream." }
         }
 
@@ -105,7 +108,7 @@ class AudioEngine(
                         }
                     }
                 }
-            } finally { runCatching { capture.stop() }; capture.release(); record = null }
+            } finally { Diagnostics.record("Releasing microphone/device audio recorder"); runCatching { capture.stop() }; capture.release(); record = null; Diagnostics.record("Recorder released") }
         }
 
         private fun receiveAudio() {
@@ -143,7 +146,7 @@ class AudioEngine(
                         }
                     }
                 }
-            } finally { runCatching { playback.stop() }; playback.release(); track = null }
+            } finally { Diagnostics.record("Releasing audio playback"); runCatching { playback.stop() }; playback.release(); track = null; Diagnostics.record("Playback released") }
         }
     }
 }

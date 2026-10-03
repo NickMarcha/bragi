@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
@@ -86,7 +88,7 @@ class MainActivity : ComponentActivity() {
         text("Device audio needs Android's capture approval each time you start. Apps can block capture; calls may not be available.", 13f)
         status = text("Stopped")
         start = Button(this).apply { text = "Start audio service"; panel.addView(this); setOnClickListener { prepareStart() } }
-        stop = Button(this).apply { text = "Stop"; panel.addView(this); setOnClickListener { this@MainActivity.stopService(Intent(this@MainActivity, BragiService::class.java)) } }
+        stop = Button(this).apply { text = "Stop"; panel.addView(this); setOnClickListener { Diagnostics.record("Stop tapped in app"); this@MainActivity.stopService(Intent(this@MainActivity, BragiService::class.java)) } }
         Button(this).apply { text = "Open web UI"; panel.addView(this); setOnClickListener {
             runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(serverUrl(server.text.toString()).toString()))) }
                 .onFailure { status.text = it.message }
@@ -97,6 +99,7 @@ class MainActivity : ComponentActivity() {
         updates = Button(this).apply { text = "Check for updates"; panel.addView(this); setOnClickListener {
             if (availableUpdate == null) checkUpdates(true) else offerUpdate(availableUpdate!!)
         } }
+        Button(this).apply { text = "Diagnostics"; panel.addView(this); setOnClickListener { showDiagnostics() } }
         lifecycleScope.launch {
             BragiService.state.collect { state ->
                 val disabled = state.running
@@ -110,6 +113,22 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (System.currentTimeMillis() - preferences.getLong("updateCheck", 0) >= 24 * 60 * 60 * 1000L) checkUpdates(false)
+    }
+
+    private fun showDiagnostics() {
+        val logs = Diagnostics.read()
+        val text = TextView(this).apply {
+            this.text = logs
+            textSize = 12f
+            setTextIsSelectable(true)
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        AlertDialog.Builder(this).setTitle("Diagnostics")
+            .setView(ScrollView(this).apply { addView(text) })
+            .setNeutralButton("Copy logs") { _, _ ->
+                getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Bragi diagnostics", logs))
+                Toast.makeText(this, "Logs copied", Toast.LENGTH_SHORT).show()
+            }.setPositiveButton("Close", null).show()
     }
 
     private fun mode() = if (modes.checkedRadioButtonId == deviceAudioId) CaptureMode.DEVICE_AUDIO else CaptureMode.MICROPHONE

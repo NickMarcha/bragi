@@ -36,7 +36,7 @@ class BragiService : Service() {
     override fun onBind(intent: Intent?) = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == STOP) { stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == STOP) { Diagnostics.record("Stop tapped in notification"); stopSelf(); return START_NOT_STICKY }
         if (intent == null) { stopSelf(); return START_NOT_STICKY }
         if (session != null) return START_NOT_STICKY
         try {
@@ -51,6 +51,7 @@ class BragiService : Service() {
                 if (Build.VERSION.SDK_INT >= 30) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
             }
                               else ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            Diagnostics.record("Starting audio service: ${mode.wireName}")
             mutableState.value = State(running = true, connection = "Starting…")
             startForeground(NOTIFICATION, notification(), captureType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
             wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Bragi:audio").also { it.setReferenceCounted(false); it.acquire(10 * 60 * 1000L) }
@@ -64,6 +65,7 @@ class BragiService : Service() {
                 projection = getSystemService(MediaProjectionManager::class.java).getMediaProjection(Activity.RESULT_OK, permission)
                 projectionCallback = object : MediaProjection.Callback() {
                     override fun onStop() {
+                        Diagnostics.record("Projection permission ended")
                         mutableState.value = State(error = "Device audio capture permission ended. Open Bragi to start again.")
                         stopSelf()
                     }
@@ -95,11 +97,13 @@ class BragiService : Service() {
                         onStatus = { status ->
                             if (destroyed) return@run
                             mutableState.value = mutableState.value.copy(connection = status)
+                            Diagnostics.record("Connection: $status")
                             updateNotification()
                         },
                     )
                 } catch (e: CancellationException) { throw e }
                 catch (e: Throwable) {
+                    Diagnostics.record("Audio service failed", e)
                     mutableState.value = mutableState.value.copy(error = e.message ?: "Audio service failed.")
                     withContext(Dispatchers.Main) { stopSelf() }
                 }
@@ -122,6 +126,7 @@ class BragiService : Service() {
     private fun updateNotification() { getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification()) }
 
     override fun onDestroy() {
+        Diagnostics.record("Service shutdown started")
         destroyed = true
         wakeRenewal?.cancel()
         connection?.close()
@@ -130,13 +135,15 @@ class BragiService : Service() {
         mutableState.value = State(error = previous.error)
         scope.launch {
             // Wait for configuration callbacks to finish before stopping the final engine.
-            try { withContext(NonCancellable) { session?.join(); engine?.stop() } }
+            try { withContext(NonCancellable) { Diagnostics.record("Waiting for session shutdown"); session?.join(); Diagnostics.record("Stopping final audio engine"); engine?.stop(); Diagnostics.record("Audio engine stopped") } }
             finally { scope.cancel() }
         }
+        Diagnostics.record("Releasing projection and wake lock")
         projectionCallback?.let { projection?.unregisterCallback(it) }
         projection?.stop()
         if (wakeLock?.isHeld == true) wakeLock?.release()
         stopForeground(STOP_FOREGROUND_REMOVE)
+        Diagnostics.record("Service onDestroy completed")
         super.onDestroy()
     }
 }
