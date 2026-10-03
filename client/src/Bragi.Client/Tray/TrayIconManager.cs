@@ -87,7 +87,6 @@ public sealed class TrayIconManager : IDisposable
             new NativeMenuItemSeparator(),
             quitItem,
         };
-        menu.NeedsUpdate += (_, _) => _volumeMenu.Refresh();
 
         _trayIcon = new TrayIcon
         {

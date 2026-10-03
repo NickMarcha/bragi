@@ -8,8 +8,8 @@ using System.Threading.Tasks;
 namespace Bragi.Client.Volume;
 
 /// <summary>
-/// A dashboard connection while a volume window is open. Menu discovery
-/// uses a single snapshot, so an idle tray doesn't keep server meters running.
+/// One dashboard connection while the volume window is open. An idle
+/// tray has no volume connection and does not keep server meters running.
 /// Events run on the receive task; UI subscribers dispatch to the UI thread.
 /// </summary>
 public sealed class VolumeConnection : IDisposable
@@ -25,19 +25,6 @@ public sealed class VolumeConnection : IDisposable
 
     public VolumeConnection(Uri uri) => _uri = uri;
     public void Start() => _run ??= Task.Run(RunAsync);
-
-    public static async Task<VolumeState> ReadSnapshotAsync(Uri uri, CancellationToken token)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        using var socket = new ClientWebSocket();
-        await socket.ConnectAsync(uri, timeout.Token);
-        var message = await ReceiveAsync(socket, timeout.Token);
-        if (message.GetProperty("type").GetString() != "state") throw new IOException("Expected device state from Bragi.");
-        var state = new VolumeState();
-        state.Apply(message);
-        return state;
-    }
 
     private async Task RunAsync()
     {

@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Bragi.Client.Config;
 using Bragi.Client.Volume;
@@ -24,7 +25,9 @@ namespace Bragi.Client.Tests;
 public class TestApp : Application
 {
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<TestApp>()
-        .UseHeadless(new AvaloniaHeadlessPlatformOptions());
+        .UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+
+    public override void Initialize() => Styles.Add(new Avalonia.Themes.Fluent.FluentTheme());
 }
 
 public class VolumeTests
@@ -81,11 +84,12 @@ public class VolumeTests
     public async Task Volume_window_receives_state_sends_controls_and_disables_on_disconnect()
     {
         await using var server = await FakeBragi.Start();
-        var window = new VolumeWindow(server.Uri, "peer", "laptop", "Laptop", false);
+        var window = new VolumeWindow(server.Uri, "laptop");
         window.Show();
         try
         {
-            var panel = Assert.IsType<StackPanel>(window.Content);
+            await Until(() => Cards(window).Any());
+            var panel = Card(window, "laptop");
             var sliders = panel.Children.OfType<Slider>().ToArray();
             var mute = panel.Children.OfType<StackPanel>().SelectMany(p => p.Children).OfType<Button>().ToArray();
             await Until(() => sliders[0].IsEnabled);
@@ -135,7 +139,7 @@ public class VolumeTests
     }
 
     [AvaloniaFact]
-    public async Task Menu_lists_this_device_first_and_excludes_it_from_other_devices()
+    public async Task One_volume_window_shows_this_device_first_and_all_other_devices()
     {
         await using var server = await FakeBragi.Start();
         using var menu = new VolumeMenu(new RocLinkConfig
@@ -143,21 +147,37 @@ public class VolumeTests
             SagepiTailscaleIp = "127.0.0.1", LocalSinkName = "sink", LocalSourceName = "source",
             PeerName = "laptop", BragiWsBaseUrl = server.Uri.AbsoluteUri + "/peer",
         });
-        var items = menu.Item.Menu!.Items.OfType<NativeMenuItem>().Where(i => i is not NativeMenuItemSeparator).ToArray();
-        Assert.Equal(new[] { "This device", "Output", "Input", "Other devices" }, items.Select(i => i.Header));
-        var others = items[^1].Menu!;
-        await Until(() => others.Items.OfType<NativeMenuItem>().Any(i => i.Header == "desktop"));
-        Assert.Equal(new[] { "desktop", "USB headset" }, others.Items.OfType<NativeMenuItem>().Select(i => i.Header));
+        Assert.Equal("Volume", menu.Item.Header);
+        Assert.Null(menu.Item.Menu); // direct top-level action, no submenu
+        Assert.True(menu.Item.IsEnabled);
         Assert.True(menu.WebUiItem.IsEnabled);
+        var window = new VolumeWindow(server.Uri, "laptop");
+        window.Show();
+        try
+        {
+            await Until(() => Cards(window).Count() == 3);
+            Assert.Equal(new[] { "laptop", "desktop", "USB headset" },
+                Cards(window).Select(p => p.Children.OfType<TextBlock>().First().Text));
+            Assert.Contains(Card(window, "laptop").Children.OfType<TextBlock>(), t => t.Text == "This device");
+            var headset = Card(window, "USB headset").Children.OfType<Slider>().First();
+            await Until(() => headset.IsEnabled);
+            headset.Value = 60;
+            var action = await server.NextAction();
+            Assert.Equal("headset", action.GetProperty("target").GetString());
+            Assert.Equal("usb-headset", action.GetProperty("key").GetString());
+            Assert.Equal("playback", action.GetProperty("direction").GetString());
+            Assert.Equal(0.6, action.GetProperty("value").GetDouble());
+            Assert.Equal(65, Card(window, "laptop").Children.OfType<Slider>().First().Value);
+        }
+        finally { window.Close(); }
     }
 
     [AvaloniaFact]
     public void Unconfigured_client_keeps_menu_items_visible_but_disabled()
     {
         using var menu = new VolumeMenu(null);
-        var items = menu.Item.Menu!.Items.OfType<NativeMenuItem>().ToArray();
-        Assert.False(items.Single(i => i.Header == "Output").IsEnabled);
-        Assert.False(items.Single(i => i.Header == "Input").IsEnabled);
+        Assert.Null(menu.Item.Menu);
+        Assert.False(menu.Item.IsEnabled);
         Assert.False(menu.WebUiItem.IsEnabled);
     }
 
@@ -165,18 +185,25 @@ public class VolumeTests
     public async Task Offline_device_has_no_editable_controls()
     {
         await using var server = await FakeBragi.Start();
-        var window = new VolumeWindow(server.Uri, "peer", "desktop", "Desktop", true);
+        var window = new VolumeWindow(server.Uri, "desktop");
         window.Show();
         try
         {
-            var panel = Assert.IsType<StackPanel>(window.Content);
-            await Until(() => panel.Children.OfType<TextBlock>().Any(t => t.Text == "Connected"));
+            await Until(() => window.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == "Connected"));
+            var panel = Card(window, "desktop");
             Assert.All(panel.Children.OfType<Slider>(), slider => Assert.False(slider.IsEnabled));
             Assert.All(panel.Children.OfType<StackPanel>().SelectMany(p => p.Children).OfType<Button>(), button => Assert.False(button.IsEnabled));
             Assert.False(server.Actions.Reader.TryRead(out _));
         }
         finally { window.Close(); }
     }
+
+    private static IEnumerable<StackPanel> Cards(Window window) =>
+        window.GetLogicalDescendants().OfType<WrapPanel>().Single().Children.OfType<Border>()
+            .Select(b => (StackPanel)b.Child!);
+
+    private static StackPanel Card(Window window, string label) =>
+        Cards(window).Single(p => p.Children.OfType<TextBlock>().First().Text == label);
 
     private static async Task Until(Func<bool> condition)
     {

@@ -16,40 +16,29 @@ bridge this is part of.
 
 ## Volume and web UI
 
-The tray menu includes `Volume` and `Open web UI`:
+The tray has two direct actions: `Volume` and `Open web UI`.
 
-```text
-Volume
-  This device
-  Output
-  Input
-  Other devices
-    <peer or headset>
-      Output
-      Input
-Open web UI
-```
-
-`This device` is a section label. Output or Input opens a small window
-with both sliders and mute buttons, focusing the selected direction.
-Volumes range from 0% to 150%, matching the dashboard.
+`Volume` opens one resizable window containing every peer and headset.
+This device appears first. Each device has Output and Input sliders and
+mute buttons, with volumes from 0% to 150%, matching the dashboard. Cards
+wrap as the window resizes, and the device list scrolls. Clicking Volume
+again brings the same window forward.
 
 For peers, Output controls audio sent from that computer to the headset.
 Input controls the headset microphone received by that computer. These are
-Bragi link volumes. For headsets under Other devices, Output controls the
-speakers and Input controls the microphone.
+Bragi link volumes. For headsets, Output controls the speakers and Input
+controls the microphone.
 
-The menu identifies this device with `PEER_NAME` and derives the web UI
+The window identifies this device with `PEER_NAME` and derives the web UI
 and control URLs from `BRAGI_WS_URL`, such as
 `wss://sagepi.tail08dfa.ts.net/ws/peer`. No additional configuration is
 needed on already configured clients. Missing or invalid server settings
-disable the new controls; a missing peer name disables this device's items.
+disable the two tray actions. Without a peer name, all devices still appear.
 
-Opening the tray menu refreshes the device list. Each volume window keeps
-a dashboard WebSocket open for live changes and reconnects after a network
-interruption. Unavailable directions and disconnected controls are disabled.
-Closing the window closes that connection. An idle tray only fetches a
-short snapshot, so it does not keep the server's audio meters running.
+The window loads the device list when opened and uses one dashboard
+WebSocket for live changes, reconnecting after a network interruption.
+Unavailable directions and disconnected controls are disabled. Closing the
+window closes that connection. An idle tray has no volume connection.
 
 ## Client tests
 
@@ -60,7 +49,7 @@ dotnet test client/Bragi.Client.slnx -c Release
 Run from the repository root with the .NET 10 SDK. The tests use Avalonia's
 headless UI and a local WebSocket server to check direction mapping,
 slider and mute actions, stale updates, reconnects, offline controls,
-menu discovery, and configured-server URLs. They do not require PipeWire
+the shared device window, and configured-server URLs. They do not require PipeWire
 or a desktop session. Run them before releasing client changes.
 
 Desktop-shell tray rendering and opening the user's browser still need a
