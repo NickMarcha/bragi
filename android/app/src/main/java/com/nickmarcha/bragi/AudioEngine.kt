@@ -125,13 +125,11 @@ class AudioEngine(
             track = playback
             try {
                 RocContext().use { context ->
-                    val receiverConfig = RocReceiverConfig.builder().frameSampleRate(44100)
-                        .frameChannels(ChannelSet.STEREO).frameEncoding(FrameEncoding.PCM_FLOAT)
-                        .clockSource(ClockSource.EXTERNAL).targetLatency(40_000_000).build()
+                    val receiverConfig = playbackReceiverConfig(playback.bufferSizeInFrames)
                     RocReceiver(context, receiverConfig).use { roc ->
                         roc.bind(Slot.DEFAULT, Interface.AUDIO_SOURCE, Endpoint("rtp://$localIp:${config.receiveSourcePort}"))
                         roc.bind(Slot.DEFAULT, Interface.AUDIO_CONTROL, Endpoint("rtcp://$localIp:${config.receiveControlPort}"))
-                        Diagnostics.record("Receiver bound to $localIp:${config.receiveSourcePort}; target latency=40ms")
+                        Diagnostics.record("Receiver bound to $localIp:${config.receiveSourcePort}; target latency=${receiverConfig.targetLatency / 1_000_000}ms")
                         check(playback.state == AudioTrack.STATE_INITIALIZED) { "Audio playback could not initialize." }
                         if (!running.get()) return
                         playback.play()

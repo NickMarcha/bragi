@@ -64,3 +64,16 @@ recordings are stored or uploaded. Playback timing is unchanged in this build.
 
 If sending works but listening is silent, check that the phone address in Bragi
 matches the current IPv4 address shown by Tailscale.
+
+## 0.1.7 playback buffering fix
+
+Listening now gives Roc enough buffered audio to cover Android's playback buffer,
+plus 40 ms of network headroom. On the FP5, Android's blocking writes returned in
+bursts roughly 166 ms apart, exceeding the previous fixed 40 ms receiver latency.
+Phone diagnostics showed about 69% silent chunks despite zero AudioTrack
+underruns. A native Roc reproduction produced 68.8% silent chunks at 40 ms and
+none with the buffer-aware latency.
+
+The FP5 now uses about 201 ms of Roc buffering. This increases listening delay;
+devices with smaller playback buffers use less. Sending is unchanged. Playback
+diagnostics remain available. Phone confirmation of the fix is still needed.
