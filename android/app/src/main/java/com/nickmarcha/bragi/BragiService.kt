@@ -143,14 +143,22 @@ class BragiService : Service() {
         Diagnostics.record("Service shutdown started")
         destroyed = true
         wakeRenewal?.cancel()
-        connection?.close()
         session?.cancel()
         val previous = mutableState.value
         mutableState.value = State(error = previous.error)
         scope.launch {
             // Wait for configuration callbacks to finish before stopping the final engine.
-            try { withContext(NonCancellable) { Diagnostics.record("Waiting for session shutdown"); session?.join(); Diagnostics.record("Stopping final audio engine"); engine?.stop(); Diagnostics.record("Audio engine stopped") } }
-            finally { scope.cancel() }
+            try {
+                withContext(NonCancellable) {
+                    Diagnostics.record("Closing network connection on IO")
+                    connection?.close()
+                    Diagnostics.record("Waiting for session shutdown")
+                    session?.join()
+                    Diagnostics.record("Stopping final audio engine")
+                    engine?.stop()
+                    Diagnostics.record("Audio engine stopped")
+                }
+            } finally { scope.cancel() }
         }
         Diagnostics.record("Releasing projection and wake lock")
         projectionCallback?.let { projection?.unregisterCallback(it) }

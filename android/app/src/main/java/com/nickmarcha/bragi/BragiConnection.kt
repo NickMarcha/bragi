@@ -15,9 +15,12 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
-class BragiConnection(private val base: HttpUrl, private val name: String) {
-    private val http = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS).pingInterval(20, TimeUnit.SECONDS).build()
+class BragiConnection(
+    private val base: HttpUrl,
+    private val name: String,
+    private val http: OkHttpClient = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS).pingInterval(20, TimeUnit.SECONDS).build(),
+) {
     @Volatile private var socket: WebSocket? = null
 
     suspend fun register(ip: String, mode: CaptureMode): PeerConfig = withContext(Dispatchers.IO) {
@@ -107,7 +110,12 @@ class BragiConnection(private val base: HttpUrl, private val name: String) {
             .put("receive_active", receive).put("error", error ?: JSONObject.NULL).toString())
     }
 
-    fun close() { socket?.cancel(); http.dispatcher.cancelAll(); http.connectionPool.evictAll() }
+    suspend fun close() = withContext(Dispatchers.IO) {
+        socket?.cancel()
+        http.dispatcher.cancelAll()
+        // Closing a pooled TLS socket can write to the network, even during teardown.
+        http.connectionPool.evictAll()
+    }
 }
 
 class PeerRemovedException(message: String) : IOException(message)

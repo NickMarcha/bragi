@@ -6,8 +6,8 @@ android {
         applicationId = "com.nickmarcha.bragi"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
     }
     buildFeatures { buildConfig = true }
     compileOptions {
@@ -40,5 +40,6 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.roc-streaming.roctoolkit:roc-android:0.2.1")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.json:json:20250107")
 }

@@ -31,3 +31,11 @@ phone running in microphone mode. Phone microphone capture feeds microphone
 input rather than headset playback; device-audio capture still feeds playback.
 The Stop issue remains under investigation. Diagnostics and Copy logs remain
 available.
+
+## 0.1.3 Stop crash fix
+
+Stop no longer closes network sockets on Android's main thread. The reported
+NetworkOnMainThreadException came from closing a pooled TLS connection in service
+teardown. Connection cleanup now runs on the IO dispatcher, alongside asynchronous
+audio shutdown. A regression test opens a real pooled connection and checks that
+its socket is closed off the lifecycle thread. Diagnostics remain available.

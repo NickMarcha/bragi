@@ -102,7 +102,9 @@ Build, JVM unit tests, and Android lint pass. The user tested release 0.1.0 on a
 phone and confirmed microphone capture and eligible device-audio capture through
 the Pi headset. Device-audio capture continued while local playback was muted.
 Stop appeared to close the app, and phone playback of the Bragi audio mix was
-missing. Crash logs and a repeatable Stop test are still needed.
+missing. The supplied 0.1.2 log identified NetworkOnMainThreadException from closing a
+pooled TLS socket on the lifecycle thread. Version 0.1.3 moves connection cleanup
+to IO, with a regression test. Phone confirmation of the fix remains pending.
 
 Remaining device checks:
 

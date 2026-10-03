@@ -108,7 +108,9 @@ and GitHub APK update checks. Build, unit tests, and lint pass. Real-device audi
 screen-off operation, capture-consent loss, reconnect, and install/update testing
 remain pending. The user confirmed microphone and device-audio capture on 0.1.0.
 Stop appeared to close the app; persistent Diagnostics/Copy logs shipped in 0.1.1
-to capture the failure without ADB. The crash is still awaiting evidence.
+to capture the failure without ADB. The supplied 0.1.2 log identified NetworkOnMainThreadException during pooled TLS
+socket closure in service teardown. Version 0.1.3 moves that cleanup to IO and adds
+a regression test. Phone confirmation of the fix remains pending.
 
 Version 0.1.2 receives the Pi headset playback mix, and the web UI selects the Pi
 mic or a phone mic for desktop input. Linux Roc and Windows VBAN links were
