@@ -351,6 +351,15 @@ async def apply_action(action: dict) -> None:
     verb = action.get("action")
     direction = action.get("direction")
 
+    if verb == "set_peer_streams" and target == "peer":
+        from . import peer_control, peers
+        if not all(isinstance(action.get(field), bool) for field in ("send_enabled", "receive_enabled")):
+            return
+        peer = await asyncio.to_thread(peers.set_android_streams, key,
+                                       action["send_enabled"], action["receive_enabled"])
+        peer_control.publish_streams(peer)
+        return
+
     if verb in ("set_volume", "set_balance") and not _accept_ts((target, key, direction), action.get("ts")):
         return
 

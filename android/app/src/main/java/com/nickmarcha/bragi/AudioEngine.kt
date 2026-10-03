@@ -1,0 +1,149 @@
+package com.nickmarcha.bragi
+
+import android.annotation.SuppressLint
+import android.media.*
+import android.media.projection.MediaProjection
+import android.os.Process
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.rocstreaming.roctoolkit.*
+import kotlin.math.max
+
+/** Android devices clock the PCM loops; Roc uses its external clock to avoid clock drift. */
+class AudioEngine(
+    private val host: String,
+    private val localIp: String,
+    private val config: PeerConfig,
+    private val mode: CaptureMode,
+    private val projection: MediaProjection?,
+    private val onStatus: (Boolean, Boolean, String?) -> Unit,
+) {
+    private val changes = Mutex()
+    private var sender: Worker? = null
+    private var receiver: Worker? = null
+    private val sending = AtomicBoolean(false)
+    private val receiving = AtomicBoolean(false)
+
+    suspend fun apply(sendEnabled: Boolean, receiveEnabled: Boolean) = withContext(Dispatchers.IO) {
+        changes.withLock {
+        if (!sendEnabled) { sender?.stop(); sender = null }
+        else if (sender?.isAlive != true) { sender = Worker(true).also { it.start() } }
+        if (!receiveEnabled) { receiver?.stop(); receiver = null }
+        else if (receiver?.isAlive != true) { receiver = Worker(false).also { it.start() } }
+        onStatus(sending.get(), receiving.get(), null)
+        }
+    }
+
+    suspend fun stop() = apply(false, false)
+
+    private inner class Worker(private val send: Boolean) {
+        private val running = AtomicBoolean(true)
+        @Volatile private var record: AudioRecord? = null
+        @Volatile private var track: AudioTrack? = null
+        private val thread = Thread({
+            Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
+            try { if (send) sendAudio() else receiveAudio() }
+            catch (error: Throwable) {
+                if (running.get()) onStatus(sending.get(), receiving.get(), "${if (send) "Sender" else "Receiver"}: ${error.message ?: error.javaClass.simpleName}")
+            } finally {
+                if (send) sending.set(false) else receiving.set(false)
+                onStatus(sending.get(), receiving.get(), null)
+            }
+        }, if (send) "Bragi sender" else "Bragi receiver")
+        val isAlive get() = thread.isAlive
+        fun start() = thread.start()
+        fun stop() {
+            running.set(false)
+            runCatching { record?.stop() }
+            runCatching { track?.pause(); track?.flush() }
+            thread.interrupt()
+            thread.join(4000)
+            check(!thread.isAlive) { "Audio did not stop. Restart Bragi before starting another stream." }
+        }
+
+        @SuppressLint("MissingPermission")
+        private fun sendAudio() {
+            val channels = if (mode == CaptureMode.MICROPHONE) 1 else 2
+            val mask = if (channels == 1) AudioFormat.CHANNEL_IN_MONO else AudioFormat.CHANNEL_IN_STEREO
+            val minBuffer = AudioRecord.getMinBufferSize(44100, mask, AudioFormat.ENCODING_PCM_16BIT)
+            require(minBuffer > 0) { "This device does not support 44.1 kHz capture." }
+            val format = AudioFormat.Builder().setSampleRate(44100).setChannelMask(mask)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build()
+            val builder = AudioRecord.Builder().setAudioFormat(format).setBufferSizeInBytes(max(minBuffer, 441 * channels * 2 * 4))
+            if (mode == CaptureMode.MICROPHONE) builder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            else builder.setAudioPlaybackCaptureConfig(AudioPlaybackCaptureConfiguration.Builder(
+                requireNotNull(projection) { "Open Bragi to grant device audio capture permission." })
+                .addMatchingUsage(AudioAttributes.USAGE_MEDIA).addMatchingUsage(AudioAttributes.USAGE_GAME)
+                .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN).excludeUid(Process.myUid()).build())
+            val capture = builder.build()
+            record = capture
+            try {
+                check(capture.state == AudioRecord.STATE_INITIALIZED) { "Audio recorder could not initialize." }
+                RocContext().use { context ->
+                    val senderConfig = RocSenderConfig.builder().frameSampleRate(44100)
+                        .frameChannels(ChannelSet.STEREO).frameEncoding(FrameEncoding.PCM_FLOAT)
+                        .packetSampleRate(44100).packetChannels(ChannelSet.STEREO).packetEncoding(PacketEncoding.AVP_L16)
+                        .clockSource(ClockSource.EXTERNAL).fecEncoding(FecEncoding.DISABLE).build()
+                    RocSender(context, senderConfig).use { roc ->
+                        roc.connect(Slot.DEFAULT, Interface.AUDIO_SOURCE, Endpoint("rtp://$host:${config.sendSourcePort}"))
+                        roc.connect(Slot.DEFAULT, Interface.AUDIO_CONTROL, Endpoint("rtcp://$host:${config.sendControlPort}"))
+                        if (!running.get()) return
+                        capture.startRecording()
+                        check(capture.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Android did not start recording." }
+                        sending.set(true)
+                        onStatus(sending.get(), receiving.get(), null)
+                        val pcm = ShortArray(441 * channels)
+                        while (running.get()) {
+                            val count = capture.read(pcm, 0, pcm.size, AudioRecord.READ_BLOCKING)
+                            if (!running.get()) break
+                            if (count < 0) throw IOException("Audio capture failed ($count).")
+                            if (count > 0) roc.write(stereoSamples(pcm, count - count % channels, channels))
+                        }
+                    }
+                }
+            } finally { runCatching { capture.stop() }; capture.release(); record = null }
+        }
+
+        private fun receiveAudio() {
+            val minBuffer = AudioTrack.getMinBufferSize(44100, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
+            require(minBuffer > 0) { "This device does not support floating-point stereo playback." }
+            val playback = AudioTrack.Builder()
+                .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                .setAudioFormat(AudioFormat.Builder().setSampleRate(44100).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT).build())
+                .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(max(minBuffer, 882 * 4 * 2)).build()
+            track = playback
+            try {
+                RocContext().use { context ->
+                    val receiverConfig = RocReceiverConfig.builder().frameSampleRate(44100)
+                        .frameChannels(ChannelSet.STEREO).frameEncoding(FrameEncoding.PCM_FLOAT)
+                        .clockSource(ClockSource.EXTERNAL).targetLatency(40_000_000).build()
+                    RocReceiver(context, receiverConfig).use { roc ->
+                        roc.bind(Slot.DEFAULT, Interface.AUDIO_SOURCE, Endpoint("rtp://$localIp:${config.receiveSourcePort}"))
+                        roc.bind(Slot.DEFAULT, Interface.AUDIO_CONTROL, Endpoint("rtcp://$localIp:${config.receiveControlPort}"))
+                        if (!running.get()) return
+                        playback.play()
+                        receiving.set(true)
+                        onStatus(sending.get(), receiving.get(), null)
+                        val samples = FloatArray(882)
+                        while (running.get()) {
+                            roc.read(samples)
+                            var offset = 0
+                            while (running.get() && offset < samples.size) {
+                                val written = playback.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
+                                if (written < 0) throw IOException("Audio playback failed ($written).")
+                                if (written == 0) throw IOException("Audio playback stopped accepting samples.")
+                                offset += written
+                            }
+                        }
+                    }
+                }
+            } finally { runCatching { playback.stop() }; playback.release(); track = null }
+        }
+    }
+}

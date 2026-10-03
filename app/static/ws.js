@@ -71,6 +71,9 @@
       else if (msg.type === "control") applyControl(msg);
       else if (msg.type === "headset") applyHeadset(msg);
       else if (msg.type === "peer_presence") applyPeerPresence(msg);
+      else if (msg.type === "peer_streams") applyPeerStreams(msg);
+      else if (msg.type === "peer_status") applyPeerStatus(msg);
+      else if (msg.type === "peer_registry") htmx.ajax("GET", "/peers", { target: "#peers", swap: "innerHTML" });
       else if (msg.type === "levels") applyLevels(msg);
       else if (msg.type === "viz_settings") applyVizSettings(msg);
     });
@@ -320,7 +323,25 @@
     const dot = card.querySelector(".status-dot");
     if (!dot) return;
     dot.className = `status-dot ${msg.connected ? "online" : "offline"}`;
-    dot.title = msg.connected ? "Tray app connected" : "Tray app not connected to sagepi";
+    dot.title = msg.connected ? "Client connected" : "Client not connected to sagepi";
+    if (!msg.connected) {
+      const status = card.querySelector(".client-stream-status");
+      if (status) status.textContent = "Android service disconnected.";
+    }
+  }
+
+  function applyPeerStreams(msg) {
+    const controls = document.querySelector(`[data-peer="${cssEscape(msg.name)}"] .client-controls`);
+    if (!controls) return;
+    controls.dataset.sendEnabled = String(msg.send_enabled);
+    controls.dataset.receiveEnabled = String(msg.receive_enabled);
+    controls.querySelector('[data-stream="send"]').classList.toggle("active", msg.send_enabled);
+    controls.querySelector('[data-stream="receive"]').classList.toggle("active", msg.receive_enabled);
+  }
+
+  function applyPeerStatus(msg) {
+    const status = document.querySelector(`[data-peer="${cssEscape(msg.name)}"] .client-stream-status`);
+    if (status) status.textContent = msg.error || `${msg.send_active ? "Sending" : "Sender paused"} · ${msg.receive_active ? "Listening" : "Receiver paused"}`;
   }
 
   // --- vertical fader: a custom pointer-driven control, not a native
@@ -485,6 +506,17 @@
   function wireControls(root) {
     wireFaders(root);
     wirePads(root);
+
+    root.querySelectorAll('button[data-action="toggle-stream"]').forEach((el) => {
+      el.addEventListener("click", () => {
+        const controls = el.closest(".client-controls");
+        const sendEnabled = controls.dataset.sendEnabled === "true";
+        const receiveEnabled = controls.dataset.receiveEnabled === "true";
+        send({ action: "set_peer_streams", target: "peer", key: el.dataset.key,
+          send_enabled: el.dataset.stream === "send" ? !sendEnabled : sendEnabled,
+          receive_enabled: el.dataset.stream === "receive" ? !receiveEnabled : receiveEnabled });
+      });
+    });
 
     root.querySelectorAll('button[data-action="mute"]').forEach((el) => {
       el.addEventListener("click", () => {

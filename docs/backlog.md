@@ -100,8 +100,20 @@ The plan (2026-10) is a new Android app instead of a fork: a thin client
 that takes a Bragi URL over Tailscale, holds the Roc sender/receiver in a
 foreground service, and gets its ports and on/off state from Bragi.
 Android 14+ won't let a background app start the mic, so the user starts
-the service once and the dashboard toggles the streams inside it. Tech
-stack not chosen yet; F-Droid publishing and easy updates are requirements.
+the service once and the dashboard toggles the streams inside it.
+
+The first app is implemented in native Kotlin under `android/`, with selectable
+device playback or phone microphone, Bragi registration and remote stream toggles,
+and GitHub APK update checks. Build, unit tests, and lint pass. Real-device audio,
+screen-off operation, capture-consent loss, reconnect, and install/update testing
+remain pending. The published Roc native libraries use 4 KiB alignment; rebuild
+and validate them before supporting 16 KiB-page phones. F-Droid source builds and
+reproducibility remain backlog work. See
+[`android-stack-options.md`](android-stack-options.md) and
+[`../android/README.md`](../android/README.md).
+
+Using the Pi headset mic as a microphone for arbitrary Android apps is deferred
+to research. It is not required for the first version.
 
 The two server bugs that broke the first attempt (UI-added peers never
 reaching the graph, and their incoming stream forced to `Audio/Source`) are

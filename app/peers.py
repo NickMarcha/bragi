@@ -69,6 +69,10 @@ class Peer:
     vban_port: int | None = None
     stream_send: str | None = None
     stream_receive: str | None = None
+    client_kind: str | None = None
+    capture_mode: str = "microphone"
+    send_enabled: bool = True
+    receive_enabled: bool = False
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -317,3 +321,39 @@ def remove_peer(name: str) -> None:
         peers = [p for p in peers if p.name != name]
         save_peers(peers)
         _regenerate_managed_conf(peers)
+
+
+def register_android_peer(name: str, tailscale_ip: str, capture_mode: str) -> Peer:
+    """Registration is repeatable: reconnecting must keep its port allocation."""
+    with _lock:
+        peers = load_peers()
+        peer = next((p for p in peers if p.name == name), None)
+        if peer is not None and (not peer.managed or peer.client_kind != "android"):
+            raise ValueError(f"'{name}' already belongs to another client")
+        if peer is None:
+            peer = Peer(
+                name=name, protocol="roc", tailscale_ip=tailscale_ip, managed=True,
+                ports=_next_free_ports(peers), client_kind="android",
+                outgoing_sink_name=f"{name}-outgoing-sink",
+                incoming_source_name=f"{name}-incoming-source",
+            )
+            peers.append(peer)
+        peer.tailscale_ip = tailscale_ip
+        peer.capture_mode = capture_mode
+        save_peers(peers)
+        _regenerate_managed_conf(peers)
+        return peer
+
+
+def set_android_streams(name: str, send_enabled: bool, receive_enabled: bool) -> Peer:
+    with _lock:
+        peers = load_peers()
+        peer = next((p for p in peers if p.name == name and p.client_kind == "android"), None)
+        if peer is None:
+            raise ValueError(f"Android peer '{name}' not found")
+        peer.send_enabled = send_enabled
+        peer.receive_enabled = receive_enabled
+        save_peers(peers)
+        # Only the app changes its streams. Restarting PipeWire peers here
+        # would interrupt every managed peer for a control-plane action.
+        return peer

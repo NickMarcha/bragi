@@ -83,6 +83,7 @@ def direction_view(node_id: int | None, node_name: str | None = None, volumes: V
 
 
 def peer_view(graph: pipewire.Graph, peer: peers_module.Peer, volumes: Volumes | None = None) -> dict:
+    from . import peer_control
     out_id = resolve_node_id(graph, peer, "outgoing")
     in_id = resolve_node_id(graph, peer, "incoming")
     return {
@@ -90,6 +91,11 @@ def peer_view(graph: pipewire.Graph, peer: peers_module.Peer, volumes: Volumes |
         "protocol": peer.protocol,
         "tailscale_ip": peer.tailscale_ip,
         "managed": peer.managed,
+        "client_kind": peer.client_kind,
+        "capture_mode": peer.capture_mode,
+        "send_enabled": peer.send_enabled,
+        "receive_enabled": peer.receive_enabled,
+        "client_status": peer_control.statuses.get(peer.name),
         "outgoing": direction_view(out_id, peer_outgoing_node_name(peer), volumes),
         "incoming": direction_view(in_id, peer_incoming_node_name(peer), volumes),
         # Only meaningful for peers with a Bragi Client tray app (currently

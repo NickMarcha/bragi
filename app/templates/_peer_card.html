@@ -5,7 +5,7 @@
      reachability (a live WebSocket from that machine), which a loaded
      PipeWire module can't prove on its own since Roc runs over UDP. #}
   {% set peer_status = "online" if view.client_connected else "offline" %}
-  {% set peer_status_title = "Tray app connected" if view.client_connected else "Tray app not connected to sagepi" %}
+  {% set peer_status_title = "Client connected" if view.client_connected else "Client not connected to sagepi" %}
 {% elif view.outgoing.connected and view.incoming.connected %}
   {% set peer_status = "online" %}
   {% set peer_status_title = "Both directions connected" %}
@@ -71,6 +71,23 @@
         <div class="readout">{{ "%.0f"|format((view.incoming.volume or 0) * 100) }}%</div>
       </div>
     </div>
+
+    {% if view.client_kind == "android" %}
+    <div class="client-controls" data-send-enabled="{{ 'true' if view.send_enabled else 'false' }}"
+         data-receive-enabled="{{ 'true' if view.receive_enabled else 'false' }}">
+      <button class="client-control-btn {{ 'active' if view.send_enabled }}" data-action="toggle-stream"
+              data-key="{{ view.name }}" data-stream="send">
+        {{ "Send microphone" if view.capture_mode == "microphone" else "Send device audio" }}
+      </button>
+      <button class="client-control-btn {{ 'active' if view.receive_enabled }}" data-action="toggle-stream"
+              data-key="{{ view.name }}" data-stream="receive">Listen to headset mic</button>
+      <p class="client-stream-status">
+        {% if view.client_status and view.client_status.error %}{{ view.client_status.error }}
+        {% elif view.client_status %}{{ "Sending" if view.client_status.send_active else "Sender paused" }} · {{ "Listening" if view.client_status.receive_active else "Receiver paused" }}
+        {% else %}Start the Android service on the phone.{% endif %}
+      </p>
+    </div>
+    {% endif %}
 
     {% if view.managed %}
     <button class="remove-btn"
