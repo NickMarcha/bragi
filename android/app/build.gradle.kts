@@ -8,6 +8,7 @@ android {
         targetSdk = 35
         versionCode = 9
         versionName = "0.1.8"
+        buildConfigField("String", "DEFAULT_SERVER", "\"https://sagepi.tail08dfa.ts.net/\"")
     }
     buildFeatures { buildConfig = true }
     compileOptions {
@@ -26,6 +27,10 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // Pairs with dev/compose.yml; src/debug allows cleartext to the emulator's host alias only.
+            buildConfigField("String", "DEFAULT_SERVER", "\"http://10.0.2.2:20080/\"")
+        }
         release {
             isMinifyEnabled = false
             if (System.getenv("BRAGI_ANDROID_KEYSTORE") != null) signingConfig = signingConfigs.getByName("githubRelease")

@@ -58,7 +58,7 @@ class BragiService : Service() {
             val name = requireNotNull(intent.getStringExtra("name"))
             val ip = requireNotNull(intent.getStringExtra("ip"))
             val mode = CaptureMode.parse(requireNotNull(intent.getStringExtra("mode")))
-            require(validPeerName(name) && validTailnetIp(ip)) { "Check the peer name and Tailscale IP." }
+            require(validPeerName(name) && validPeerIp(ip)) { "Check the peer name and Tailscale IP." }
             getSystemService(NotificationManager::class.java).createNotificationChannel(
                 NotificationChannel(CHANNEL, "Bragi audio service", NotificationManager.IMPORTANCE_LOW))
             val captureType = when (mode) {

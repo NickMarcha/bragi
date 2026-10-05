@@ -46,9 +46,19 @@ class PeerConfigTest {
     }
 
     @Test fun server_urls_keep_reverse_proxy_paths_and_reject_cleartext() {
-        assertEquals("https://example.org/bragi/api/peers/register", serverUrl("https://example.org/bragi/").endpoint("api/peers/register").toString())
-        assertEquals("https://example.org/ws/peer/fairphone", serverUrl("https://example.org/").endpoint("ws/peer/fairphone").toString())
-        assertThrows(IllegalArgumentException::class.java) { serverUrl("http://example.org") }
+        assertEquals("https://example.org/bragi/api/peers/register", serverUrl("https://example.org/bragi/", false).endpoint("api/peers/register").toString())
+        assertEquals("https://example.org/ws/peer/fairphone", serverUrl("https://example.org/", false).endpoint("ws/peer/fairphone").toString())
+        assertThrows(IllegalArgumentException::class.java) { serverUrl("http://example.org", false) }
+        assertThrows(IllegalArgumentException::class.java) { serverUrl("http://10.0.2.2:20080/", false) }
+    }
+
+    @Test fun debug_builds_reach_only_the_local_dev_server() {
+        assertEquals("http://10.0.2.2:20080/api/peers/register", serverUrl("http://10.0.2.2:20080/", true).endpoint("api/peers/register").toString())
+        assertThrows(IllegalArgumentException::class.java) { serverUrl("https://sagepi.tail08dfa.ts.net/", true) }
+        assertTrue(validPeerIp("127.0.0.1", true))
+        assertFalse(validPeerIp("100.98.253.67", true))
+        assertFalse(validPeerIp("127.0.0.1", false))
+        assertTrue(validPeerIp("100.98.253.67", false))
     }
 
     @Test fun microphone_samples_preserve_level_in_both_stereo_channels() {

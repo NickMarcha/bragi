@@ -25,6 +25,10 @@ itself or another PipeWire-based Linux machine with a headset and at least
 one peer configured. Against a machine with no PipeWire the app starts but
 every card is empty.
 
+For the Android app there is a self-contained loop instead: the server on the
+tests' fake PipeWire in Docker, Roc 0.4 CLI tools for audio, and an emulator.
+See [`dev/README.md`](../dev/README.md).
+
 ## Tests
 
 ```bash

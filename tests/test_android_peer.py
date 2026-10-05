@@ -126,3 +126,12 @@ def test_listen_only_phone_receives_without_a_send_control(session):
     config = register(client).json()
     assert config['send_enabled'] is True
     assert config['receive_enabled'] is False
+
+
+def test_only_a_local_dev_server_accepts_a_loopback_phone(session, monkeypatch):
+    client = TestClient(app)
+    monkeypatch.delenv('BRAGI_LOCAL_DEV', raising=False)
+    assert register(client, tailscale_ip='127.0.0.1').status_code == 422
+    monkeypatch.setenv('BRAGI_LOCAL_DEV', '1')
+    assert register(client, tailscale_ip='127.0.0.1').status_code == 200
+    assert register(client, tailscale_ip='10.0.2.15').status_code == 422

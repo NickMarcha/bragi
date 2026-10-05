@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import ipaddress
+import os
 from typing import Literal
 from pathlib import Path
 
@@ -83,6 +84,10 @@ class AndroidRegistration(BaseModel):
     @classmethod
     def tailnet_address(cls, value: str) -> str:
         address = ipaddress.ip_address(value)
+        # A local dev server (dev/server.py) reaches the emulator through adb
+        # UDP redirects on the host's loopback, never over Tailscale.
+        if os.environ.get("BRAGI_LOCAL_DEV") == "1" and address == ipaddress.ip_address("127.0.0.1"):
+            return str(address)
         if address not in ipaddress.ip_network("100.64.0.0/10"):
             raise ValueError("Use the phone's Tailscale IPv4 address")
         return str(address)

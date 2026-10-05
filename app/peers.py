@@ -19,6 +19,7 @@ reached the graph until the next pipewire.service restart.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -27,7 +28,8 @@ import yaml
 
 from . import pipewire
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+# BRAGI_DATA_DIR keeps a local dev server (dev/server.py) off the repo's data/.
+DATA_DIR = Path(os.environ.get("BRAGI_DATA_DIR") or Path(__file__).resolve().parent.parent / "data")
 PEERS_FILE = DATA_DIR / "peers.yaml"
 # In the data dir, so the container needs no mount beyond the one it has.
 # Deliberately not in pipewire.conf.d: the main daemon would load it too,
@@ -37,7 +39,8 @@ MANAGED_CONF_FILE = DATA_DIR / "peers.conf"
 # First free port block after the hand-allocated 10001-10033 range
 # documented in issue #061 (sagedeck/sage-dev). Each Roc peer needs 6 ports
 # (mic source/repair/control, playback source/repair/control).
-_PORT_BASE = 10041
+# BRAGI_ROC_PORT_BASE moves local dev peers into a free port range.
+_PORT_BASE = int(os.environ.get("BRAGI_ROC_PORT_BASE", "10041"))
 _PORT_BLOCK_SIZE = 10
 
 logger = logging.getLogger("bragi.peers")

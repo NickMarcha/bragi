@@ -127,9 +127,11 @@ class AudioEngine(
                 RocContext().use { context ->
                     val receiverConfig = playbackReceiverConfig(playback.bufferSizeInFrames)
                     RocReceiver(context, receiverConfig).use { roc ->
-                        roc.bind(Slot.DEFAULT, Interface.AUDIO_SOURCE, Endpoint("rtp://$localIp:${config.receiveSourcePort}"))
-                        roc.bind(Slot.DEFAULT, Interface.AUDIO_CONTROL, Endpoint("rtcp://$localIp:${config.receiveControlPort}"))
-                        Diagnostics.record("Receiver bound to $localIp:${config.receiveSourcePort}; target latency=${receiverConfig.targetLatency / 1_000_000}ms")
+                        // A loopback peer is an emulator: adb redirects arrive on its own interface address.
+                        val bindIp = if (localIp == "127.0.0.1") "0.0.0.0" else localIp
+                        roc.bind(Slot.DEFAULT, Interface.AUDIO_SOURCE, Endpoint("rtp://$bindIp:${config.receiveSourcePort}"))
+                        roc.bind(Slot.DEFAULT, Interface.AUDIO_CONTROL, Endpoint("rtcp://$bindIp:${config.receiveControlPort}"))
+                        Diagnostics.record("Receiver bound to $bindIp:${config.receiveSourcePort}; target latency=${receiverConfig.targetLatency / 1_000_000}ms")
                         check(playback.state == AudioTrack.STATE_INITIALIZED) { "Audio playback could not initialize." }
                         if (!running.get()) return
                         playback.play()

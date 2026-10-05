@@ -75,10 +75,10 @@ class MainActivity : ComponentActivity() {
             text(label)
             return EditText(this).apply { setText(initial); inputType = type; setSingleLine(); panel.addView(this) }
         }
-        server = field("Bragi server", preferences.getString("server", "https://sagepi.tail08dfa.ts.net/")!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        server = field("Bragi server", preferences.getString("server", BuildConfig.DEFAULT_SERVER)!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         val defaultName = Build.MODEL.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(35).let { if (it.firstOrNull()?.isLetter() == true) it else "phone-$it" }.take(40)
         name = field("Peer name", preferences.getString("name", defaultName)!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
-        ip = field("Phone Tailscale IPv4 address", preferences.getString("ip", tailnetAddress())!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        ip = field("Phone Tailscale IPv4 address", preferences.getString("ip", if (BuildConfig.DEBUG) "127.0.0.1" else tailnetAddress())!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         text("Keep Tailscale connected. Bragi assigns the audio ports.", 13f)
         text("Audio source", 18f)
         modes = RadioGroup(this).apply {
@@ -126,7 +126,8 @@ class MainActivity : ComponentActivity() {
                     state.error).joinToString("\n")
             }
         }
-        if (System.currentTimeMillis() - preferences.getLong("updateCheck", 0) >= 24 * 60 * 60 * 1000L) checkUpdates(false)
+        // A release APK cannot replace a debug build, so debug builds only check when asked.
+        if (!BuildConfig.DEBUG && System.currentTimeMillis() - preferences.getLong("updateCheck", 0) >= 24 * 60 * 60 * 1000L) checkUpdates(false)
     }
 
     private fun showDiagnostics() {
@@ -177,7 +178,10 @@ class MainActivity : ComponentActivity() {
         try {
             serverUrl(server.text.toString())
             require(validPeerName(name.text.toString())) { "Peer name must start with a letter and use lowercase letters, digits, or hyphens, up to 40 characters." }
-            require(validTailnetIp(ip.text.toString())) { "Enter the phone's Tailscale IPv4 address (100.64.x.x through 100.127.x.x)." }
+            require(validPeerIp(ip.text.toString())) {
+                if (BuildConfig.DEBUG) "Debug builds register as 127.0.0.1 with the local dev server."
+                else "Enter the phone's Tailscale IPv4 address (100.64.x.x through 100.127.x.x)."
+            }
             preferences.edit().putString("server", server.text.toString()).putString("name", name.text.toString())
                 .putString("ip", ip.text.toString()).putString("mode", mode().wireName).apply()
             val needed = mutableListOf<String>()

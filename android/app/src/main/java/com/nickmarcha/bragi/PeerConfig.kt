@@ -36,9 +36,13 @@ enum class CaptureMode(val wireName: String) {
     }
 }
 
-fun serverUrl(value: String): HttpUrl {
+/** Debug builds reach only the local dev server (dev/README.md), so they can never touch production. */
+private val LOCAL_DEV_HOSTS = setOf("10.0.2.2", "127.0.0.1", "localhost")
+
+fun serverUrl(value: String, localDev: Boolean = BuildConfig.DEBUG): HttpUrl {
     val url = value.trim().trimEnd('/').toHttpUrl()
-    require(url.isHttps) { "Use the HTTPS Bragi URL supplied by Tailscale." }
+    if (localDev) require(url.host in LOCAL_DEV_HOSTS) { "Debug builds only connect to the local dev server, e.g. http://10.0.2.2:20080/." }
+    else require(url.isHttps) { "Use the HTTPS Bragi URL supplied by Tailscale." }
     require(url.username.isEmpty() && url.password.isEmpty() && url.query == null && url.fragment == null) {
         "Enter the Bragi server URL without credentials, a query, or a fragment."
     }
@@ -48,6 +52,10 @@ fun serverUrl(value: String): HttpUrl {
 fun HttpUrl.endpoint(path: String): HttpUrl = newBuilder().addPathSegments(path).build()
 
 fun validPeerName(value: String): Boolean = Regex("^[a-z][a-z0-9-]{0,39}$").matches(value)
+/** The local dev server reaches an emulator through adb UDP redirects on its own loopback. */
+fun validPeerIp(value: String, localDev: Boolean = BuildConfig.DEBUG): Boolean =
+    if (localDev) value == "127.0.0.1" else validTailnetIp(value)
+
 fun validTailnetIp(value: String): Boolean {
     val parts = value.split('.').map { it.toIntOrNull() ?: return false }
     return parts.size == 4 && parts[0] == 100 && parts[1] in 64..127 && parts.all { it in 0..255 }

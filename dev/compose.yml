@@ -1,0 +1,43 @@
+# Local Android debugging: see dev/README.md. Everything publishes on loopback
+# in 20000-20999; the emulator reaches it at 10.0.2.2.
+name: bragi-dev
+
+x-dev: &dev
+  image: bragi-dev:local
+  build: { context: .., dockerfile: dev/Dockerfile }
+  volumes: ["..:/src:ro"]
+  environment: { PYTHONDONTWRITEBYTECODE: "1", PYTHONUNBUFFERED: "1" }
+  mem_limit: 512m
+
+services:
+  server:
+    <<: *dev
+    command: python dev/server.py
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      BRAGI_LOCAL_DEV: "1"
+      BRAGI_DATA_DIR: /data
+      # First Android peer: mic 20141/20143 (Pi -> phone), playback 20144/20146 (phone -> Pi).
+      BRAGI_ROC_PORT_BASE: "20141"
+    tmpfs: [/data]
+    ports: ["127.0.0.1:20080:8000"]
+
+  # Stands in for sagepi's Roc receiver: records what the phone sends.
+  recv:
+    <<: *dev
+    profiles: [audio]
+    volumes: ["..:/src:ro", "./out:/out"]
+    command: >-
+      roc-recv -v -s rtp://0.0.0.0:20144 -c rtcp://0.0.0.0:20146
+      -o file:/out/from-phone.wav --target-latency 200ms
+    ports: ["127.0.0.1:20144:20144/udp", "127.0.0.1:20146:20146/udp"]
+
+  # Stands in for sagepi's Roc sender: streams a test tone to the phone
+  # through `adb emu redir` on the host loopback (10.0.2.2 from a container).
+  send:
+    <<: *dev
+    profiles: [audio]
+    command: >-
+      sh -c "python dev/tone.py /tmp/tone.wav $${SECONDS_TO_SEND:-10}
+      && roc-send -i file:/tmp/tone.wav -s rtp://10.0.2.2:20141 -c rtcp://10.0.2.2:20143"
