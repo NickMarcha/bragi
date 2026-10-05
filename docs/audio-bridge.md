@@ -19,9 +19,11 @@ distilled version that lives with the code.
 
 Android peers receive the headset's playback monitor, rather than the microphone
 feed sent to desktop peers. The managed loopback pins the headset output by name
-and uses `stream.capture.sink = true`. The phone can send microphone capture or
-eligible device audio. Microphone mode exposes an `Audio/Source` node on the Pi;
-device-audio mode keeps `Stream/Output/Audio` and plays through the headset.
+and uses `stream.capture.sink = true`. The phone can send microphone capture,
+eligible device audio, or nothing. Microphone mode exposes an `Audio/Source` node
+on the Pi; device-audio mode keeps `Stream/Output/Audio` and plays through the
+headset. Listen-only mode (`capture_mode: none`) still gets the same config block,
+but Bragi keeps sending off for it and enables listening when it registers.
 
 The web UI's Microphone for desktops selector persists a source in
 `data/microphone.json`. `app/microphone.py` connects the selected source to desktop

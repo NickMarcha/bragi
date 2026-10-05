@@ -25,6 +25,10 @@ that pushes voices around a network.
 - [`docs/realtime-control-plane.md`](docs/realtime-control-plane.md) — how
   live updates work and the race conditions behind the odd-looking guards.
 - [`docs/backlog.md`](docs/backlog.md) — known bugs and deferred work.
+- [`android/README.md`](android/README.md) — the Android peer app: build,
+  releases, playback latency, and what is still untested on a phone.
+- [`dev/README.md`](dev/README.md) — local Android debugging against a dev
+  server and Roc tools in Docker, with an emulator. No Tailscale or Pi needed.
 
 ## What it does
 
@@ -78,6 +82,11 @@ not visibly glitch.
   genuinely-connected and a deliberately-disabled peer). For the VBAN
   `sage` peer (no tray app) and any custom peer without a client, the dot
   falls back to local PipeWire node presence, same as headsets.
+- **Android phones** (`android/`): a native Kotlin app registers the phone
+  as a managed Roc peer over Tailscale. The phone sends its microphone,
+  eligible device audio, or nothing (listen only), and can listen to the
+  headset mix. The peer card's buttons pause sending and toggle listening
+  inside the running app.
 - **%/dB toggle** and a **connection status indicator** in the top corner.
 
 Balance is implemented as raw per-channel PipeWire volume (`channelVolumes`

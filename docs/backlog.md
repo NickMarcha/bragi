@@ -89,44 +89,32 @@ or accepting single-headset as the design. See
 Only the first headset's mic feeds the remote `roc-sink`s. If dual-headset
 comes back, the second headset's mic capture side still needs wiring.
 
-### Android peer (Roc Droid)
+### Android app
 
-Roc Droid itself is a dead end here. It hardcodes ports 10001/10002 and the
-RS8M FEC protocol in the app (`SenderReceiverService.kt`), with no editable
-port fields and no plain-RTP option, and connects no control/RTCP endpoint,
-while every other peer runs `fec.code = disable` on a six-port block.
-
-The plan (2026-10) is a new Android app instead of a fork: a thin client
-that takes a Bragi URL over Tailscale, holds the Roc sender/receiver in a
-foreground service, and gets its ports and on/off state from Bragi.
-Android 14+ won't let a background app start the mic, so the user starts
-the service once and the dashboard toggles the streams inside it.
-
-The first app is implemented in native Kotlin under `android/`, with selectable
-device playback or phone microphone, Bragi registration and remote stream toggles,
-and GitHub APK update checks. Build, unit tests, and lint pass. Real-device audio,
-screen-off operation, capture-consent loss, reconnect, and install/update testing
-remain pending. The user confirmed microphone and device-audio capture on 0.1.0.
-Stop appeared to close the app; persistent Diagnostics/Copy logs shipped in 0.1.1
-to capture the failure without ADB. The supplied 0.1.2 log identified NetworkOnMainThreadException during pooled TLS
-socket closure in service teardown. Version 0.1.3 moves that cleanup to IO and adds
-a regression test. Phone confirmation of the fix remains pending.
-
-Version 0.1.2 receives the Pi headset playback mix, and the web UI selects the Pi
-mic or a phone mic for desktop input. Linux Roc and Windows VBAN links were
-verified on the deployed graph. Listening tests for the new routes remain pending. The published Roc native libraries use 4 KiB alignment; rebuild
-and validate them before supporting 16 KiB-page phones. F-Droid source builds and
-reproducibility remain backlog work. See
-[`android-stack-options.md`](android-stack-options.md) and
+Roc Droid was a dead end (hardcoded ports and FEC, no control endpoint), so
+Bragi has its own native Kotlin app under `android/`, released as signed APKs
+on GitHub with in-app update checks. On the FP5 the user has confirmed
+microphone and device-audio sending, listening to the headset mix, a clean
+Stop, and, in 0.1.9, about 100 ms of phone-side listening delay with no
+underruns. Listen-only mode (0.1.8) is under test on the phone. Current state
+and the device checks still outstanding are in
 [`../android/README.md`](../android/README.md).
 
-Using the Pi headset mic as a microphone for arbitrary Android apps is deferred
-to research. It is not required for the first version.
+Still open:
 
-The two server bugs that broke the first attempt (UI-added peers never
-reaching the graph, and their incoming stream forced to `Audio/Source`) are
-fixed: managed peers now run from `data/peers.conf` under the host's
-`bragi-peers.service`.
+- **Sending delay.** Microphone and device-audio capture still use Android's
+  default recording buffers; listening got the low-latency treatment in 0.1.9,
+  sending has not.
+- **Roc jitter headroom.** Listening keeps a fixed 40 ms on top of the playback
+  buffer. Lowering it needs a jitter measurement over Tailscale, or a setting.
+- **Pi-side delay** of the managed loopback and Roc sender is unmeasured.
+- **Listening delay in the web UI.** The app shows it; the peer card does not.
+- **Stale saved Tailscale IP.** A saved address overrides fresh detection. This
+  caused the first listening failure (issue #1) when the phone's address changed.
+- **Listen-only status line** reads "Sender paused · Listening".
+- **16 KiB-page phones.** The bundled Roc native libraries use 4 KiB alignment.
+- **F-Droid**: needs a source-built Roc AAR and reproducible APK builds.
+- **Pi mic as an Android microphone** for other apps: research only.
 
 ### Windows tray client
 
