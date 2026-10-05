@@ -24,7 +24,8 @@ class BragiService : Service() {
     private var wakeRenewal: Job? = null
 
     data class State(val running: Boolean = false, val connection: String = "Stopped",
-                     val sending: Boolean = false, val receiving: Boolean = false, val sendEnabled: Boolean = true, val listenEnabled: Boolean = false, val error: String? = null)
+                     val sending: Boolean = false, val receiving: Boolean = false, val sendEnabled: Boolean = true, val listenEnabled: Boolean = false, val error: String? = null,
+                     val listeningDelayMs: Int? = null)
     companion object {
         private val mutableState = MutableStateFlow(State())
         val state = mutableState.asStateFlow()
@@ -95,12 +96,14 @@ class BragiService : Service() {
                         onConfig = { config ->
                             require(config.mode == mode) { "Audio source changed. Stop and restart Bragi on the phone." }
                             engine?.stop()
-                            engine = AudioEngine(url.host, ip, config, mode, projection) { send, receive, error ->
-                                if (destroyed) return@AudioEngine
-                                mutableState.value = mutableState.value.copy(sending = send, receiving = receive,
-                                    error = error ?: mutableState.value.error)
-                                connection?.status(send, receive, error ?: mutableState.value.error)
-                            }
+                            engine = AudioEngine(url.host, ip, config, mode, projection,
+                                onListeningDelay = { ms -> if (!destroyed) mutableState.value = mutableState.value.copy(listeningDelayMs = ms) },
+                                onStatus = { send, receive, error ->
+                                    if (destroyed) return@AudioEngine
+                                    mutableState.value = mutableState.value.copy(sending = send, receiving = receive,
+                                        error = error ?: mutableState.value.error)
+                                    connection?.status(send, receive, error ?: mutableState.value.error)
+                                })
                             mutableState.value = mutableState.value.copy(error = null, sendEnabled = config.sendEnabled, listenEnabled = config.receiveEnabled)
                             engine!!.apply(config.sendEnabled, config.receiveEnabled)
                         },

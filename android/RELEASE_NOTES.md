@@ -84,3 +84,17 @@ Choose None (listen only) as the audio source to hear Bragi audio without sendin
 anything. The app skips the microphone permission and the capture approval, and
 Bragi turns listening on for the phone and hides its send control in the web UI.
 This needs the matching Bragi server update; older servers reject the mode.
+
+## 0.1.9 lower listening delay
+
+The app now shows the listening delay measured on the phone: Roc's buffer plus
+Android's output delay. Network and Pi delay come on top and are not measured.
+
+Playback now asks Android for a low-latency track at the phone's native sample
+rate instead of the default media path, which drained the FP5's 161 ms buffer in
+166 ms bursts. Only 20 ms of the track buffer is used at first. If Android
+reports underruns, the buffer grows by half and Roc's buffer is rebuilt to match,
+so the first second or two of listening may glitch while it settles. On the
+emulator the phone-side delay fell from 252 ms to 169 ms with no underruns after
+settling. FP5 results still need confirming; the Diagnostics log shows each
+step and a delayMs value every 5 seconds.

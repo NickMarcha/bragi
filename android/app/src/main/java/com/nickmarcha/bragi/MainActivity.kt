@@ -123,6 +123,7 @@ class MainActivity : ComponentActivity() {
                 for (i in 0 until modes.childCount) modes.getChildAt(i).isEnabled = !disabled
                 status.text = listOfNotNull(state.connection,
                     if (state.running) "${if (state.sending) "Sending" else "Sender paused"} · ${if (state.receiving) "Listening" else "Receiver paused"}" else null,
+                    state.listeningDelayMs?.let { "Listening delay on this phone ≈ $it ms (plus network and Pi)" },
                     state.error).joinToString("\n")
             }
         }

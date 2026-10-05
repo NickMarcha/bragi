@@ -38,6 +38,7 @@ services:
   send:
     <<: *dev
     profiles: [audio]
+    environment: { PYTHONDONTWRITEBYTECODE: "1", SECONDS_TO_SEND: "${SECONDS_TO_SEND:-10}" }
     command: >-
       sh -c "python dev/tone.py /tmp/tone.wav $${SECONDS_TO_SEND:-10}
       && roc-send -i file:/tmp/tone.wav -s rtp://10.0.2.2:20141 -c rtcp://10.0.2.2:20143"

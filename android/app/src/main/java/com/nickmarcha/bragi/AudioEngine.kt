@@ -23,6 +23,8 @@ class AudioEngine(
     private val mode: CaptureMode,
     private val projection: MediaProjection?,
     private val onStatus: (Boolean, Boolean, String?) -> Unit,
+    /** Phone-side listening delay in ms (Roc buffer plus Android output), or null when not playing. */
+    private val onListeningDelay: (Int?) -> Unit = {},
 ) {
     private val changes = Mutex()
     private var sender: Worker? = null
@@ -114,75 +116,111 @@ class AudioEngine(
         }
 
         private fun receiveAudio() {
-            val minBuffer = AudioTrack.getMinBufferSize(44100, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
+            // A low-latency track at the output's native rate avoids Android's deep media buffer,
+            // which drained in ~166 ms bursts on the FP5. Roc resamples from Bragi's 44.1 kHz.
+            val rate = AudioTrack.getNativeOutputSampleRate(AudioManager.STREAM_MUSIC)
+            val minBuffer = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
             require(minBuffer > 0) { "This device does not support floating-point stereo playback." }
+            val chunkFrames = rate / 100
             val playback = AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-                .setAudioFormat(AudioFormat.Builder().setSampleRate(44100).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                .setAudioFormat(AudioFormat.Builder().setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT).build())
-                .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(max(minBuffer, 882 * 4 * 2)).build()
+                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(max(minBuffer, chunkFrames * 2 * 4 * 2)).build()
             track = playback
+            val buffer = PlaybackBuffer(rate, playback.bufferCapacityInFrames)
+            playback.setBufferSizeInFrames(buffer.frames)
             try {
+                check(playback.state == AudioTrack.STATE_INITIALIZED) { "Audio playback could not initialize." }
                 RocContext().use { context ->
-                    val receiverConfig = playbackReceiverConfig(playback.bufferSizeInFrames)
-                    RocReceiver(context, receiverConfig).use { roc ->
-                        // A loopback peer is an emulator: adb redirects arrive on its own interface address.
-                        val bindIp = if (localIp == "127.0.0.1") "0.0.0.0" else localIp
-                        roc.bind(Slot.DEFAULT, Interface.AUDIO_SOURCE, Endpoint("rtp://$bindIp:${config.receiveSourcePort}"))
-                        roc.bind(Slot.DEFAULT, Interface.AUDIO_CONTROL, Endpoint("rtcp://$bindIp:${config.receiveControlPort}"))
-                        Diagnostics.record("Receiver bound to $bindIp:${config.receiveSourcePort}; target latency=${receiverConfig.targetLatency / 1_000_000}ms")
-                        check(playback.state == AudioTrack.STATE_INITIALIZED) { "Audio playback could not initialize." }
-                        if (!running.get()) return
-                        playback.play()
-                        Diagnostics.record("Playback started; rate=${playback.sampleRate}; buffer frames=${playback.bufferSizeInFrames}")
-                        receiving.set(true)
-                        onStatus(sending.get(), receiving.get(), null)
-                        val samples = FloatArray(882)
-                        var reportAt = SystemClock.elapsedRealtime()
-                        var previousReadAt = reportAt
-                        var largestReadGapMs = 0L
-                        var chunks = 0
-                        var silentChunks = 0
-                        var peak = 0f
-                        var previousUnderruns = playback.underrunCount
-                        var previousHead = playback.playbackHeadPosition.toLong() and 0xffffffffL
-                        while (running.get()) {
-                            val readAt = SystemClock.elapsedRealtime()
-                            largestReadGapMs = max(largestReadGapMs, readAt - previousReadAt)
-                            previousReadAt = readAt
-                            roc.read(samples)
-                            var chunkPeak = 0f
-                            for (sample in samples) chunkPeak = max(chunkPeak, abs(sample))
-                            peak = max(peak, chunkPeak)
-                            chunks++
-                            if (chunkPeak == 0f) silentChunks++
-                            var offset = 0
-                            while (running.get() && offset < samples.size) {
-                                val written = playback.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
-                                if (written < 0) throw IOException("Audio playback failed ($written).")
-                                if (written == 0) throw IOException("Audio playback stopped accepting samples.")
-                                offset += written
+                    // A loopback peer is an emulator: adb redirects arrive on its own interface address.
+                    val bindIp = if (localIp == "127.0.0.1") "0.0.0.0" else localIp
+                    val samples = FloatArray(chunkFrames * 2)
+                    val timestamp = AudioTimestamp()
+                    var framesWritten = 0L
+                    var started = false
+                    while (running.get()) {
+                        // Roc must hold a full playback buffer plus jitter headroom, so a grown
+                        // buffer needs a new receiver with a matching target latency.
+                        val receiverConfig = playbackReceiverConfig(playback.bufferSizeInFrames, rate)
+                        val rocDelayMs = receiverConfig.targetLatency / 1_000_000L
+                        RocReceiver(context, receiverConfig).use { roc ->
+                            roc.bind(Slot.DEFAULT, Interface.AUDIO_SOURCE, Endpoint("rtp://$bindIp:${config.receiveSourcePort}"))
+                            roc.bind(Slot.DEFAULT, Interface.AUDIO_CONTROL, Endpoint("rtcp://$bindIp:${config.receiveControlPort}"))
+                            Diagnostics.record("Receiver bound to $bindIp:${config.receiveSourcePort}; target latency=${rocDelayMs}ms")
+                            if (!running.get()) return
+                            if (!started) {
+                                playback.play()
+                                started = true
+                                Diagnostics.record("Playback started; rate=${playback.sampleRate}; buffer frames=${playback.bufferSizeInFrames}/${playback.bufferCapacityInFrames}; performanceMode=${playback.performanceMode}")
+                                receiving.set(true)
+                                onStatus(sending.get(), receiving.get(), null)
                             }
-                            val now = SystemClock.elapsedRealtime()
-                            if (now - reportAt >= 5000) {
-                                val underruns = playback.underrunCount
-                                val head = playback.playbackHeadPosition.toLong() and 0xffffffffL
-                                val advanced = (head - previousHead) and 0xffffffffL
-                                val route = playback.routedDevice
-                                Diagnostics.record("Playback health: elapsedMs=${now - reportAt}; decodedFrames=${chunks * 441}; silentChunks=$silentChunks/$chunks; peak=$peak; largestReadGapMs=$largestReadGapMs; underruns=${underruns - previousUnderruns}; playedFrames=$advanced; state=${playback.playState}; route=${route?.type}:${route?.productName}")
-                                reportAt = now
-                                previousUnderruns = underruns
-                                previousHead = head
-                                largestReadGapMs = 0
-                                chunks = 0
-                                silentChunks = 0
-                                peak = 0f
+                            var reportAt = SystemClock.elapsedRealtime()
+                            var checkAt = reportAt
+                            var previousReadAt = reportAt
+                            var largestReadGapMs = 0L
+                            var chunks = 0
+                            var silentChunks = 0
+                            var peak = 0f
+                            var outputMs = 0L
+                            var previousUnderruns = playback.underrunCount
+                            var checkedUnderruns = previousUnderruns
+                            var previousHead = playback.playbackHeadPosition.toLong() and 0xffffffffL
+                            while (running.get()) {
+                                val readAt = SystemClock.elapsedRealtime()
+                                largestReadGapMs = max(largestReadGapMs, readAt - previousReadAt)
+                                previousReadAt = readAt
+                                roc.read(samples)
+                                var chunkPeak = 0f
+                                for (sample in samples) chunkPeak = max(chunkPeak, abs(sample))
+                                peak = max(peak, chunkPeak)
+                                chunks++
+                                if (chunkPeak == 0f) silentChunks++
+                                var offset = 0
+                                while (running.get() && offset < samples.size) {
+                                    val written = playback.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
+                                    if (written < 0) throw IOException("Audio playback failed ($written).")
+                                    if (written == 0) throw IOException("Audio playback stopped accepting samples.")
+                                    offset += written
+                                }
+                                framesWritten += chunkFrames
+                                val now = SystemClock.elapsedRealtime()
+                                if (now - checkAt >= 1000) {
+                                    checkAt = now
+                                    val underruns = playback.underrunCount
+                                    if (underruns > checkedUnderruns && buffer.grow()) {
+                                        playback.setBufferSizeInFrames(buffer.frames)
+                                        Diagnostics.record("Playback underruns=${underruns - checkedUnderruns}; buffer grown to ${playback.bufferSizeInFrames} frames")
+                                        break
+                                    }
+                                    checkedUnderruns = underruns
+                                    if (playback.getTimestamp(timestamp)) {
+                                        outputMs = outputLatencyMs(framesWritten, timestamp.framePosition, timestamp.nanoTime, System.nanoTime(), rate)
+                                        onListeningDelay((rocDelayMs + outputMs).toInt())
+                                    }
+                                }
+                                if (now - reportAt >= 5000) {
+                                    val underruns = playback.underrunCount
+                                    val head = playback.playbackHeadPosition.toLong() and 0xffffffffL
+                                    val advanced = (head - previousHead) and 0xffffffffL
+                                    val route = playback.routedDevice
+                                    Diagnostics.record("Playback health: elapsedMs=${now - reportAt}; decodedFrames=${chunks * chunkFrames}; silentChunks=$silentChunks/$chunks; peak=$peak; largestReadGapMs=$largestReadGapMs; delayMs=${rocDelayMs + outputMs} (roc=$rocDelayMs output=$outputMs); underruns=${underruns - previousUnderruns}; playedFrames=$advanced; state=${playback.playState}; route=${route?.type}:${route?.productName}")
+                                    reportAt = now
+                                    previousUnderruns = underruns
+                                    previousHead = head
+                                    largestReadGapMs = 0
+                                    chunks = 0
+                                    silentChunks = 0
+                                    peak = 0f
+                                }
                             }
                         }
                     }
                 }
-            } finally { Diagnostics.record("Releasing audio playback"); runCatching { playback.stop() }; playback.release(); track = null; Diagnostics.record("Playback released") }
+            } finally { onListeningDelay(null); Diagnostics.record("Releasing audio playback"); runCatching { playback.stop() }; playback.release(); track = null; Diagnostics.record("Playback released") }
         }
     }
 }
