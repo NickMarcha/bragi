@@ -49,7 +49,9 @@ def test_a_peers_incoming_stream_keeps_its_default_media_class(session):
     own default."""
     peers_module.add_roc_peer("fairphone", "100.98.253.67")
 
-    assert "media.class" not in conf()
+    text = conf()
+    roc_source = text[text.index("libpipewire-module-roc-source"):text.index("mic-to-fairphone-capture")]
+    assert "media.class" not in roc_source
 
 
 def test_the_conf_runs_as_its_own_pipewire_client(session):
@@ -102,7 +104,8 @@ def test_each_added_peer_gets_its_own_port_block(session):
 
     assert a.ports.mic_source == 10041
     assert b.ports.mic_source == 10051
-    assert len(set(re.findall(r"port = (\d+)", conf()))) == 12
+    roc_ports = set(re.findall(r"port = (\d+)", conf())) - {str(peers_module.VBAN_PORT)}
+    assert len(roc_ports) == 12
 
 
 def test_hand_configured_peers_stay_out_of_the_managed_conf(session):

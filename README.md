@@ -60,15 +60,18 @@ not visibly glitch.
     `sagepi`'s own mixed headset output. Stereo, so it also gets an L/R
     balance pad (drag horizontally to pan; right-click either control to
     reset - fader to unity, pad to centered).
-- **Add/remove Roc peers** (Linux/`sagedeck`/`sage-dev`-style) from the UI.
+- **Add/remove Roc and VBAN peers** from the UI: Roc for Linux machines,
+  VBAN for Windows machines running Voicemeeter.
   Bragi writes them to its own config file, which a host-side systemd
   unit runs as a separate PipeWire client and restarts whenever the file
   changes (`host/systemd/`). So a new peer is live within a second or so,
   and it survives a `pipewire.service` restart, a reboot, or a Bragi
   redeploy without Bragi needing to be running.
-  Hand-configured peers (seeded to match the current deployment -
-  `sagedeck`, `sage-dev` via Roc; `sage` via VBAN) show up too, with
-  working volume control, but can't be removed from the UI.
+  VBAN peers run on PipeWire's own `vban-send`/`vban-recv` modules in the
+  same file, so each gets its own nodes and any number can coexist.
+  Hand-configured Roc peers (seeded to match the current deployment -
+  `sagedeck`, `sage-dev`) show up too, with working volume control, but
+  can't be removed from the UI. `sage`, the Windows VBAN peer, is managed.
 - **Per-card status dot** (headsets and peers): green/amber/red/grey next
   to each name. For Roc peers running the Bragi Client tray app
   (`sage-dev`, `sagedeck` - see `client/`), this is *real* reachability - a
@@ -100,12 +103,12 @@ every change, so the two controls don't fight each other (see
 
 Bragi is a Python/FastAPI app that never talks to the PipeWire socket
 directly - it shells out to `pw-dump`, `wpctl`, and `pw-cli`, the same
-tools you'd use by hand. PipeWire itself, WirePlumber, the Roc modules, and
-VBAN all stay bare-metal on the host - only this UI runs in Docker.
+tools you'd use by hand. PipeWire itself, WirePlumber, and the Roc and VBAN
+modules all stay bare-metal on the host - only this UI runs in Docker.
 
 ```
 ┌─────────────── sagepi (bare metal) ─────────────────┐
-│  PipeWire + WirePlumber + Roc modules + VBAN         │
+│  PipeWire + WirePlumber + Roc and VBAN modules       │
 │  /dev/input/eventN (headset volume-knob HID)         │
 │  ~/.config/pipewire/pipewire.conf.d/*.conf           │
 │  bragi-peers.service: `pipewire -c peers.conf`       │
@@ -144,14 +147,9 @@ These are the design constraints. For open bugs and deferred features, see
   sink within milliseconds - confirmed live, not a bug to fix. Balance only
   holds on software nodes (the Roc/VBAN peer streams), which is why only
   peer "incoming" strips have a pad.
-- **VBAN peers can't be added/removed from the UI.** `vban_emitter`/
-  `vban_receptor` always register as a PipeWire client literally named
-  `vban` - Bragi tells the two directions apart by stream class
-  (`Stream/Input/Audio` = mic going out, `Stream/Output/Audio` = incoming
-  playback), which only works unambiguously with a single VBAN peer. A
-  second VBAN peer would need a different disambiguation strategy
-  (probably: give up on PipeWire-level naming and track VBAN peers by PID
-  or by wrapping each in a differently-named systemd service).
+- **VBAN peers share one port and one format.** Every VBAN peer uses port
+  6980 at 48 kHz, 16-bit stereo, and each must send a stream name no other
+  VBAN peer uses: the receiver tells streams apart by name.
 - **Adding or removing one managed peer briefly drops all of them.** The
   host unit restarts the whole `peers.conf` process to apply a change -
   about a second of silence on every Bragi-managed peer, none on the

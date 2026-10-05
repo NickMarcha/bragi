@@ -24,11 +24,9 @@ loop itself:
 Headsets are targeted by node *name* (stable - headsets_module already
 tracks this). Peers are targeted by node *id*, not the synthetic
 peer_incoming_node_name/peer_outgoing_node_name views.py uses for
-audio_state keys - those aren't real PipeWire node names. This matters
-concretely for VBAN: both its directions are literally named "vban" (see
-views.resolve_node_id), so targeting by name would be ambiguous - the id
-views.resolve_node_id already resolves (with its own media-class
-disambiguation) is the only unambiguous handle. Ids are ephemeral, but
+audio_state keys, using the id views.resolve_node_id already resolved.
+(Before VBAN peers moved into peers.conf, both VBAN directions were named
+"vban", and the id was the only unambiguous handle.) Ids are ephemeral, but
 _desired_nodes() re-resolves from scratch every reconcile pass anyway, so a
 churned id just looks like "target changed" and gets a fresh capture
 started - the same tolerance the rest of this codebase already has for

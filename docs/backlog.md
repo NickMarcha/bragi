@@ -43,15 +43,13 @@ is a one-liner in the meantime.
 
 ## Operational
 
-### vban-sage.service should not need a manual restart
+### Retire vban-sage.service on sagepi
 
-A `pipewire.service` restart on `sagepi` silently breaks the running
-`vban_receptor` / `vban_emitter` processes, which hold a dead PulseAudio
-socket open and never reconnect. The current fix is a manual
-`systemctl --user restart vban-sage.service`. It belongs in the unit as a
-`BindsTo=pipewire-pulse.service` dependency, or as a reconnect-with-backoff
-loop around the `pa_simple_write` failure. See
-[`audio-bridge.md`](audio-bridge.md#restart-coupling-vban-does-not-self-heal).
+VBAN peers now run from `peers.conf`, so the old `vban_emitter`/`vban_receptor`
+unit must be disabled once the change is deployed. Steps in
+[`audio-bridge.md`](audio-bridge.md#switching-sagepi-over). After that, a
+`pipewire.service` restart no longer needs a manual VBAN restart. The
+`~/.local/bin/vban_*` binaries can be removed once the new path has held up.
 
 ### Autostart entry for the tray app on sage-dev
 
@@ -62,18 +60,10 @@ start it locally on `sage-dev` once, or log out and back in.
 
 ## Deferred features
 
-### VBAN peers cannot be added or removed from the UI
-
-`vban_emitter` / `vban_receptor` always register as a PipeWire client
-literally named `vban`. Bragi tells the two directions apart by stream class,
-which only works with a single VBAN peer. A second one needs a different
-disambiguation strategy, probably tracking VBAN peers by PID or wrapping
-each in its own differently-named systemd service.
-
 ### Hand-configured peers cannot be removed from the UI
 
-Peers seeded in `app/peers.py`'s `_seed_peers()` (`sagedeck`, `sage-dev`,
-`sage`) are volume-controllable but not removable. Editing them means
+Roc peers seeded in `app/peers.py`'s `_seed_peers()` (`sagedeck`, `sage-dev`)
+are volume-controllable but not removable. Editing them means
 touching `~/.config/pipewire/pipewire.conf.d/` on `sagepi` directly.
 
 ### Dual-headset playback on sagepi

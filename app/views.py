@@ -17,33 +17,20 @@ from . import viz_settings
 def resolve_node_id(graph: pipewire.Graph, peer: peers_module.Peer, direction: str) -> int | None:
     """direction: 'outgoing' (sagepi's mic, going to this peer) or
     'incoming' (this peer's audio, arriving at sagepi's headset)."""
-    nodes = graph.nodes
-    if peer.protocol == "roc":
-        name = peer.outgoing_sink_name if direction == "outgoing" else peer.incoming_source_name
-        return pipewire.find_node_id(nodes, name) if name else None
-    if peer.protocol == "vban":
-        # VBAN clients are always named literally "vban" - direction is the
-        # only thing that distinguishes them, which only works cleanly with
-        # a single VBAN peer. See README's "Known Limitations".
-        wanted_class = "Stream/Input/Audio" if direction == "outgoing" else "Stream/Output/Audio"
-        for node in nodes:
-            if node.name == "vban" and node.media_class == wanted_class:
-                return node.id
-    return None
+    # Roc and VBAN peers alike: the managed modules name both nodes.
+    name = peer.outgoing_sink_name if direction == "outgoing" else peer.incoming_source_name
+    return pipewire.find_node_id(graph.nodes, name) if name else None
 
 
 def peer_incoming_node_name(peer: peers_module.Peer) -> str:
-    # VBAN's incoming node is always literally named "vban" (see
-    # resolve_node_id) - balance state would collide across multiple VBAN
-    # peers, same limitation the README already documents for VBAN peers.
-    return peer.incoming_source_name if peer.protocol == "roc" else "vban-incoming"
+    return peer.incoming_source_name
 
 
 def peer_outgoing_node_name(peer: peers_module.Peer) -> str:
-    # Mirrors peer_incoming_node_name - the outgoing (mic->peer) direction is
-    # just as much a software Roc/VBAN stream node as incoming is, so it's
-    # equally safe to pan (unlike headset directions, see direction_view).
-    return peer.outgoing_sink_name if peer.protocol == "roc" else "vban-outgoing"
+    # The outgoing (mic->peer) direction is just as much a software stream
+    # node as incoming is, so it's equally safe to pan (unlike headset
+    # directions, see direction_view).
+    return peer.outgoing_sink_name
 
 
 Volumes = dict[int, tuple[float | None, bool]]
@@ -100,7 +87,7 @@ def peer_view(graph: pipewire.Graph, peer: peers_module.Peer, volumes: Volumes |
         "outgoing": direction_view(out_id, peer_outgoing_node_name(peer), volumes),
         "incoming": direction_view(in_id, peer_incoming_node_name(peer), volumes),
         # Only meaningful for peers with a Bragi Client tray app (currently
-        # Roc peers only - VBAN's "sage" has no client yet, see
+        # Roc peers only - VBAN peers like "sage" have no client yet, see
         # client/README.md). None (not False) for other protocols, so the
         # template can tell "no client mechanism exists for this peer" apart
         # from "client exists but isn't connected right now".

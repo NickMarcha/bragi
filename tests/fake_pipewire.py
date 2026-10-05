@@ -195,8 +195,8 @@ def sagepi_session() -> FakeSession:
         FakeNode(53, "sagedeck-audio", "sagedeck-audio", "Stream/Output/Audio"),
         FakeNode(56, "sagedev-test-sink", "sagedev-test-sink", "Audio/Sink"),
         FakeNode(58, "sagedev-audio", "sagedev-audio", "Stream/Output/Audio"),
-        FakeNode(211, "vban", "vban", "Stream/Output/Audio"),
-        FakeNode(220, "vban", "vban", "Stream/Input/Audio"),
+        FakeNode(211, "sage-outgoing-sink", "sage (VBAN, via Bragi)", "Audio/Sink"),
+        FakeNode(220, "sage-incoming-source", "sage (VBAN, via Bragi)", "Stream/Output/Audio"),
         FakeNode(117, "alsa_output.platform-fe00b840.mailbox.stereo-fallback", "Built-in Audio", "Audio/Sink"),
     ]
     enabled = FakeCard(

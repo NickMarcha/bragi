@@ -534,7 +534,13 @@ body.viz-enabled .level-meter {
   gap: 0.3rem;
 }
 
-#add-peer input {
+/* Stream names only apply to VBAN; :has() keeps this free of JS. */
+#add-peer:has(select[name="protocol"] option[value="roc"]:checked) .vban-only {
+  display: none;
+}
+
+#add-peer input,
+#add-peer select {
   background: var(--bg);
   border: 1px solid var(--border);
   color: var(--text);

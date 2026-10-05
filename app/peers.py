@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -42,6 +43,11 @@ MANAGED_CONF_FILE = DATA_DIR / "peers.conf"
 # BRAGI_ROC_PORT_BASE moves local dev peers into a free port range.
 _PORT_BASE = int(os.environ.get("BRAGI_ROC_PORT_BASE", "10041"))
 _PORT_BLOCK_SIZE = 10
+
+# VBAN multiplexes streams by name on one port; Voicemeeter's default.
+VBAN_PORT = 6980
+# VBAN stream names are at most 16 bytes on the wire, and land in peers.conf.
+_VBAN_STREAM_NAME = re.compile(r"^[A-Za-z0-9_-]{1,16}$")
 
 logger = logging.getLogger("bragi.peers")
 
@@ -103,16 +109,28 @@ def _seed_peers() -> list[Peer]:
             outgoing_sink_name="sagedev-test-sink",
             incoming_source_name="sagedev-audio",
         ),
-        Peer(
-            name="sage",
-            protocol="vban",
-            tailscale_ip="100.71.149.116",
-            managed=False,
-            vban_port=6980,
-            stream_send="SagepiMic",
-            stream_receive="SageAudio",
-        ),
+        _vban_peer("sage", "100.71.149.116", "SagepiMic", "SageAudio"),
     ]
+
+
+def _vban_peer(name: str, tailscale_ip: str, stream_send: str, stream_receive: str) -> Peer:
+    return Peer(
+        name=name, protocol="vban", tailscale_ip=tailscale_ip, managed=True,
+        outgoing_sink_name=f"{name}-outgoing-sink", incoming_source_name=f"{name}-incoming-source",
+        vban_port=VBAN_PORT, stream_send=stream_send, stream_receive=stream_receive,
+    )
+
+
+def _migrate_vban_peers(peers: list[Peer]) -> bool:
+    """sage ran on vban_emitter/vban_receptor under a hand-written unit
+    (vban-sage.service) until VBAN peers moved into peers.conf. Its stream
+    names and address carry over unchanged."""
+    changed = False
+    for i, peer in enumerate(peers):
+        if peer.protocol == "vban" and not peer.managed:
+            peers[i] = _vban_peer(peer.name, peer.tailscale_ip, peer.stream_send, peer.stream_receive)
+            changed = True
+    return changed
 
 
 def load_peers() -> list[Peer]:
@@ -215,6 +233,13 @@ def _roc_conf_block(peer: Peer) -> str:
           }}
       }}
     }}
+{_mic_loopback_block(peer, capture_target, capture_monitor)}"""
+
+
+def _mic_loopback_block(peer: Peer, capture_target: str, capture_monitor: str = "") -> str:
+    """Feeds the peer's outgoing sink. See _roc_conf_block for why the
+    capture side must never fall back to another source."""
+    return f"""\
     {{ name = libpipewire-module-loopback
       args = {{
           capture.props = {{
@@ -228,6 +253,59 @@ def _roc_conf_block(peer: Peer) -> str:
               target.object = "{peer.outgoing_sink_name}"
               node.name = "mic-to-{peer.name}-playback"
           }}
+      }}
+    }}
+"""
+
+
+def _vban_send_block(peer: Peer) -> str:
+    # 48 kHz 16-bit stereo is what sage's Voicemeeter got from vban_emitter.
+    mic_source_name = _headset_mic_source_name() or "alsa_input.MISSING"
+    return f"""\
+    {{ name = libpipewire-module-vban-send
+      args = {{
+          destination.ip = {peer.tailscale_ip}
+          destination.port = {peer.vban_port}
+          sess.name = "{peer.stream_send}"
+          audio.format = "S16LE"
+          audio.rate = 48000
+          audio.channels = 2
+          audio.position = [ FL FR ]
+          stream.props = {{
+              # Without it the module makes a capture stream that WirePlumber
+              # links straight to the default source, bypassing the loopback.
+              media.class = "Audio/Sink"
+              node.name = "{peer.outgoing_sink_name}"
+              node.description = "{peer.name} (VBAN, via Bragi)"
+          }}
+      }}
+    }}
+{_mic_loopback_block(peer, mic_source_name)}"""
+
+
+def _vban_recv_block(peers: list[Peer]) -> str:
+    """One receiver per port: VBAN multiplexes by stream name, and only one
+    socket can bind the port. Each rule names one peer's stream; streams
+    from anyone else are ignored. nofail, because a port clash (an old
+    vban_receptor still running) must not stop the Roc peers starting."""
+    (port,) = {p.vban_port for p in peers}
+    rules = "".join(f"""
+              {{ matches = [ {{ sess.name = "{p.stream_receive}"
+                               vban.ip = "{p.tailscale_ip}" }} ]
+                actions = {{ create-stream = {{
+                    node.name = "{p.incoming_source_name}"
+                    node.description = "{p.name} (VBAN, via Bragi)"
+                }} }}
+              }}""" for p in peers)
+    return f"""\
+    {{ name = libpipewire-module-vban-recv
+      flags = [ nofail ]
+      args = {{
+          source.ip = 0.0.0.0
+          source.port = {port}
+          sess.latency.msec = 40
+          stream.rules = [{rules}
+          ]
       }}
     }}
 """
@@ -264,7 +342,9 @@ context.modules = [
 
 def _regenerate_managed_conf(peers: list[Peer]) -> None:
     managed = [p for p in peers if p.managed and p.protocol == "roc"]
-    blocks = "\n".join(_roc_conf_block(p) for p in managed)
+    vban = [p for p in peers if p.managed and p.protocol == "vban"]
+    blocks = "\n".join([_roc_conf_block(p) for p in managed] + [_vban_send_block(p) for p in vban]
+                       + ([_vban_recv_block(vban)] if vban else []))
     content = f"{_CONF_PREAMBLE}{blocks}]\n"
     # Unchanged content is left alone: the path unit restarts every managed
     # peer on any write to this file, so writing it anyway would drop their
@@ -293,6 +373,8 @@ def sync_managed_conf() -> None:
     without waiting for the next add or remove."""
     with _lock:
         peers = load_peers()
+        if _migrate_vban_peers(peers):
+            save_peers(peers)
         # With no mic to name, every loopback would target a node that
         # doesn't exist (see _roc_conf_block) - starting while the headset
         # is disabled must not replace a file that names the real one.
@@ -317,6 +399,24 @@ def add_roc_peer(name: str, tailscale_ip: str) -> Peer:
             outgoing_sink_name=f"{name}-outgoing-sink",
             incoming_source_name=f"{name}-incoming-source",
         )
+        peers.append(peer)
+        save_peers(peers)
+        _regenerate_managed_conf(peers)
+        return peer
+
+
+def add_vban_peer(name: str, tailscale_ip: str, stream_send: str, stream_receive: str) -> Peer:
+    for stream in (stream_send, stream_receive):
+        if not _VBAN_STREAM_NAME.match(stream):
+            raise ValueError("VBAN stream names are 1-16 letters, digits, '-' or '_'")
+    with _lock:
+        peers = load_peers()
+        if any(p.name == name for p in peers):
+            raise ValueError(f"peer '{name}' already exists")
+        # Once a stream exists, vban-recv looks it up by name alone.
+        if any(p.protocol == "vban" and p.stream_receive == stream_receive for p in peers):
+            raise ValueError(f"another VBAN peer already sends a stream named '{stream_receive}'")
+        peer = _vban_peer(name, tailscale_ip, stream_send, stream_receive)
         peers.append(peer)
         save_peers(peers)
         _regenerate_managed_conf(peers)

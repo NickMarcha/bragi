@@ -42,7 +42,7 @@ the same time and feed the same headset capture and playback nodes.
 | Protocol | Used for | Why |
 |---|---|---|
 | Roc, via PipeWire `module-roc-sink` / `module-roc-source` | `sage-dev`, `sagedeck` | Built for real-time network audio. Has FEC with a configurable repair-packet ratio, which addresses the bursty-delivery underruns that VBAN hit in the older deck-assistant #008 setup. Ships as PipeWire modules, so there is no separate daemon and no boot-order retry wrapper. Upstream supports Linux, macOS, and Android only. |
-| VBAN, via `vban_emitter` / `vban_receptor` built from source | `sage` (Windows) | Roc has no Windows client. `sage` already ran Voicemeeter Banana from deck-assistant #008/#014. VBAN has no FEC, and its PulseAudio backend drops buffer-latency settings on the capture side, so the Pi's emitter needs `PULSE_LATENCY_MSEC=5`. Voicemeeter's own VBAN implementation is solid, so only the Pi side carries risk and that part is already worked out. |
+| VBAN, via PipeWire `module-vban-send` / `module-vban-recv` | `sage` (Windows) | Roc has no Windows client. `sage` already ran Voicemeeter Banana from deck-assistant #008/#014. VBAN has no FEC. Until 2026-10 the Pi side was `vban_emitter`/`vban_receptor` built from source, which needed `PULSE_LATENCY_MSEC=5` and could not survive a PipeWire restart; see below. |
 
 Plain PipeWire RTP was rejected as not production-ready. NDI was rejected as
 video-first, proprietary, heavier at runtime, and no FEC advantage over Roc.
@@ -65,8 +65,13 @@ source, repair, control.
 | `sage-dev` | mic | 10021 | 10022 | 10023 |
 | `sage-dev` | playback | 10031 | 10032 | 10033 |
 
-VBAN multiplexes by stream name rather than by port, so `sage` uses one port
-(6980) for both directions.
+VBAN multiplexes by stream name rather than by port, so every VBAN peer uses
+port 6980 for both directions. One `vban-recv` module binds it and routes each
+peer's stream, matched by sender address and stream name, to that peer's own
+`<name>-incoming-source` node. Streams that match no peer are ignored. Each
+peer's `vban-send` sink, `<name>-outgoing-sink`, is fed by the same mic loopback
+as a Roc peer's and sends 48 kHz 16-bit stereo, which is what Voicemeeter got
+from `vban_emitter`. `sage` sends `SageAudio` and receives `SagepiMic`.
 
 `fec.code` is `disable` on every Roc peer. FEC tuning was deferred and never
 turned out to be needed for casual voice use.
@@ -167,27 +172,50 @@ re-established both times) and by a real `sudo reboot` on `sagepi`
 no manual repair). The #008-era `wait_for_network` dependency that VBAN's
 CLI tools needed does not apply to Roc's UDP-socket modules.
 
-## Restart coupling: VBAN does not self-heal
+## VBAN moved into peers.conf
 
-The Roc legs recover from a `pipewire.service` restart by themselves,
-because the daemon reloads their `context.modules` entries. VBAN does not.
+`sage` used to run on `vban_receptor` and `vban_emitter`, under a hand-written
+`vban-sage.service` on `sagepi`. They reached PipeWire through the PulseAudio
+compatibility socket. When `pipewire.service` restarted, `pipewire-pulse`
+restarted with it, and the long-lived VBAN processes kept their dead
+`pa_simple` connection, erroring on every write instead of reconnecting. Every
+PipeWire restart needed a manual `systemctl --user restart vban-sage.service`.
+Both processes also registered as a client literally named `vban`, so Bragi
+could only tell the directions apart by stream class, and only one VBAN peer
+could exist.
 
-`vban_receptor` and `vban_emitter` connect to their playback target through
-the PulseAudio compatibility socket (`-b pulseaudio`). When
-`pipewire.service` restarts, `pipewire-pulse` restarts with it, and the
-long-lived VBAN processes keep their now-dead `pa_simple` connection open
-and error on every write instead of reconnecting. `vban_receptor` has no
-reconnect logic for a severed Pulse socket.
+PipeWire 1.4 on trixie ships `module-vban-send` and `module-vban-recv`. VBAN
+peers are now blocks in Bragi's `peers.conf`, so they restart with
+`bragi-peers.service`, which is bound to `pipewire.service`, and each gets its
+own node names. On startup Bragi converts the old hand-configured `sage` entry
+in `peers.yaml` into a managed peer with the same address and stream names.
 
-So any `pipewire.service` restart on `sagepi` needs a follow-up:
+Two details matter, both verified against PipeWire 1.4.2 in a container:
+
+- `vban-send` needs `media.class = "Audio/Sink"` in its `stream.props`.
+  Without it the module creates a capture stream, and WirePlumber links it
+  straight to the default source, bypassing the mic loopback.
+- `vban-recv` carries `flags = [ nofail ]`. If something else holds port 6980
+  (an old `vban_receptor`), VBAN receiving fails but the Roc peers in the same
+  file still start.
+
+### Switching sagepi over
+
+The deploy that ships this rewrites `peers.conf` with `sage` in it, while
+`vban-sage.service` is still running. Until that unit stops, `vban_receptor`
+holds port 6980 (so the new receiver fails, harmlessly) and `sage` gets
+`SagepiMic` twice. Right after the deploy, on `sagepi`:
 
 ```bash
-systemctl --user restart vban-sage.service
+systemctl --user disable --now vban-sage.service
+systemctl --user restart bragi-peers.service
 ```
 
-This belongs in the unit as a `BindsTo=pipewire-pulse.service` dependency,
-or as a reconnect-with-backoff loop around the `pa_simple_write` failure.
-See [`backlog.md`](backlog.md).
+Then check that `pw-dump | grep -E 'sage-(outgoing-sink|incoming-source)'`
+shows both nodes while `sage` is sending, and that Voicemeeter receives
+`SagepiMic`. `sage`'s fader and balance settings start fresh, since its nodes
+have new names. To roll back, re-enable `vban-sage.service` and revert the
+commit.
 
 ## Dual-headset playback, and why sagepi runs one headset
 

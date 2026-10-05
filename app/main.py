@@ -139,10 +139,18 @@ def select_microphone(request: Request, source: str = Form(...)):
 
 
 @app.post("/peers", response_class=HTMLResponse)
-def add_peer(request: Request, name: str = Form(...), tailscale_ip: str = Form(...)):
+def add_peer(request: Request, name: str = Form(...), tailscale_ip: str = Form(...),
+             protocol: Literal["roc", "vban"] = Form("roc"), stream_send: str = Form(""),
+             stream_receive: str = Form("")):
     name = name.strip().lower().replace(" ", "-")
     try:
-        peers_module.add_roc_peer(name, tailscale_ip.strip())
+        if protocol == "vban":
+            # The Pi's mic goes out as SagepiMic and the peer's audio comes
+            # back as <Name>Audio, matching how sage's Voicemeeter is set up.
+            peers_module.add_vban_peer(name, tailscale_ip.strip(), stream_send.strip() or "SagepiMic",
+                                       stream_receive.strip() or f"{name.replace('-', '').capitalize()[:11]}Audio")
+        else:
+            peers_module.add_roc_peer(name, tailscale_ip.strip())
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except peers_module.ConfigWriteError as exc:

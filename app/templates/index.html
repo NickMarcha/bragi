@@ -55,9 +55,17 @@
       <form hx-post="/peers" hx-target="#peers" hx-swap="innerHTML">
         <label>Name <input type="text" name="name" placeholder="e.g. sage-laptop" required /></label>
         <label>Tailscale IP <input type="text" name="tailscale_ip" placeholder="100.x.x.x" required pattern="^100\.\d+\.\d+\.\d+$" /></label>
-        <button type="submit">Add (Roc)</button>
+        <label>Protocol
+          <select name="protocol">
+            <option value="roc">Roc (Linux, Android)</option>
+            <option value="vban">VBAN (Windows, Voicemeeter)</option>
+          </select>
+        </label>
+        <label class="vban-only">Stream to peer <input type="text" name="stream_send" placeholder="SagepiMic" maxlength="16" pattern="^[A-Za-z0-9_\-]{1,16}$" /></label>
+        <label class="vban-only">Stream from peer <input type="text" name="stream_receive" placeholder="&lt;Name&gt;Audio" maxlength="16" pattern="^[A-Za-z0-9_\-]{1,16}$" /></label>
+        <button type="submit">Add peer</button>
       </form>
-      <p class="hint">VBAN peers (e.g. Windows machines) aren't addable from the UI yet — see README.</p>
+      <p class="hint vban-only">VBAN stream names must match the peer's Voicemeeter VBAN settings, on port 6980 at 48 kHz.</p>
     </section>
   </main>
 </body>

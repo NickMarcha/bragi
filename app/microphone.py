@@ -1,6 +1,6 @@
 """Choose the microphone feeding desktop peers and restore its links after reconnects.
 
-Roc desktop sinks and the VBAN capture stream remain unchanged. Only their input
+Desktop Roc and VBAN sinks remain unchanged. Only their input
 links change. Android playback receivers are excluded so microphone audio is not
 mixed into the phone's headset playback feed.
 """
@@ -69,11 +69,9 @@ def _reconcile() -> None:
                       if props.get('media.class') == 'Audio/Source' and (
                           props.get('node.name', '').startswith('alsa_input.usb-') if source == 'headset'
                           else phone is not None and props.get('node.name') == phone.incoming_source_name)), None)
-    sink_names = {p.outgoing_sink_name for p in registry if p.protocol == 'roc' and p.client_kind != 'android'}
-    has_vban = any(p.protocol == 'vban' for p in registry)
+    sink_names = {p.outgoing_sink_name for p in registry if p.client_kind != 'android'}
     target_ids = {node_id for node_id, props in nodes.items()
-                  if props.get('node.name') in sink_names or (
-                      has_vban and props.get('node.name') == 'vban' and props.get('media.class') == 'Stream/Input/Audio')}
+                  if props.get('node.name') in sink_names}
     ports = [(obj['id'], obj.get('info', {}).get('props', {})) for obj in objects
              if obj.get('type') == 'PipeWire:Interface:Port']
     outputs = [(port_id, props) for port_id, props in ports
