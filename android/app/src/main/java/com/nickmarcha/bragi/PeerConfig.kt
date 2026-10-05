@@ -29,7 +29,7 @@ data class PeerConfig(
 }
 
 enum class CaptureMode(val wireName: String) {
-    MICROPHONE("microphone"), DEVICE_AUDIO("device_audio");
+    MICROPHONE("microphone"), DEVICE_AUDIO("device_audio"), NONE("none");
     companion object {
         fun parse(value: String) = entries.firstOrNull { it.wireName == value }
             ?: throw IllegalArgumentException("Unknown audio source: $value")

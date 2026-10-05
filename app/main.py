@@ -77,7 +77,7 @@ async def peer_presence_ws(websocket: WebSocket, name: str) -> None:
 class AndroidRegistration(BaseModel):
     name: str = Field(pattern=r"^[a-z][a-z0-9-]{0,39}$")
     tailscale_ip: str
-    capture_mode: Literal["microphone", "device_audio"] = "microphone"
+    capture_mode: Literal["microphone", "device_audio", "none"] = "microphone"
 
     @field_validator("tailscale_ip")
     @classmethod

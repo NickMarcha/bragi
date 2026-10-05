@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var ip: EditText
     private val microphoneId = View.generateViewId()
     private val deviceAudioId = View.generateViewId()
+    private val noneId = View.generateViewId()
     private lateinit var modes: RadioGroup
     private lateinit var start: Button
     private lateinit var stop: Button
@@ -46,7 +47,7 @@ class MainActivity : ComponentActivity() {
     private val preferences by lazy { getSharedPreferences("bragi", MODE_PRIVATE) }
 
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) requestCapture()
+        if (mode() == CaptureMode.NONE || ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) requestCapture()
         else status.text = "Microphone permission is required for Android audio capture."
     }
     private val projectionPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -69,7 +70,7 @@ class MainActivity : ComponentActivity() {
         }
         fun text(value: String, size: Float = 16f) = TextView(this).apply { text = value; textSize = size; panel.addView(this) }
         text("Bragi", 28f)
-        text("Send phone audio to your network headset.")
+        text("Send phone audio to your network headset, or just listen to it.")
         fun field(label: String, initial: String, type: Int): EditText {
             text(label)
             return EditText(this).apply { setText(initial); inputType = type; setSingleLine(); panel.addView(this) }
@@ -83,7 +84,8 @@ class MainActivity : ComponentActivity() {
         modes = RadioGroup(this).apply {
             addView(RadioButton(this@MainActivity).apply { id = microphoneId; text = "Phone microphone" })
             addView(RadioButton(this@MainActivity).apply { id = deviceAudioId; text = "Device audio" })
-            check(if (preferences.getString("mode", "microphone") == "device_audio") deviceAudioId else microphoneId)
+            addView(RadioButton(this@MainActivity).apply { id = noneId; text = "None (listen only)" })
+            check(when (preferences.getString("mode", "microphone")) { "device_audio" -> deviceAudioId; "none" -> noneId; else -> microphoneId })
             panel.addView(this)
         }
         text("Device audio needs Android's capture approval each time you start. Apps can block capture; calls may not be available.", 13f)
@@ -166,7 +168,11 @@ class MainActivity : ComponentActivity() {
         Toast.makeText(this, "Logs copied", Toast.LENGTH_SHORT).show()
     }
 
-    private fun mode() = if (modes.checkedRadioButtonId == deviceAudioId) CaptureMode.DEVICE_AUDIO else CaptureMode.MICROPHONE
+    private fun mode() = when (modes.checkedRadioButtonId) {
+        deviceAudioId -> CaptureMode.DEVICE_AUDIO
+        noneId -> CaptureMode.NONE
+        else -> CaptureMode.MICROPHONE
+    }
     private fun prepareStart() {
         try {
             serverUrl(server.text.toString())
@@ -175,7 +181,7 @@ class MainActivity : ComponentActivity() {
             preferences.edit().putString("server", server.text.toString()).putString("name", name.text.toString())
                 .putString("ip", ip.text.toString()).putString("mode", mode().wireName).apply()
             val needed = mutableListOf<String>()
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.RECORD_AUDIO
+            if (mode() != CaptureMode.NONE && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.RECORD_AUDIO
             if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.POST_NOTIFICATIONS
             if (needed.isEmpty()) requestCapture() else permissions.launch(needed.toTypedArray())
         } catch (error: Exception) { status.text = error.message }

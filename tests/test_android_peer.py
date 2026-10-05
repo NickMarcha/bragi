@@ -110,3 +110,19 @@ def test_android_microphone_is_a_source_and_receives_headset_playback(session):
     text = peers.MANAGED_CONF_FILE.read_text()
     assert 'media.class = "Audio/Source"' not in text
     assert 'stream.capture.sink = true' in text
+
+
+def test_listen_only_phone_receives_without_a_send_control(session):
+    client = TestClient(app)
+    config = register(client, capture_mode='none').json()
+    assert config['capture_mode'] == 'none'
+    assert config['send_enabled'] is False
+    assert config['receive_enabled'] is True
+    html = client.get('/peers').text
+    assert 'data-stream="send"' not in html
+    assert 'Listen to headset audio' in html
+    result = client.post('/api/peers/fairphone/streams', json={'send_enabled': True, 'receive_enabled': True})
+    assert result.json()['send_enabled'] is False
+    config = register(client).json()
+    assert config['send_enabled'] is True
+    assert config['receive_enabled'] is False

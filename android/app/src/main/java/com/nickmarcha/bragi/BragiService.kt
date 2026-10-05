@@ -61,10 +61,11 @@ class BragiService : Service() {
             require(validPeerName(name) && validTailnetIp(ip)) { "Check the peer name and Tailscale IP." }
             getSystemService(NotificationManager::class.java).createNotificationChannel(
                 NotificationChannel(CHANNEL, "Bragi audio service", NotificationManager.IMPORTANCE_LOW))
-            val captureType = if (mode == CaptureMode.MICROPHONE) {
-                if (Build.VERSION.SDK_INT >= 30) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
+            val captureType = when (mode) {
+                CaptureMode.MICROPHONE -> if (Build.VERSION.SDK_INT >= 30) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
+                CaptureMode.DEVICE_AUDIO -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                CaptureMode.NONE -> 0
             }
-                              else ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             Diagnostics.record("Starting audio service: ${mode.wireName}")
             mutableState.value = State(running = true, connection = "Starting…")
             startForeground(NOTIFICATION, notification(), captureType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)

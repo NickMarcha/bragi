@@ -75,10 +75,12 @@
     {% if view.client_kind == "android" %}
     <div class="client-controls" data-send-enabled="{{ 'true' if view.send_enabled else 'false' }}"
          data-receive-enabled="{{ 'true' if view.receive_enabled else 'false' }}">
+      {% if view.capture_mode != "none" %}
       <button class="client-control-btn {{ 'active' if view.send_enabled }}" data-action="toggle-stream"
               data-key="{{ view.name }}" data-stream="send">
         {{ "Send microphone" if view.capture_mode == "microphone" else "Send device audio" }}
       </button>
+      {% endif %}
       <button class="client-control-btn {{ 'active' if view.receive_enabled }}" data-action="toggle-stream"
               data-key="{{ view.name }}" data-stream="receive">Listen to headset audio</button>
       <p class="client-stream-status">

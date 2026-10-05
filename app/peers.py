@@ -352,6 +352,10 @@ def register_android_peer(name: str, tailscale_ip: str, capture_mode: str) -> Pe
             )
             peers.append(peer)
         peer.tailscale_ip = tailscale_ip
+        if capture_mode != peer.capture_mode and "none" in (capture_mode, peer.capture_mode):
+            # A listen-only phone has nothing to send; switching back restores sending.
+            peer.send_enabled = capture_mode != "none"
+            peer.receive_enabled = capture_mode == "none"
         peer.capture_mode = capture_mode
         save_peers(peers)
         _regenerate_managed_conf(peers)
@@ -364,7 +368,7 @@ def set_android_streams(name: str, send_enabled: bool, receive_enabled: bool) ->
         peer = next((p for p in peers if p.name == name and p.client_kind == "android"), None)
         if peer is None:
             raise ValueError(f"Android peer '{name}' not found")
-        peer.send_enabled = send_enabled
+        peer.send_enabled = send_enabled and peer.capture_mode != "none"
         peer.receive_enabled = receive_enabled
         save_peers(peers)
         # Only the app changes its streams. Restarting PipeWire peers here

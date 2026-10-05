@@ -1,6 +1,6 @@
 Native Kotlin Android client for Bragi over Tailscale.
 
-- Select phone microphone or eligible device/app audio.
+- Select phone microphone, eligible device/app audio, or none to only listen.
 - Start the foreground audio service on the phone, then control streams from the Bragi web UI.
 - Open the web UI from the app.
 - Check GitHub for updates daily when opening the app, or check manually. Android confirms installation.
@@ -77,3 +77,10 @@ none with the buffer-aware latency.
 The FP5 now uses about 201 ms of Roc buffering. This increases listening delay;
 devices with smaller playback buffers use less. Sending is unchanged. Playback
 diagnostics remain available. Phone confirmation of the fix is still needed.
+
+## 0.1.8 listen-only mode
+
+Choose None (listen only) as the audio source to hear Bragi audio without sending
+anything. The app skips the microphone permission and the capture approval, and
+Bragi turns listening on for the phone and hides its send control in the web UI.
+This needs the matching Bragi server update; older servers reject the mode.

@@ -32,7 +32,7 @@ class AudioEngine(
 
     suspend fun apply(sendEnabled: Boolean, receiveEnabled: Boolean) = withContext(Dispatchers.IO) {
         changes.withLock {
-        if (!sendEnabled) { sender?.stop(); sender = null }
+        if (!sendEnabled || mode == CaptureMode.NONE) { sender?.stop(); sender = null }
         else if (sender?.isAlive != true) { sender = Worker(true).also { it.start() } }
         if (!receiveEnabled) { receiver?.stop(); receiver = null }
         else if (receiver?.isAlive != true) { receiver = Worker(false).also { it.start() } }

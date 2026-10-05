@@ -23,6 +23,10 @@ class PeerConfigTest {
         assertFalse(peer.receiveEnabled)
     }
 
+    @Test fun listen_only_phones_have_no_capture_source() {
+        assertEquals(CaptureMode.NONE, PeerConfig.parse(config().put("capture_mode", "none")).mode)
+    }
+
     @Test fun unsupported_server_formats_fail_before_audio_starts() {
         for (value in listOf(config().put("fec", "rs8m"), config().put("sample_rate", 48000),
                              config().put("channels", 1), config().put("capture_mode", "unknown"))) {
