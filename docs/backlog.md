@@ -91,15 +91,13 @@ and the device checks still outstanding are in
 
 Still open:
 
-- **Sending delay.** Microphone and device-audio capture still use Android's
-  default recording buffers; listening got the low-latency treatment in 0.1.9,
-  sending has not.
+- **Sending delay.** 0.1.10 measures the phone-side part (about 17 ms on the
+  emulator) and shows it in the app and on the web UI card. Capture still uses
+  Android's default recording buffers. Shrink whichever part the FP5 numbers
+  show is large; the Pi's Roc receiver latency (40 ms) is the likely candidate.
 - **Roc jitter headroom.** Listening keeps a fixed 40 ms on top of the playback
   buffer. Lowering it needs a jitter measurement over Tailscale, or a setting.
 - **Pi-side delay** of the managed loopback and Roc sender is unmeasured.
-- **Listening delay in the web UI.** The app shows it; the peer card does not.
-- **Stale saved Tailscale IP.** A saved address overrides fresh detection. This
-  caused the first listening failure (issue #1) when the phone's address changed.
 - **Listen-only status line** reads "Sender paused · Listening".
 - **16 KiB-page phones.** The bundled Roc native libraries use 4 KiB alignment.
 - **F-Droid**: needs a source-built Roc AAR and reproducible APK builds.

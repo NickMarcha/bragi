@@ -25,6 +25,8 @@ class AudioEngine(
     private val onStatus: (Boolean, Boolean, String?) -> Unit,
     /** Phone-side listening delay in ms (Roc buffer plus Android output), or null when not playing. */
     private val onListeningDelay: (Int?) -> Unit = {},
+    /** Phone-side sending delay in ms (captured but not yet handed to Roc), or null when not sending. */
+    private val onSendingDelay: (Int?) -> Unit = {},
 ) {
     private val changes = Mutex()
     private var sender: Worker? = null
@@ -104,15 +106,41 @@ class AudioEngine(
                         sending.set(true)
                         onStatus(sending.get(), receiving.get(), null)
                         val pcm = ShortArray(441 * channels)
+                        val timestamp = AudioTimestamp()
+                        var framesRead = 0L
+                        var delayMs = 0L
+                        var reportAt = SystemClock.elapsedRealtime()
+                        var checkAt = reportAt
+                        var previousReadAt = reportAt
+                        var largestReadGapMs = 0L
+                        var peak = 0
                         while (running.get()) {
                             val count = capture.read(pcm, 0, pcm.size, AudioRecord.READ_BLOCKING)
                             if (!running.get()) break
                             if (count < 0) throw IOException("Audio capture failed ($count).")
                             if (count > 0) roc.write(stereoSamples(pcm, count - count % channels, channels))
+                            framesRead += count / channels
+                            for (i in 0 until count) peak = max(peak, abs(pcm[i].toInt()))
+                            val now = SystemClock.elapsedRealtime()
+                            largestReadGapMs = max(largestReadGapMs, now - previousReadAt)
+                            previousReadAt = now
+                            if (now - checkAt >= 1000) {
+                                checkAt = now
+                                if (capture.getTimestamp(timestamp, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS) {
+                                    delayMs = captureDelayMs(framesRead, timestamp.framePosition, timestamp.nanoTime, System.nanoTime(), 44100)
+                                    onSendingDelay(delayMs.toInt())
+                                }
+                            }
+                            if (now - reportAt >= 5000) {
+                                Diagnostics.record("Capture health: elapsedMs=${now - reportAt}; frames=$framesRead; peak=${peak / 32768f}; largestReadGapMs=$largestReadGapMs; delayMs=$delayMs; buffer frames=${capture.bufferSizeInFrames}; route=${capture.routedDevice?.type}:${capture.routedDevice?.productName}")
+                                reportAt = now
+                                largestReadGapMs = 0
+                                peak = 0
+                            }
                         }
                     }
                 }
-            } finally { Diagnostics.record("Releasing microphone/device audio recorder"); runCatching { capture.stop() }; capture.release(); record = null; Diagnostics.record("Recorder released") }
+            } finally { onSendingDelay(null); Diagnostics.record("Releasing microphone/device audio recorder"); runCatching { capture.stop() }; capture.release(); record = null; Diagnostics.record("Recorder released") }
         }
 
         private fun receiveAudio() {

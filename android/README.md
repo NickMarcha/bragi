@@ -42,6 +42,20 @@ Measured phone-side delay:
 | 0.1.9 | FP5 | ~102 ms (Roc 60 ms, output 42 ms), buffer never grew |
 | 0.1.9 | Emulator, low latency not granted | 169 ms, after one growth to 30 ms |
 
+## Sending latency
+
+While sending, the status line also shows the sending delay measured on the phone:
+the age of the newest captured frame when it is handed to Roc, from AudioRecord
+timestamps. Diagnostics records `Capture health: ... delayMs=...` every 5 seconds.
+The app reports both delays to Bragi in `peer_status` (`send_delay_ms`,
+`listen_delay_ms`) when they move by 5 ms or more, and the phone's card in the web
+UI shows them.
+
+Capture is unchanged: 44.1 kHz AudioRecord with Android's default buffers, read in
+10 ms blocks. On the emulator the phone-side sending delay is about 17 ms, so the
+larger share is expected on the Pi (its Roc receiver keeps `sess.latency.msec = 40`)
+and the network. FP5 numbers decide what to shrink next.
+
 ## Build and checks
 
 Use JDK 17 and Android SDK 35 with build-tools 35.0.0. Set `ANDROID_HOME` or put
@@ -139,6 +153,9 @@ Confirmed on a Fairphone FP5 (Android 15):
 - Clean Stop, after 0.1.3 moved TLS socket cleanup off the main thread.
 - Listening to the headset mix without chopping (0.1.7), and at about 100 ms of
   phone-side delay (0.1.9).
+
+Not yet checked on a phone: the sending delay figure and the Tailscale address
+refresh (0.1.10).
 - Installing GitHub releases over earlier ones.
 
 Not yet checked on a phone:

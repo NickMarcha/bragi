@@ -10,6 +10,7 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.updateAndGet
 
 /** User starts this once; Bragi commands toggle streams inside the existing service. */
 class BragiService : Service() {
@@ -25,7 +26,7 @@ class BragiService : Service() {
 
     data class State(val running: Boolean = false, val connection: String = "Stopped",
                      val sending: Boolean = false, val receiving: Boolean = false, val sendEnabled: Boolean = true, val listenEnabled: Boolean = false, val error: String? = null,
-                     val listeningDelayMs: Int? = null)
+                     val listeningDelayMs: Int? = null, val sendingDelayMs: Int? = null)
     companion object {
         private val mutableState = MutableStateFlow(State())
         val state = mutableState.asStateFlow()
@@ -97,12 +98,13 @@ class BragiService : Service() {
                             require(config.mode == mode) { "Audio source changed. Stop and restart Bragi on the phone." }
                             engine?.stop()
                             engine = AudioEngine(url.host, ip, config, mode, projection,
-                                onListeningDelay = { ms -> if (!destroyed) mutableState.value = mutableState.value.copy(listeningDelayMs = ms) },
+                                onListeningDelay = { ms -> updateDelays { it.copy(listeningDelayMs = ms) } },
+                                onSendingDelay = { ms -> updateDelays { it.copy(sendingDelayMs = ms) } },
                                 onStatus = { send, receive, error ->
                                     if (destroyed) return@AudioEngine
                                     mutableState.value = mutableState.value.copy(sending = send, receiving = receive,
                                         error = error ?: mutableState.value.error)
-                                    connection?.status(send, receive, error ?: mutableState.value.error)
+                                    reportStatus()
                                 })
                             mutableState.value = mutableState.value.copy(error = null, sendEnabled = config.sendEnabled, listenEnabled = config.receiveEnabled)
                             engine!!.apply(config.sendEnabled, config.receiveEnabled)
@@ -131,6 +133,22 @@ class BragiService : Service() {
             stopSelf()
         }
         return START_NOT_STICKY // Android must not recreate mic/projection capture without user interaction.
+    }
+
+    /** The dashboard shows the phone's delays, so send them on whenever they move noticeably. */
+    private fun updateDelays(change: (State) -> State) {
+        if (destroyed) return
+        val next = mutableState.updateAndGet(change)
+        if (delayWorthReporting(reported?.sendingDelayMs, next.sendingDelayMs) ||
+            delayWorthReporting(reported?.listeningDelayMs, next.listeningDelayMs)) reportStatus()
+    }
+
+    @Volatile private var reported: State? = null
+
+    private fun reportStatus() {
+        val state = mutableState.value
+        reported = state
+        connection?.status(state.sending, state.receiving, state.error, state.sendingDelayMs, state.listeningDelayMs)
     }
 
     private fun notification(): Notification {

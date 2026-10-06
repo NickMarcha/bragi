@@ -36,3 +36,13 @@ class PlaybackBuffer(private val sampleRate: Int, private val capacityFrames: In
 
     private fun clamp(value: Int) = minOf(value, capacityFrames)
 }
+
+/** How long ago the newest frame read was captured, from an AudioRecord timestamp taken at [capturedAtNanos]. */
+fun captureDelayMs(framesRead: Long, capturedFrame: Long, capturedAtNanos: Long, nowNanos: Long, sampleRate: Int): Long {
+    val newestCapturedAtNanos = capturedAtNanos + (framesRead - capturedFrame) * 1_000_000_000L / sampleRate
+    return maxOf(0L, nowNanos - newestCapturedAtNanos) / 1_000_000L
+}
+
+/** Delays wobble by a few ms every second; only appearing, disappearing, or a 5 ms move is news. */
+fun delayWorthReporting(previous: Int?, next: Int?): Boolean =
+    if (previous == null || next == null) previous != next else kotlin.math.abs(next - previous) >= 5

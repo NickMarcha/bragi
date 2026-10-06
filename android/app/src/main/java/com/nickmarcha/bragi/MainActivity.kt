@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
         server = field("Bragi server", preferences.getString("server", BuildConfig.DEFAULT_SERVER)!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         val defaultName = Build.MODEL.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(35).let { if (it.firstOrNull()?.isLetter() == true) it else "phone-$it" }.take(40)
         name = field("Peer name", preferences.getString("name", defaultName)!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
-        ip = field("Phone Tailscale IPv4 address", preferences.getString("ip", if (BuildConfig.DEBUG) "127.0.0.1" else tailnetAddress())!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        ip = field("Phone Tailscale IPv4 address", preferences.getString("ip", if (BuildConfig.DEBUG) "127.0.0.1" else "")!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         text("Keep Tailscale connected. Bragi assigns the audio ports.", 13f)
         text("Audio source", 18f)
         modes = RadioGroup(this).apply {
@@ -123,12 +123,34 @@ class MainActivity : ComponentActivity() {
                 for (i in 0 until modes.childCount) modes.getChildAt(i).isEnabled = !disabled
                 status.text = listOfNotNull(state.connection,
                     if (state.running) "${if (state.sending) "Sending" else "Sender paused"} · ${if (state.receiving) "Listening" else "Receiver paused"}" else null,
+                    state.sendingDelayMs?.let { "Sending delay on this phone ≈ $it ms (plus network and Pi)" },
                     state.listeningDelayMs?.let { "Listening delay on this phone ≈ $it ms (plus network and Pi)" },
                     state.error).joinToString("\n")
             }
         }
         // A release APK cannot replace a debug build, so debug builds only check when asked.
         if (!BuildConfig.DEBUG && System.currentTimeMillis() - preferences.getLong("updateCheck", 0) >= 24 * 60 * 60 * 1000L) checkUpdates(false)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Tailscale may have handed out a new address since the last start (issue #1).
+        if (!BragiService.state.value.running) refreshTailnetIp()?.let(::noteAddressChange)
+    }
+
+    private fun noteAddressChange(note: String) {
+        Diagnostics.record(note)
+        Toast.makeText(this, note, Toast.LENGTH_LONG).show()
+    }
+
+    /** Puts the phone's current Tailscale address in the field; returns a note when it replaced another. */
+    private fun refreshTailnetIp(): String? {
+        if (BuildConfig.DEBUG) return null
+        val entered = ip.text.toString().trim()
+        val current = phoneTailnetIp(entered, tailnetAddress())
+        if (current == entered) return null
+        ip.setText(current)
+        return if (entered.isEmpty()) null else "Tailscale address is now $current (was $entered)."
     }
 
     private fun showDiagnostics() {
@@ -177,6 +199,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun prepareStart() {
         try {
+            refreshTailnetIp()?.let(::noteAddressChange)
             serverUrl(server.text.toString())
             require(validPeerName(name.text.toString())) { "Peer name must start with a letter and use lowercase letters, digits, or hyphens, up to 40 characters." }
             require(validPeerIp(ip.text.toString())) {

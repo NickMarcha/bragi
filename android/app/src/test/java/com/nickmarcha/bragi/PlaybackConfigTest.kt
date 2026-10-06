@@ -43,4 +43,21 @@ class PlaybackConfigTest {
     @Test fun playback_buffer_never_exceeds_a_small_track() {
         assertEquals(600, PlaybackBuffer(sampleRate = 48_000, capacityFrames = 600).frames)
     }
+
+    @Test fun capture_delay_is_the_age_of_the_newest_frame_read() {
+        // Frame 48 000 was captured at t=0; reading up to frame 48 000 at t=30 ms is 30 ms behind.
+        assertEquals(30L, captureDelayMs(48_000, 48_000, 0, 30_000_000, 48_000))
+        // 2400 frames past the timestamp were captured 50 ms later, so 50 ms of the wait is accounted for.
+        assertEquals(10L, captureDelayMs(50_400, 48_000, 0, 60_000_000, 48_000))
+        // Clock skew between the timestamp and now never reports negative delay.
+        assertEquals(0L, captureDelayMs(52_800, 48_000, 0, 60_000_000, 48_000))
+    }
+
+    @Test fun reported_delays_change_only_by_noticeable_amounts() {
+        assertTrue(delayWorthReporting(null, 102))
+        assertTrue(delayWorthReporting(102, null))
+        assertFalse(delayWorthReporting(102, 105))
+        assertTrue(delayWorthReporting(102, 107))
+        assertTrue(delayWorthReporting(102, 97))
+    }
 }

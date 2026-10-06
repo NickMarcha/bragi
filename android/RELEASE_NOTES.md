@@ -98,3 +98,21 @@ so the first second or two of listening may glitch while it settles. On the
 emulator the phone-side delay fell from 252 ms to 169 ms with no underruns after
 settling. FP5 results still need confirming; the Diagnostics log shows each
 step and a delayMs value every 5 seconds.
+
+## 0.1.10 sending delay and fresh Tailscale address
+
+While sending, the app shows the sending delay measured on the phone: how long
+captured audio waits before it reaches Roc. Diagnostics records a Capture health
+line every 5 seconds with `delayMs`. On the emulator it reads about 17 ms. Network
+and Pi delay come on top and are not measured. Nothing about capture itself
+changed in this release; the number is there to show where the sending delay goes.
+
+The phone now reports both delays to Bragi, and the web UI shows them on the
+phone's card, for example "Sending 31 ms · Listening 102 ms". This needs the
+matching Bragi server update; older servers ignore the numbers.
+
+If Tailscale gives the phone a new address, the app now uses it instead of the
+saved one, both when the app opens and when the service starts, and says so in
+a short message. A stale saved address is what stopped listening in issue #1.
+The address field is still used when no Tailscale address can be detected.
+

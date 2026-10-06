@@ -105,9 +105,8 @@ class BragiConnection(
         }
     }
 
-    fun status(send: Boolean, receive: Boolean, error: String?) {
-        socket?.send(JSONObject().put("type", "peer_status").put("send_active", send)
-            .put("receive_active", receive).put("error", error ?: JSONObject.NULL).toString())
+    fun status(send: Boolean, receive: Boolean, error: String?, sendDelayMs: Int?, listenDelayMs: Int?) {
+        socket?.send(peerStatusMessage(send, receive, error, sendDelayMs, listenDelayMs).toString())
     }
 
     suspend fun close() = withContext(Dispatchers.IO) {
@@ -117,5 +116,11 @@ class BragiConnection(
         http.connectionPool.evictAll()
     }
 }
+
+/** Delays are measured on the phone only; the dashboard shows them next to each direction. */
+fun peerStatusMessage(send: Boolean, receive: Boolean, error: String?, sendDelayMs: Int?, listenDelayMs: Int?): JSONObject =
+    JSONObject().put("type", "peer_status").put("send_active", send).put("receive_active", receive)
+        .put("error", error ?: JSONObject.NULL)
+        .put("send_delay_ms", sendDelayMs ?: JSONObject.NULL).put("listen_delay_ms", listenDelayMs ?: JSONObject.NULL)
 
 class PeerRemovedException(message: String) : IOException(message)

@@ -56,6 +56,9 @@ fun validPeerName(value: String): Boolean = Regex("^[a-z][a-z0-9-]{0,39}$").matc
 fun validPeerIp(value: String, localDev: Boolean = BuildConfig.DEBUG): Boolean =
     if (localDev) value == "127.0.0.1" else validTailnetIp(value)
 
+/** The address the phone has right now beats one saved before Tailscale handed out a new one. */
+fun phoneTailnetIp(entered: String, detected: String): String = if (validTailnetIp(detected)) detected else entered
+
 fun validTailnetIp(value: String): Boolean {
     val parts = value.split('.').map { it.toIntOrNull() ?: return false }
     return parts.size == 4 && parts[0] == 100 && parts[1] in 64..127 && parts.all { it in 0..255 }

@@ -65,4 +65,20 @@ class PeerConfigTest {
         assertArrayEquals(floatArrayOf(-1f, -1f, 0f, 0f, .5f, .5f), stereoSamples(shortArrayOf(-32768, 0, 16384), 3, 1), 0f)
         assertArrayEquals(floatArrayOf(.5f, -.5f), stereoSamples(shortArrayOf(16384, -16384, 100), 2, 2), 0f)
     }
+
+    @Test fun a_detected_tailscale_address_replaces_a_stale_saved_one() {
+        // Issue #1: the phone's address changed and the saved one silently broke listening.
+        assertEquals("100.98.253.67", phoneTailnetIp(entered = "100.64.0.9", detected = "100.98.253.67"))
+        // Without a detected address the entered one stands.
+        assertEquals("100.64.0.9", phoneTailnetIp(entered = "100.64.0.9", detected = ""))
+        assertEquals("100.64.0.9", phoneTailnetIp(entered = "100.64.0.9", detected = "192.168.1.4"))
+    }
+
+    @Test fun peer_status_carries_the_delays_the_dashboard_shows() {
+        val message = peerStatusMessage(send = true, receive = true, error = null, sendDelayMs = 31, listenDelayMs = null)
+        assertEquals("peer_status", message.getString("type"))
+        assertEquals(31, message.getInt("send_delay_ms"))
+        assertTrue(message.isNull("listen_delay_ms"))
+        assertTrue(message.isNull("error"))
+    }
 }
