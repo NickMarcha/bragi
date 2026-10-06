@@ -43,13 +43,12 @@ is a one-liner in the meantime.
 
 ## Operational
 
-### Retire vban-sage.service on sagepi
+### Remove the old VBAN binaries from sagepi
 
-VBAN peers now run from `peers.conf`, so the old `vban_emitter`/`vban_receptor`
-unit must be disabled once the change is deployed. Steps in
-[`audio-bridge.md`](audio-bridge.md#switching-sagepi-over). After that, a
-`pipewire.service` restart no longer needs a manual VBAN restart. The
-`~/.local/bin/vban_*` binaries can be removed once the new path has held up.
+`sage` moved to the PipeWire VBAN modules on 2026-10-06 and works;
+`vban-sage.service` is disabled. Once that has held up for a while, delete the
+unit file, `~/.local/bin/vban-connect-sage`, and the `~/.local/bin/vban_*`
+binaries.
 
 ### Autostart entry for the tray app on sage-dev
 

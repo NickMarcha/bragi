@@ -201,6 +201,7 @@ Two details matter, both verified against PipeWire 1.4.2 in a container:
 
 ### Switching sagepi over
 
+Done on 2026-10-06; `sage` works on the modules. Kept for a rebuild or rollback.
 The deploy that ships this rewrites `peers.conf` with `sage` in it, while
 `vban-sage.service` is still running. Until that unit stops, `vban_receptor`
 holds port 6980 (so the new receiver fails, harmlessly) and `sage` gets
