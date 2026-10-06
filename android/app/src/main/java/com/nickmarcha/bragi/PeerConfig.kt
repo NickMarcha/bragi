@@ -59,6 +59,13 @@ fun validPeerIp(value: String, localDev: Boolean = BuildConfig.DEBUG): Boolean =
 /** The address the phone has right now beats one saved before Tailscale handed out a new one. */
 fun phoneTailnetIp(entered: String, detected: String): String = if (validTailnetIp(detected)) detected else entered
 
+/**
+ * Tailscale's address from (interface name, address) pairs. Only its VPN tunnel counts:
+ * carriers hand out 100.64.0.0/10 on mobile data too (issue #2).
+ */
+fun detectedTailnetIp(interfaces: List<Pair<String, String>>): String =
+    interfaces.firstOrNull { (name, address) -> name.startsWith("tun") && validTailnetIp(address) }?.second ?: ""
+
 fun validTailnetIp(value: String): Boolean {
     val parts = value.split('.').map { it.toIntOrNull() ?: return false }
     return parts.size == 4 && parts[0] == 100 && parts[1] in 64..127 && parts.all { it in 0..255 }

@@ -74,6 +74,13 @@ class PeerConfigTest {
         assertEquals("100.64.0.9", phoneTailnetIp(entered = "100.64.0.9", detected = "192.168.1.4"))
     }
 
+    @Test fun only_the_tailscale_interface_supplies_the_address() {
+        // Issue #2: mobile carriers hand out 100.64.0.0/10 too, and that address replaced the real one.
+        val interfaces = listOf("rmnet_data1" to "100.83.223.246", "tun0" to "100.98.253.67")
+        assertEquals("100.98.253.67", detectedTailnetIp(interfaces))
+        assertEquals("", detectedTailnetIp(listOf("rmnet_data1" to "100.83.223.246", "wlan0" to "192.168.1.8")))
+    }
+
     @Test fun peer_status_carries_the_delays_the_dashboard_shows() {
         val message = peerStatusMessage(send = true, receive = true, error = null, sendDelayMs = 31, listenDelayMs = null)
         assertEquals("peer_status", message.getString("type"))

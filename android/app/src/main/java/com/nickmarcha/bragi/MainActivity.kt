@@ -287,7 +287,8 @@ class MainActivity : ComponentActivity() {
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun tailnetAddress(): String = runCatching {
-        NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
-            .firstOrNull { validTailnetIp(it.hostAddress ?: "") }?.hostAddress ?: ""
+        detectedTailnetIp(NetworkInterface.getNetworkInterfaces().toList().flatMap { nic ->
+            nic.inetAddresses.toList().map { nic.name to (it.hostAddress ?: "") }
+        })
     }.getOrDefault("")
 }
