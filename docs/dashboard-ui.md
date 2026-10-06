@@ -20,30 +20,40 @@ index.html                     page shell
 └── _icons.html                 inline SVG icon macros
 ```
 
-- **`index.html`** is the shell: a top bar (settings button, `%`/dB unit
-  toggle, WebSocket status pill), the visualizer-settings `<dialog>`, the
-  card row, and the add-peer form. The `<body>` gets class `viz-enabled`
-  when the level meters are on, which is the single switch the CSS reads.
-- **`_headset_card.html`** renders one headset. The status dot is derived
-  in-template from `enabled` plus whether playback and capture are
-  connected (`online` / `offline` / `partial` / `disabled`). Two strips:
-  Speakers (`playback`) and Mic (`capture`).
-- **`_peer_card.html`** renders one peer. The status dot uses real tray-app
-  reachability when `view.client_connected` is not `None`, otherwise it
-  falls back to whether both directions are connected. Two strips: `Mic →
-  <peer>` (`outgoing`) and `<peer> → headset` (`incoming`), each with a
-  balance pad above the fader. A `managed` peer also gets a Remove button.
+- **`index.html`** is the shell: one 44px toolbar (`#top-bar`: the desktop
+  mic picker, Add peer, visualizer settings, the `%`/dB toggle, connection
+  status), the two `<dialog>`s (visualizer settings, add peer), and
+  `main#console`, a single row of devices. The `<body>` gets class
+  `viz-enabled` when the level meters are on, which is the single switch
+  the CSS reads.
+- **`_microphone.html`** is the toolbar's desktop-mic picker. It posts on
+  `change` (`hx-trigger="change"`) and swaps `#microphone-routing`.
+- **`_headset_card.html`** renders one headset as a `.device`. The status
+  dot is derived in-template from `enabled` plus whether playback and
+  capture are connected (`online` / `offline` / `partial` / `disabled`).
+  Two strips: Speakers (`playback`) and Mic (`capture`). A disabled headset
+  folds down to its header.
+- **`_peer_card.html`** renders one peer as a `.device`: header (status dot,
+  name, remove button for managed peers), a meta line (`Roc`, `VBAN` or
+  `Android`, and the IP), Android's Send/Listen toggles, then two strips:
+  `outgoing` (labelled Mic, or Headset for a phone) and `incoming` (Audio,
+  or Mic for a phone in microphone mode). The full direction is in each
+  strip's `title`. The status dot uses real tray-app reachability when
+  `view.client_connected` is not `None`, otherwise whether both directions
+  are connected. Phone controls sit above the strips so every device's
+  faders line up.
 - **`_peers_list.html`** is just the `_peer_card` loop. It exists as its
   own file because `#peers` is the htmx swap target for add and remove, so
   that fragment has to be renderable on its own.
 - **`_fader.html`** is the `fader(target, key, direction, volume,
-  connected, max=1.5, show_level=False)` macro. It draws the custom
-  pointer-driven vertical fader (track, fill, thumb) and, when `show_level`
-  is set, a separate `.level-meter` element next to it. The fill is the
-  volume *setting*; the level meter is the live signal. They are
-  deliberately different elements.
+  connected, max=1.5, show_level=False)` macro: the pointer-driven fader
+  (track, fill, thumb with the `.readout` on it) and, when `show_level` is
+  set, a separate `.level-meter`. The fill is the volume *setting*; the
+  level meter is the live signal. Position is a `--frac` custom property on
+  `.fader` (and `--level` on `.level-fill`); CSS turns it into a vertical or
+  horizontal position, so the JS doesn't know the layout.
 - **`_icons.html`** is inline SVG macros (`power`, `speaker_mute`,
-  `mic_mute`, `settings`, and so on), stroked with `currentColor` so button
+  `mic_mute`, `settings`, `remove`), stroked with `currentColor` so button
   state colours apply for free. No icon font.
 
 ## The data contract
@@ -79,11 +89,14 @@ global `set_viz_enabled` from the settings dialog.
 
 ## htmx, and where it stops
 
-htmx handles exactly two things:
+htmx handles three things:
 
-- the add-peer form: `hx-post="/peers"`, swaps `#peers`
-- the per-peer Remove button: `hx-post="/peers/<name>/delete"`, swaps
+- the add-peer form in its dialog: `hx-post="/peers"`, swaps `#peers`.
+  `ws.js` closes the dialog on success and shows the server's `detail` on
+  failure, since htmx doesn't swap error responses.
+- the per-peer remove button: `hx-post="/peers/<name>/delete"`, swaps
   `#peers`, with `hx-confirm`
+- the desktop mic picker: `hx-post="/audio/microphone"` on change
 
 Everything else is the WebSocket. This split is deliberate. Add and remove
 are infrequent and structural, so a plain form post that re-renders the
@@ -92,12 +105,27 @@ which htmx has no equivalent for.
 
 ## CSS
 
-One file, `app/static/style.css`, around 550 lines, divided by comment
-banners (`/* --- Voicemeeter-style vertical strips --- */` and so on).
-Theme colours are custom properties on `:root`. The fader, the pad, and the
-mute button share sizing variables so the three line up vertically in a
-strip.
+One file, `app/static/style.css`, plain CSS with no build step, divided by
+comment banners. Theme colours are custom properties on `:root`: neutral
+dark greys and one muted green accent, following the user's Uncodixify
+guide (no pills, no uppercase labels, no blue).
+
+The layout has to fit a 1080p browser window without scrolling. Faders get
+`--fader-height`, which is the window height minus everything else in a
+device (`clamp(150px, 100vh - 330px, 420px)`), so the console grows and
+shrinks with the window. Devices sit in one row and the row scrolls
+sideways if there are too many.
+
+Below 640px wide the same markup becomes rows: each strip is a small grid
+(label and balance on top, a horizontal fader and mute below), and the
+fader, fill, thumb and level meter switch axis. `ws.js` reads the fader's
+orientation from its size when mapping a pointer. Horizontal faders use
+`touch-action: pan-y` so a vertical swipe still scrolls the page.
 
 Level-meter visibility is pure CSS, keyed off `body.viz-enabled`. There is
 no per-element `hidden` toggling in the templates or JS for this. One
 source of truth for on and off.
+
+Screenshots at 1920x950 and 412 wide, plus a Playwright pass over every
+control, were how the 2026-10 redesign was checked; the preview browser in
+the dev environment can't reach the local dev server.

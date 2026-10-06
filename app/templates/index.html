@@ -10,11 +10,18 @@
   <script src="/static/ws.js" defer></script>
 </head>
 <body class="{{ 'viz-enabled' if viz_settings.enabled }}">
-  <div id="top-bar">
-    <button id="settings-toggle" title="Visualizer settings">{{ icons.settings() }}</button>
-    <button id="unit-toggle" title="Toggle volume readout between % and dB">%</button>
-    <div id="ws-status" class="connecting"><span class="dot"></span><span class="label">Connecting…</span></div>
-  </div>
+  <header id="top-bar">
+    <span class="brand">Bragi</span>
+    <div id="microphone-routing">
+      {% include "_microphone.html" %}
+    </div>
+    <div class="top-bar-actions">
+      <button id="add-peer-toggle" type="button">Add peer</button>
+      <button id="settings-toggle" type="button" title="Visualizer settings">{{ icons.settings() }}</button>
+      <button id="unit-toggle" type="button" title="Toggle volume readout between % and dB">%</button>
+      <div id="ws-status" class="connecting"><span class="dot"></span><span class="label">Connecting…</span></div>
+    </div>
+  </header>
 
   <dialog id="viz-settings-dialog">
     <h2>Visualizer settings</h2>
@@ -25,48 +32,38 @@
     <button id="viz-settings-close" type="button">Close</button>
   </dialog>
 
-  <header>
-    <h1>Bragi</h1>
-    <p class="subtitle">Network audio bridge — sagepi</p>
-  </header>
-
-  <main>
-    <section id="microphone-routing">
-      {% include "_microphone.html" %}
-    </section>
-
-    <section id="devices">
-      <h2>Headsets &amp; peers</h2>
-      {% if not headsets %}
-      <p class="hint">No USB headset detected on sagepi right now.</p>
-      {% endif %}
-      <div class="card-row">
-        {% for view in headsets %}
-        {% include "_headset_card.html" %}
-        {% endfor %}
-        <div id="peers">
-          {% include "_peers_list.html" %}
-        </div>
+  <dialog id="add-peer-dialog">
+    <h2>Add peer</h2>
+    <form id="add-peer" hx-post="/peers" hx-target="#peers" hx-swap="innerHTML">
+      <label>Name <input type="text" name="name" placeholder="sage-laptop" required /></label>
+      <label>Tailscale IP <input type="text" name="tailscale_ip" placeholder="100.x.x.x" required pattern="^100\.\d+\.\d+\.\d+$" /></label>
+      <label>Protocol
+        <select name="protocol">
+          <option value="roc">Roc (Linux, Android)</option>
+          <option value="vban">VBAN (Windows, Voicemeeter)</option>
+        </select>
+      </label>
+      <label class="vban-only">Stream to peer <input type="text" name="stream_send" placeholder="SagepiMic" maxlength="16" pattern="^[A-Za-z0-9_\-]{1,16}$" /></label>
+      <label class="vban-only">Stream from peer <input type="text" name="stream_receive" placeholder="&lt;Name&gt;Audio" maxlength="16" pattern="^[A-Za-z0-9_\-]{1,16}$" /></label>
+      <p class="vban-only form-note">Must match the peer's Voicemeeter VBAN settings: port 6980, 48 kHz.</p>
+      <p class="form-error" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="add-peer-cancel">Cancel</button>
+        <button type="submit" class="primary">Add peer</button>
       </div>
-    </section>
+    </form>
+  </dialog>
 
-    <section id="add-peer">
-      <h2>Add peer</h2>
-      <form hx-post="/peers" hx-target="#peers" hx-swap="innerHTML">
-        <label>Name <input type="text" name="name" placeholder="e.g. sage-laptop" required /></label>
-        <label>Tailscale IP <input type="text" name="tailscale_ip" placeholder="100.x.x.x" required pattern="^100\.\d+\.\d+\.\d+$" /></label>
-        <label>Protocol
-          <select name="protocol">
-            <option value="roc">Roc (Linux, Android)</option>
-            <option value="vban">VBAN (Windows, Voicemeeter)</option>
-          </select>
-        </label>
-        <label class="vban-only">Stream to peer <input type="text" name="stream_send" placeholder="SagepiMic" maxlength="16" pattern="^[A-Za-z0-9_\-]{1,16}$" /></label>
-        <label class="vban-only">Stream from peer <input type="text" name="stream_receive" placeholder="&lt;Name&gt;Audio" maxlength="16" pattern="^[A-Za-z0-9_\-]{1,16}$" /></label>
-        <button type="submit">Add peer</button>
-      </form>
-      <p class="hint vban-only">VBAN stream names must match the peer's Voicemeeter VBAN settings, on port 6980 at 48 kHz.</p>
-    </section>
+  <main id="console">
+    {% if not headsets %}
+    <p class="empty">No USB headset on sagepi.</p>
+    {% endif %}
+    {% for view in headsets %}
+    {% include "_headset_card.html" %}
+    {% endfor %}
+    <div id="peers">
+      {% include "_peers_list.html" %}
+    </div>
   </main>
 </body>
 </html>

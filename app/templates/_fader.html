@@ -1,12 +1,15 @@
 {% macro fader(target, key, direction, volume, connected, max=1.5, show_level=False) %}
 {% set v = volume if volume is not none else 1.0 %}
 <div class="fader-wrap">
+  {# --frac places the fill and thumb; style.css decides whether that is
+     vertical (desktop strips) or horizontal (phone rows). ws.js keeps it
+     current. The readout rides on the thumb, as on Voicemeeter's faders. #}
   <div class="fader" data-target="{{ target }}" data-key="{{ key }}" data-direction="{{ direction }}" data-action="volume"
-       data-value="{{ v }}" data-max="{{ max }}"
+       data-value="{{ v }}" data-max="{{ max }}" style="--frac: {{ v / max }};"
        {% if not connected %}data-disabled="1"{% endif %}>
     <div class="fader-track"></div>
-    <div class="fader-fill" style="height: {{ (v / max * 100) }}%;"></div>
-    <div class="fader-thumb" style="bottom: {{ (v / max * 100) }}%;"></div>
+    <div class="fader-fill"></div>
+    <div class="fader-thumb"><span class="readout">{{ "%.0f"|format(v * 100) }}%</span></div>
   </div>
   {% if show_level %}
   {# Live signal level - deliberately a separate element from .fader-fill
@@ -15,7 +18,7 @@
      see style.css) so there's one source of truth for on/off, not per-
      element hidden-attribute bookkeeping. #}
   <div class="level-meter" data-level-target="{{ target }}" data-level-key="{{ key }}" data-level-direction="{{ direction }}">
-    <div class="level-fill" style="height: 0%;"></div>
+    <div class="level-fill"></div>
   </div>
   {% endif %}
 </div>

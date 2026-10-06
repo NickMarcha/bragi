@@ -1,179 +1,220 @@
+/* Bragi's mixer: one toolbar, then one row of Voicemeeter-style channel
+   strips that fits a 1080p browser window without scrolling. Below 640px
+   the strips turn into rows with horizontal faders (see the media query at
+   the end). Plain CSS, no build step - see docs/dashboard-ui.md. */
+
 :root {
-  --bg: #12141a;
-  --panel: #1b1e27;
-  --border: #2a2e3a;
-  --text: #e6e8ee;
-  --muted: #8b91a3;
-  --accent: #5b8cff;
-  --danger: #ff5b6a;
-  /* fader (36px) + gap (4px) + level-meter (10px) - the balance pad and
-     mute button below match this combined width so a whole strip reads as
-     one consistent column, not controls of three different widths. */
-  --strip-width: 50px;
+  --bg: #121212;
+  --panel: #1a1a1a;
+  --raised: #242424;
+  --border: #2e2e2e;
+  --text: #e4e4e4;
+  --muted: #9a9a9a;
+  --accent: #5fae8e;
+  --accent-strong: #86d3b0;
+  --danger: #d0525a;
+  --warn: #c9a352;
+  --strip-width: 58px;
+  --thumb: 22px;
+  /* Faders take whatever height the window leaves after the toolbar, the
+     device header, labels, pan and mute (~330px), within sane limits. */
+  --fader-height: clamp(150px, calc(100vh - 330px), 420px);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 14px/1.4 system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
 }
 
-header {
-  padding: 1.5rem 1.5rem 0.5rem;
+button,
+select,
+input {
+  font: inherit;
+  color: var(--text);
 }
 
-header h1 {
-  margin: 0;
-  font-size: 1.6rem;
+button {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background-color 120ms ease;
 }
 
-.subtitle {
+button:hover:not(:disabled) {
+  background: #2c2c2c;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0e1512;
+}
+
+select,
+input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+select:focus,
+input:focus,
+button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* --- toolbar --- */
+
+#top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 44px;
+  padding: 0 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-weight: 600;
+}
+
+#microphone-routing label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
-  margin: 0.25rem 0 0;
+  font-size: 13px;
 }
 
-main {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 1rem 1.5rem 3rem;
+#microphone-routing select {
+  color: var(--text);
 }
 
-#devices {
-  margin-bottom: 2rem;
+.top-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+#settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 8px;
+}
+
+#ws-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+#ws-status .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+#ws-status.connected .dot { background: var(--accent); }
+#ws-status.connecting .dot { background: var(--warn); }
+
+/* --- the console: one row of devices --- */
+
+#console {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  overflow-x: auto;
 }
 
 /* Keeps #peers a valid independent htmx swap target (add/remove peer)
-   while its children still lay out as direct members of the shared
-   .card-row flex row above - see index.html for why headsets and peers
-   are no longer two separate rows. */
+   while its cards still lay out as direct members of #console. */
 #peers {
   display: contents;
 }
 
-.card-row {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  /* stretch (not flex-start) - headset cards have less fixed content
-     (no .ip line, no balance pad, no remove button) than peer cards, so
-     without this every row's cards would sit at different heights. See
-     .strips below for how the leftover space in a stretched card is
-     spent. */
-  align-items: stretch;
-  gap: 0.6rem;
+.empty {
+  color: var(--muted);
+  margin: 0;
+  align-self: center;
 }
 
-.peer-card {
+.device {
   display: flex;
+  flex: none;
   flex-direction: column;
+  gap: 6px;
+  padding: 8px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
-  overflow: hidden; /* clips the full-width status-dot bar to the corners */
 }
 
-.card-body {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  padding: 0.4rem 0.55rem 0.5rem;
-}
-
-.peer-header {
+.device-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem;
+  gap: 6px;
+  min-height: 22px;
 }
 
-.peer-header h3 {
+.device-head h3 {
+  flex: 1;
   margin: 0;
-  font-size: 0.82rem;
-  font-weight: 600;
-  max-width: 128px;
-  white-space: nowrap;
+  max-width: 120px;
   overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-/* Status is a thin full-width bar along the card's top edge rather than an
-   inline dot next to the label - reads at a glance without competing with
-   the label/badges for horizontal space, which is what let the header
-   collapse to a single row (see the removed .headset-card column-stack
-   override this replaces). */
-.status-dot {
-  display: block;
-  width: 100%;
-  height: 3px;
-  border-radius: 0;
-  background: var(--muted);
-  flex-shrink: 0;
-}
-
-.status-dot.online { background: #4caf50; }
-.status-dot.offline { background: var(--danger); }
-.status-dot.partial { background: #d8b16a; }
-.status-dot.disabled { background: var(--muted); }
-
-.peer-header-badges {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  flex-shrink: 0;
-}
-
-/* Compact single/double-letter status chip - replaces the old text pills
-   ("roc", "local headset", "manual"). Full meaning is in the title=
-   tooltip. Square, not pill-shaped, to match the flatter inner-element
-   look (see .icon-btn, .pad, .fader-track below). */
-.chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 0.2rem;
-  font-size: 0.62rem;
-  font-weight: 700;
-  line-height: 1;
-  background: var(--border);
+.device-meta {
+  margin: -4px 0 0;
+  overflow: hidden;
   color: var(--muted);
-  border-radius: 2px;
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: calc(2 * var(--strip-width) + 6px);
 }
 
-.chip-muted {
-  background: #3a2e1b;
-  color: #d8b16a;
+.status-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
 }
 
-/* Small square icon button shared by mute + enable/disable - icon svg uses
-   stroke/fill: currentColor so the active/disabled color states below just
-   work without touching the icon markup itself. */
+.status-dot.online { background: var(--accent); }
+.status-dot.offline { background: var(--danger); }
+.status-dot.partial { background: var(--warn); }
+.status-dot.disabled { background: #555; }
+
 .icon-btn {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  background: var(--border);
-  color: var(--text);
-  border: none;
-  border-radius: 3px;
+  width: 22px;
+  height: 22px;
   padding: 0;
-  cursor: pointer;
-}
-
-/* Strip mute buttons sit below the fader (not next to the label) and are
-   widened to the full strip width (see --strip-width) so pad/fader+meter/
-   mute-btn all line up as one consistent column. aspect-ratio (not a fixed
-   height) keeps the original 36:18 (2:1) proportions at the new width. */
-.mute-btn {
-  width: var(--strip-width);
-  aspect-ratio: 2 / 1;
-  margin-top: 0.35rem;
 }
 
 .icon-btn:disabled {
@@ -181,86 +222,81 @@ main {
   opacity: 0.4;
 }
 
-.headset-disabled {
-  opacity: 0.55;
-}
-
-.headset-disabled .enable-toggle-btn {
-  opacity: 1;
-  background: var(--accent);
-  color: white;
-}
-
-.ip {
+.remove-btn {
   color: var(--muted);
-  font-size: 0.7rem;
-  margin: 0.1rem 0 0.4rem;
 }
 
-.offline {
+.remove-btn:hover {
   color: var(--danger);
 }
 
-/* --- Voicemeeter-style vertical strips --- */
+/* A disabled headset folds down to its header: there is nothing to mix. */
+.headset-disabled {
+  align-self: flex-start;
+}
+
+.headset-disabled .strips {
+  display: none;
+}
+
+.headset-disabled h3 {
+  color: var(--muted);
+}
+
+.headset-disabled .enable-toggle-btn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0e1512;
+}
+
+/* --- channel strips --- */
 
 .strips {
   display: flex;
-  flex: 1; /* grows to absorb the leftover height from .card-row's stretch
-              (see there) - each .strip below bottom-anchors its content
-              into that space, so shorter cards (headsets) get empty space
-              above the faders instead of everything just looking shorter. */
-  gap: 0.75rem;
-  justify-content: center;
-  padding-top: 0.15rem;
+  flex: 1;
+  align-items: flex-end;
+  gap: 6px;
 }
 
 .strip {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-end; /* anchor content to the bottom of .strips'
-                                 stretched height - see .strips comment */
-  min-width: 58px;
+  gap: 6px;
+  width: var(--strip-width);
 }
 
 .strip-label {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-size: 0.65rem;
+  font-size: 12px;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  text-align: center;
-  line-height: 1.3;
-  margin-bottom: 0.3rem;
+  white-space: nowrap;
 }
 
-.strip-label .arrow {
-  color: var(--accent);
-  font-size: 0.85rem;
-  line-height: 1.4;
+.offline {
+  color: var(--danger);
 }
 
-/* The balance pad - present on both peer strips (headset balance doesn't
-   hold on real ALSA hardware, see app/views.py's direction_view). Square,
-   drag horizontally; the dot only ever moves left/right, see ws.js. */
+/* Balance: drag horizontally, right-click to centre. Peer strips only -
+   headset balance doesn't hold on real ALSA hardware (app/views.py). */
 .pad {
   position: relative;
-  width: var(--strip-width);
-  aspect-ratio: 1 / 1;
+  width: 100%;
+  height: 12px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 2px;
-  margin-bottom: 0.35rem;
+  border-radius: 3px;
   cursor: pointer;
   touch-action: none;
+}
+
+/* Keeps headset labels level with peer labels, which sit above a pad. */
+.pad-spacer {
+  height: 12px;
 }
 
 .pad-dot {
   position: absolute;
   top: 50%;
-  left: 50%;
   width: 8px;
   height: 8px;
   margin: -4px 0 0 -4px;
@@ -269,31 +305,91 @@ main {
   pointer-events: none;
 }
 
+/* Padded by half a thumb so the thumb stays inside the strip at 0 and at
+   the top of the range. */
 .fader-wrap {
   display: flex;
   justify-content: center;
   gap: 4px;
-  height: 390px;
-  margin-bottom: 0.35rem;
+  width: 100%;
+  height: calc(var(--fader-height) + var(--thumb));
+  padding: calc(var(--thumb) / 2) 0;
+}
+
+/* Custom pointer-driven fader - deliberately not a native
+   <input type=range> rotated via writing-mode: that combination has a
+   real cross-browser quirk where drag/click position gets mapped against
+   the pre-rotation bounding box, causing the thumb to jump on the first
+   click/drag tick. See ws.js's wireFaders() for the interaction logic. */
+.fader {
+  position: relative;
+  flex: 1;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.fader[data-disabled="1"] {
+  cursor: not-allowed;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.fader-track,
+.fader-fill {
+  position: absolute;
+  left: 50%;
+  width: 12px;
+  margin-left: -6px;
+  border-radius: 3px;
+}
+
+.fader-track {
+  top: 0;
+  bottom: 0;
+  background: var(--border);
+}
+
+.fader-fill {
+  bottom: 0;
+  height: calc(var(--frac, 0.667) * 100%);
+  background: var(--accent);
+}
+
+.fader-thumb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--frac, 0.667) * 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--thumb);
+  transform: translateY(50%);
+  background: #d6dcd9;
+  border-radius: 4px;
+  color: #141414;
+}
+
+.readout {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* Live signal level, next to the fader - a distinct element from
    .fader-fill on purpose (that one reflects the *volume setting*, this one
-   reflects what's actually playing right now). Hidden by default; shown
-   only via body.viz-enabled below, the one place on/off is decided, set by
-   ws.js from the server-persisted viz_settings.enabled (see
-   app/viz_settings.py) - never a per-element attribute to keep in sync. */
+   reflects what's actually playing right now). Shown only via
+   body.viz-enabled, the one place on/off is decided, set by ws.js from the
+   server-persisted viz_settings.enabled (see app/viz_settings.py). */
 .level-meter {
   display: none;
   position: relative;
-  width: 10px;
-  height: 100%;
-  /* var(--border), not var(--bg) - the idle track needs to read as "a
-     meter, currently at zero" against the card's panel background, not
-     disappear into it. Confirmed live this was the difference between
-     "looks broken" and "visibly idle": at 6px/var(--bg) the element was
-     technically updating but indistinguishable from empty card space. */
-  background: var(--border);
+  flex: none;
+  width: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -307,231 +403,85 @@ body.viz-enabled .level-meter {
   left: 0;
   right: 0;
   bottom: 0;
-  background: #4caf50;
-  box-shadow: 0 0 4px #4caf50;
+  height: calc(var(--level, 0) * 100%);
+  background: var(--accent-strong);
 }
 
-/* Custom pointer-driven vertical fader - deliberately not a native
-   <input type=range> rotated via writing-mode: that combination has a
-   real cross-browser quirk where drag/click position gets mapped against
-   the pre-rotation bounding box, causing the thumb to jump on the first
-   click/drag tick. See ws.js's wireFaders() for the interaction logic. */
-.fader {
-  position: relative;
-  width: 36px;
-  height: 390px;
-  cursor: pointer;
-  touch-action: none;
-}
-
-.fader[data-disabled="1"] {
-  cursor: not-allowed;
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-/* Track/fill/thumb, the pad, and the mute button below are all the same
-   36px width - a channel strip reads as one consistent column, not three
-   controls of different sizes stacked on top of each other. */
-.fader-track {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  bottom: 0;
-  width: 36px;
-  margin-left: -18px;
-  background: var(--border);
-  border-radius: 2px;
-}
-
-.fader-fill {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 36px;
-  margin-left: -18px;
-  background: var(--accent);
-  border-radius: 2px;
-}
-
-/* Slightly wider than the track/fill and bordered so the handle still
-   reads as distinct atop the lane, not a thin rail the old narrow thumb
-   straddled. */
-.fader-thumb {
-  position: absolute;
-  left: 50%;
-  width: 40px;
-  height: 10px;
-  margin-left: -20px;
-  transform: translateY(50%);
-  background: var(--text);
-  border: 1px solid var(--bg);
-  border-radius: 2px;
-}
-
-.readout {
-  font-size: 0.72rem;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-/* --- top-corner WS status + unit toggle --- */
-
-#top-bar {
-  position: fixed;
-  top: 0.75rem;
-  right: 0.75rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  z-index: 10;
-}
-
-#unit-toggle, #settings-toggle {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 0.3rem 0.6rem;
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-
-#settings-toggle {
-  display: inline-flex;
-  align-items: center;
-}
-
-#viz-settings-dialog {
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1.25rem;
-  min-width: 260px;
-}
-
-#viz-settings-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.5);
-}
-
-#viz-settings-dialog h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
-}
-
-.viz-settings-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.9rem;
-  margin-bottom: 1rem;
-}
-
-#viz-settings-close {
-  background: var(--border);
-  color: var(--text);
-  border: none;
-  border-radius: 6px;
-  padding: 0.4rem 0.8rem;
-  cursor: pointer;
-  font-size: 0.85rem;
-}
-
-#ws-status {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
-  color: var(--muted);
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.3rem 0.7rem;
-}
-
-#ws-status .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--danger);
-}
-
-#ws-status.connected .dot {
-  background: #4caf50;
-}
-
-#ws-status.connecting .dot {
-  background: #d8b16a;
-  animation: ws-pulse 1s infinite;
-}
-
-@keyframes ws-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-#devices h2 {
-  font-size: 0.95rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin: 0 0 0.75rem;
-}
-
-.headset-card {
-  border-color: var(--accent);
-}
-
-.remove-btn, button[type="submit"] {
-  background: var(--border);
-  color: var(--text);
-  border: none;
-  border-radius: 6px;
-  padding: 0.4rem 0.8rem;
-  cursor: pointer;
-  font-size: 0.85rem;
+.mute-btn {
+  width: 100%;
+  height: 24px;
 }
 
 .mute-btn.active {
   background: var(--danger);
-  color: white;
+  border-color: var(--danger);
+  color: #fff;
 }
 
-.remove-btn {
-  margin-top: 0.4rem;
-  background: transparent;
-  border: 1px solid var(--danger);
-  color: var(--danger);
-  font-size: 0.7rem;
-  padding: 0.25rem 0.5rem;
+/* --- Android phone controls --- */
+
+/* width 0 + min-width 100%: the strips set the device's width, not the
+   status text, which truncates instead. */
+.client-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  width: 0;
+  min-width: 100%;
+}
+
+.client-control-btn {
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.client-control-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0e1512;
+}
+
+.client-stream-status {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* --- dialogs --- */
+
+dialog {
+  min-width: 300px;
+  padding: 16px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+dialog h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
 }
 
 #add-peer {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1.25rem;
-}
-
-#add-peer h2 {
-  margin-top: 0;
-  font-size: 1rem;
-}
-
-#add-peer form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  align-items: end;
+  display: grid;
+  gap: 10px;
 }
 
 #add-peer label {
-  display: flex;
-  flex-direction: column;
-  font-size: 0.85rem;
+  display: grid;
+  gap: 4px;
   color: var(--muted);
-  gap: 0.3rem;
+  font-size: 13px;
 }
 
 /* Stream names only apply to VBAN; :has() keeps this free of JS. */
@@ -539,43 +489,146 @@ body.viz-enabled .level-meter {
   display: none;
 }
 
-#add-peer input,
-#add-peer select {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 0.4rem 0.6rem;
-}
-
-.hint {
-  color: var(--muted);
-  font-size: 0.8rem;
-  margin: 0.75rem 0 0;
-}
-
-.client-controls {
-  margin-top: 0.65rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.client-control-btn {
-  font-size: 0.7rem;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border);
-}
-
-.client-control-btn.active {
-  background: var(--accent);
-  color: white;
-}
-
-.client-stream-status {
-  color: var(--muted);
-  font-size: 0.7rem;
+.form-note {
   margin: 0;
-  max-width: 145px;
-  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.form-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.viz-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+/* --- phones: rows with horizontal faders --- */
+
+@media (max-width: 640px) {
+  #top-bar {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    height: auto;
+    padding: 8px 12px;
+  }
+
+  #microphone-routing {
+    order: 1;
+    width: 100%;
+  }
+
+  #microphone-routing select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  #console {
+    flex-direction: column;
+    padding: 8px;
+    overflow-x: visible;
+  }
+
+  .headset-disabled {
+    align-self: stretch;
+  }
+
+  .device-head h3,
+  .device-meta {
+    max-width: none;
+  }
+
+  .strips {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Label and balance on top, fader and mute below: about 60px a channel. */
+  .strip {
+    display: grid;
+    grid-template-columns: 1fr 44px;
+    grid-template-areas:
+      "label pad"
+      "fader mute";
+    align-items: center;
+    gap: 4px 8px;
+    width: auto;
+  }
+
+  .strip-label { grid-area: label; }
+  .pad { grid-area: pad; touch-action: pan-y; }
+  .pad-spacer { display: none; }
+  .fader-wrap { grid-area: fader; }
+  .mute-btn { grid-area: mute; height: 30px; }
+
+  .fader-wrap {
+    --thumb: 52px;
+    flex-direction: column;
+    height: auto;
+    padding: 0 calc(var(--thumb) / 2);
+  }
+
+  /* pan-y: a vertical swipe over a fader scrolls the page instead of
+     grabbing the fader. */
+  .fader {
+    flex: none;
+    height: 30px;
+    touch-action: pan-y;
+  }
+
+  .fader-track,
+  .fader-fill {
+    top: 50%;
+    left: 0;
+    width: auto;
+    height: 10px;
+    margin: -5px 0 0;
+  }
+
+  .fader-track {
+    right: 0;
+    bottom: auto;
+  }
+
+  .fader-fill {
+    bottom: auto;
+    width: calc(var(--frac, 0.667) * 100%);
+  }
+
+  .fader-thumb {
+    top: 3px;
+    bottom: 3px;
+    left: calc(var(--frac, 0.667) * 100%);
+    right: auto;
+    width: var(--thumb);
+    height: auto;
+    transform: translateX(-50%);
+  }
+
+  .level-meter {
+    width: 100%;
+    height: 3px;
+  }
+
+  .level-fill {
+    top: 0;
+    right: auto;
+    width: calc(var(--level, 0) * 100%);
+    height: auto;
+  }
+
+  .client-controls {
+    grid-template-columns: 1fr 1fr;
+  }
 }

@@ -103,9 +103,11 @@
 
   function formatVolume(volume) {
     if (volume == null) return "--";
+    // No " dB" suffix: the readout sits on a fader thumb, and the unit
+    // toggle in the toolbar already says which unit is showing.
     if (displayMode === "db") {
-      if (volume <= 0.0001) return "-\u221e dB";
-      return `${(20 * Math.log10(volume)).toFixed(1)} dB`;
+      if (volume <= 0.0001) return "-\u221e";
+      return (20 * Math.log10(volume)).toFixed(1);
     }
     return `${Math.round(volume * 100)}%`;
   }
@@ -144,6 +146,34 @@
         send({ action: "set_viz_enabled", value: checkbox.checked });
       });
     }
+  }
+
+  // Closes on success; shows the server's reason on failure (htmx does not
+  // swap error responses, so without this a rejected add looked like nothing).
+  function wireAddPeerDialog() {
+    const dialog = document.getElementById("add-peer-dialog");
+    const form = document.getElementById("add-peer");
+    const openBtn = document.getElementById("add-peer-toggle");
+    if (!dialog || !form || !openBtn) return;
+    const error = form.querySelector(".form-error");
+    openBtn.addEventListener("click", () => {
+      error.hidden = true;
+      dialog.showModal();
+    });
+    document.getElementById("add-peer-cancel").addEventListener("click", () => dialog.close());
+    form.addEventListener("htmx:afterRequest", (evt) => {
+      if (evt.detail.successful) {
+        form.reset();
+        dialog.close();
+        return;
+      }
+      let message = "Could not add the peer.";
+      try {
+        message = JSON.parse(evt.detail.xhr.responseText).detail || message;
+      } catch (_) { /* not JSON */ }
+      error.textContent = message;
+      error.hidden = false;
+    });
   }
 
   // --- applying server state ---
@@ -187,7 +217,7 @@
   function applyLevels(msg) {
     for (const level of msg.values || []) {
       const fill = levelFillFor(level.target, level.key, level.direction);
-      if (fill) fill.style.height = `${Math.max(0, Math.min(1, level.value)) * 100}%`;
+      if (fill) fill.style.setProperty("--level", Math.max(0, Math.min(1, level.value)));
     }
   }
 
@@ -359,11 +389,9 @@
     const max = parseFloat(fader.dataset.max || "1.5");
     value = Math.max(0, Math.min(max, value));
     fader.dataset.value = value;
-    const frac = value / max;
-    const fill = fader.querySelector(".fader-fill");
-    const thumb = fader.querySelector(".fader-thumb");
-    if (fill) fill.style.height = `${frac * 100}%`;
-    if (thumb) thumb.style.bottom = `${frac * 100}%`;
+    // style.css turns --frac into a vertical or horizontal position,
+    // depending on the layout (desktop strips or phone rows).
+    fader.style.setProperty("--frac", value / max);
     if (!opts.silent) setReadout(fader.closest(".strip"), value);
   }
 
@@ -386,7 +414,11 @@
       function updateFromPointer(evt) {
         if (fader.dataset.disabled === "1") return;
         const rect = fader.getBoundingClientRect();
-        const frac = Math.max(0, Math.min(1, (rect.bottom - evt.clientY) / rect.height));
+        // Phone rows lay faders out horizontally (see style.css).
+        const raw = rect.width > rect.height
+          ? (evt.clientX - rect.left) / rect.width
+          : (rect.bottom - evt.clientY) / rect.height;
+        const frac = Math.max(0, Math.min(1, raw));
         const value = frac * max;
         setFaderValue(fader, value);
         sendThrottled(value);
@@ -548,6 +580,7 @@
     wireControls(document);
     wireUnitToggle();
     wireSettingsDialog();
+    wireAddPeerDialog();
     connect();
   });
 
