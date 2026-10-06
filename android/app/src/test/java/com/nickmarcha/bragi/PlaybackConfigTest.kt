@@ -2,6 +2,7 @@ package com.nickmarcha.bragi
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -59,5 +60,14 @@ class PlaybackConfigTest {
         assertFalse(delayWorthReporting(102, 105))
         assertTrue(delayWorthReporting(102, 107))
         assertTrue(delayWorthReporting(102, 97))
+    }
+
+    @Test fun received_traffic_tells_missing_packets_from_silent_ones() {
+        // Roc plays zeros both when no packets arrive and when they carry silence (issue #2).
+        assertEquals(500L, receivedKiB(previousBytes = 1_000_000, currentBytes = 1_512_000))
+        assertEquals(0L, receivedKiB(previousBytes = 1_000_000, currentBytes = 1_000_000))
+        // TrafficStats.UNSUPPORTED is -1.
+        assertNull(receivedKiB(previousBytes = -1, currentBytes = 1_000_000))
+        assertNull(receivedKiB(previousBytes = 1_000_000, currentBytes = -1))
     }
 }

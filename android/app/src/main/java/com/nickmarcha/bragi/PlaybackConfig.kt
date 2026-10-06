@@ -46,3 +46,10 @@ fun captureDelayMs(framesRead: Long, capturedFrame: Long, capturedAtNanos: Long,
 /** Delays wobble by a few ms every second; only appearing, disappearing, or a 5 ms move is news. */
 fun delayWorthReporting(previous: Int?, next: Int?): Boolean =
     if (previous == null || next == null) previous != next else kotlin.math.abs(next - previous) >= 5
+
+/**
+ * KiB the app received between two TrafficStats readings, or null where Android has no count.
+ * Nearly all of it is Roc audio, so about zero while listening means no packets arrive.
+ */
+fun receivedKiB(previousBytes: Long, currentBytes: Long): Long? =
+    if (previousBytes < 0 || currentBytes < 0) null else (currentBytes - previousBytes) / 1024

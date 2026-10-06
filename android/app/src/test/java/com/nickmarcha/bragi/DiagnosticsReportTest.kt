@@ -20,4 +20,23 @@ class DiagnosticsReportTest {
         assertTrue(url.toString().length <= 8000)
         assertTrue(url.queryParameter("logs")!!.contains("Most recent failure"))
     }
+
+    @Test fun health_runs_keep_their_first_and_last_lines_so_startup_events_fit() {
+        // Issue #2's excerpt held only health lines; the bound address had scrolled out.
+        val health = (1..40).flatMap { listOf("t$it Playback health: n=$it", "t$it Capture health: n=$it") }
+        val logs = (listOf("t0 Receiver bound to 100.98.253.67:10045") + health + "t41 Stopping").joinToString("\n")
+        assertEquals(listOf(
+            "t0 Receiver bound to 100.98.253.67:10045",
+            "t1 Playback health: n=1", "t1 Capture health: n=1",
+            "… 76 health lines omitted …",
+            "t40 Playback health: n=40", "t40 Capture health: n=40",
+            "t41 Stopping",
+        ).joinToString("\n"), collapseHealthLines(logs))
+        assertTrue(diagnosticsIssueUrl(logs, "0.1.13", "FP5").queryParameter("logs")!!.contains("Receiver bound to"))
+    }
+
+    @Test fun short_health_runs_are_left_alone() {
+        val logs = "a Playback health: 1\nb Playback health: 2\nc Stopping\nd Playback health: 3"
+        assertEquals(logs, collapseHealthLines(logs))
+    }
 }

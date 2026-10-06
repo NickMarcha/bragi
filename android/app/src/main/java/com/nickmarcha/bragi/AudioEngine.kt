@@ -3,6 +3,7 @@ package com.nickmarcha.bragi
 import android.annotation.SuppressLint
 import android.media.*
 import android.media.projection.MediaProjection
+import android.net.TrafficStats
 import android.os.Process
 import android.os.SystemClock
 import java.io.IOException
@@ -197,6 +198,7 @@ class AudioEngine(
                             var previousUnderruns = playback.underrunCount
                             var checkedUnderruns = previousUnderruns
                             var previousHead = playback.playbackHeadPosition.toLong() and 0xffffffffL
+                            var previousRxBytes = TrafficStats.getUidRxBytes(Process.myUid())
                             while (running.get()) {
                                 val readAt = SystemClock.elapsedRealtime()
                                 largestReadGapMs = max(largestReadGapMs, readAt - previousReadAt)
@@ -235,10 +237,12 @@ class AudioEngine(
                                     val head = playback.playbackHeadPosition.toLong() and 0xffffffffL
                                     val advanced = (head - previousHead) and 0xffffffffL
                                     val route = playback.routedDevice
-                                    Diagnostics.record("Playback health: elapsedMs=${now - reportAt}; decodedFrames=${chunks * chunkFrames}; silentChunks=$silentChunks/$chunks; peak=$peak; largestReadGapMs=$largestReadGapMs; delayMs=${rocDelayMs + outputMs} (roc=$rocDelayMs output=$outputMs); underruns=${underruns - previousUnderruns}; playedFrames=$advanced; state=${playback.playState}; route=${route?.type}:${route?.productName}")
+                                    val rxBytes = TrafficStats.getUidRxBytes(Process.myUid())
+                                    Diagnostics.record("Playback health: elapsedMs=${now - reportAt}; receivedKiB=${receivedKiB(previousRxBytes, rxBytes)}; decodedFrames=${chunks * chunkFrames}; silentChunks=$silentChunks/$chunks; peak=$peak; largestReadGapMs=$largestReadGapMs; delayMs=${rocDelayMs + outputMs} (roc=$rocDelayMs output=$outputMs); underruns=${underruns - previousUnderruns}; playedFrames=$advanced; state=${playback.playState}; route=${route?.type}:${route?.productName}")
                                     reportAt = now
                                     previousUnderruns = underruns
                                     previousHead = head
+                                    previousRxBytes = rxBytes
                                     largestReadGapMs = 0
                                     chunks = 0
                                     silentChunks = 0

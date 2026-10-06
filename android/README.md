@@ -24,7 +24,9 @@ silent. Android itself does not expose received audio as another app's microphon
 While listening, the status line shows the delay measured on the phone: Roc's
 target latency plus Android's output delay, read from AudioTrack timestamps. Time
 on the network and on the Pi comes on top and is not measured. Diagnostics records
-`delayMs=... (roc=... output=...)` in every Playback health line.
+`delayMs=... (roc=... output=...)` in every Playback health line. `receivedKiB` is
+what the app received in those 5 s, nearly all Roc audio: about 0 means no packets
+arrive, while a normal count with `peak=0.0` means the packets carry silence.
 
 Playback uses a low-latency AudioTrack at the output's native sample rate; Roc
 resamples from Bragi's 44.1 kHz. Until 0.1.8 it used the default media path, which
@@ -59,7 +61,10 @@ and the network. FP5 numbers decide what to shrink next.
 ## Build and checks
 
 Use JDK 17 and Android SDK 35 with build-tools 35.0.0. Set `ANDROID_HOME` or put
-`sdk.dir=/path/to/sdk` in ignored `local.properties`. From this directory:
+`sdk.dir=/path/to/sdk` in ignored `local.properties`. Gradle fails on JDK 25 with an
+error that only prints the version. Android Studio's bundled JDK 21 works; on Windows
+set `JAVA_HOME="C:\Program Files\Android\Android Studio\jbr"` before running `gradlew.bat`.
+From this directory:
 
 ```sh
 ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
@@ -125,7 +130,8 @@ include app/device versions, service events, Java exception stacks, and Android
 process-exit details on Android 11 or later. Native crash/ANR traces are included
 when Android makes them available. Clear logs erases the stored log. Report on
 GitHub opens the Android bug form with app version, device details, and a bounded
-recent log excerpt, and copies the full log to the clipboard. The form requires a
+recent log excerpt, with long runs of health lines cut to their first and last
+lines so startup events such as `Receiver bound to` stay in it, and copies the full log to the clipboard. The form requires a
 problem area, description, reproduction steps, and expected behavior. GitHub adds
 `bug` and `android` labels automatically. Review and submit the issue in
 the browser, pasting the full log if needed. There is no automatic issue submission
