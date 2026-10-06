@@ -122,3 +122,11 @@ The address field is still used when no Tailscale address can be detected.
 The app has a new icon and a dark look in the logo's colors, to match the
 Bragi web UI. The notification shows the logo's outline. Nothing about audio
 changed since 0.1.10.
+
+## 0.1.12 listening on mobile data
+
+The app now takes its Tailscale address only from Tailscale's own connection.
+Mobile carriers can hand out addresses in the same 100.x range, and 0.1.10 and
+0.1.11 could pick that one instead, save it, and send it to Bragi. Listening
+then stayed silent (issue #2). Open the app once after updating so it saves the
+right address.
