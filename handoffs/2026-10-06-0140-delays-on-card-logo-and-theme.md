@@ -94,6 +94,8 @@ Do not spawn subagents unless asked.
 
 ## Added 2026-10-06 ~07:10: issue #2, no audio when listening on the FP5
 
+**Resolved and closed, see the 10:12 section at the end.** Kept for the record.
+
 Resume this from a machine that can reach sagepi. The sandbox can't.
 
 https://github.com/NickMarcha/bragi/issues/2 is open. It was filed from 0.1.11 on the FP5 with
@@ -128,6 +130,9 @@ Close #2 only with the user's OK, as was done for #1.
 
 ### Uncommitted: shorter issue excerpts
 
+**Superseded.** It was rewritten on the Windows machine and released in 0.1.13.
+Discard the uncommitted copy on the machine that wrote this; pushing it would conflict.
+
 `android/app/src/main/java/com/nickmarcha/bragi/DiagnosticsReport.kt` now has
 `collapseHealthLines`. Each run of `Playback health` / `Capture health` lines keeps the first
 and last line of each kind, with `… N health lines omitted …` between them, so startup events
@@ -139,3 +144,50 @@ together with the #2 fix. Remember to bump `versionName` / `versionCode` in
 
 A separate UX note: "Report on GitHub" opens GitHub's form in the browser, and the user has
 to be signed in there before they can submit. The user hit this the first time.
+
+## Added 2026-10-06T10:12+02:00: #2 fixed, 0.1.12 and 0.1.13 out
+
+Written from `C:\Users\Nicol\Desktop\bragi` (Windows, "sage"). This machine reaches
+sagepi over Tailscale and has the FP5 on wireless adb (`adb connect 192.168.1.8:<port>`;
+the port changes whenever wireless debugging is toggled, `adb mdns services` finds it).
+Tailscale SSH to sagepi is refused for user `Nicol`, and the user doesn't want that
+changed. T3's device panel is off on purpose; use plain `adb`.
+
+### What happened
+
+Cause of #2: since 0.1.10 the app took the first 100.64.0.0/10 address on any interface.
+On the FP5 the carrier's `rmnet_data1` (100.83.223.246) is listed before Tailscale's `tun0`
+(100.98.253.67), so the app saved and registered the carrier address. Confirmed with
+`adb shell ip -4 -o addr`. The issue's closing comment has the details.
+
+Commits, all pushed except the last:
+- `def1b5a` Address detection reads `tun*` interfaces only. Released as 0.1.12
+  (`78baf8f`). The user confirmed listening works on the FP5 and the other Android peer.
+- `faa4039` Server: the phone card warns "Phone is at X, Bragi sends to Y" when the
+  Android control socket's `X-Forwarded-For` (set by `tailscale serve`) differs from the
+  registered address. Deployed to sagepi.
+- `7202fa9` Android: `receivedKiB` in Playback health lines, `collapseHealthLines` for
+  issue excerpts, JDK note in `android/README.md`. Released as 0.1.13 (`74ce664`). Both
+  phones run 0.1.13; the FP5 log showed `receivedKiB≈900` per 5 s with real peaks.
+- `f8bd8ee` (**not pushed, not released**) Stop no longer logs "Receiver worker failed"
+  with a stack trace: pausing the track mid-write returned 0 and was treated as a failure.
+
+### Open
+
+- **The address warning is untested on sagepi.** Whether `tailscale serve` really sends
+  `X-Forwarded-For` is assumed, not seen; without it the warning never shows. It also
+  keeps one seen address per peer name and the latest connection wins, so a stray
+  socket under a phone's name leaves a false warning until the phone reconnects. Fix
+  that before testing with a fake `?client=android` socket from another tailnet machine.
+- `f8bd8ee` needs a push and goes out with the next Android release.
+- `route=2:FP5` (built-in speaker) in the log was expected: the user was on speaker.
+- The "Waiting on the user" list above still stands, minus the FP5 latency numbers if the
+  log in this session is enough: delay 104 ms (roc=60 output=44), no underruns.
+
+### Environment notes for Windows
+
+- Gradle needs Android Studio's JDK: `JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"`,
+  then `./gradlew.bat :app:testDebugUnitTest :app:lintDebug` in `android/`.
+- Server tests: `python -m pytest -p no:cacheprovider --basetemp=<fresh dir>`.
+- Python's `Path.write_text` uses cp1252 here and mangled a `…`; write UTF-8 bytes
+  explicitly or use the Edit tool.
