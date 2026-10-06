@@ -5,13 +5,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Bragi</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png" />
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
   <link rel="stylesheet" href="/static/style.css" />
   <script src="/static/htmx.min.js"></script>
   <script src="/static/ws.js" defer></script>
 </head>
 <body class="{{ 'viz-enabled' if viz_settings.enabled }}">
   <header id="top-bar">
-    <span class="brand">Bragi</span>
+    <span class="brand"><img src="/static/logo.png" alt="" />Bragi</span>
     <div id="microphone-routing">
       {% include "_microphone.html" %}
     </div>

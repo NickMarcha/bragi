@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The logo's colours (docs/brand/), shared with the web UI's style.css. -->
+<resources>
+    <color name="bragi_background">#111317</color>
+    <color name="bragi_text">#e4e6e8</color>
+    <color name="bragi_muted">#9a9fa6</color>
+    <color name="bragi_accent">#00c0b0</color>
+</resources>

@@ -4,14 +4,17 @@
    the end). Plain CSS, no build step - see docs/dashboard-ui.md. */
 
 :root {
-  --bg: #121212;
-  --panel: #1a1a1a;
-  --raised: #242424;
-  --border: #2e2e2e;
-  --text: #e4e4e4;
-  --muted: #9a9a9a;
-  --accent: #5fae8e;
-  --accent-strong: #86d3b0;
+  /* Colours from the logo (docs/brand/), shared with the Android app's
+     res/values/colors.xml: its cool near-black and its two teals. */
+  --bg: #111317;
+  --panel: #181b20;
+  --raised: #22262c;
+  --hover: #2a2f36;
+  --border: #2d3239;
+  --text: #e4e6e8;
+  --muted: #9a9fa6;
+  --accent: #00c0b0;
+  --accent-strong: #1ff1eb;
   --danger: #d0525a;
   --warn: #c9a352;
   --strip-width: 58px;
@@ -49,7 +52,7 @@ button {
 }
 
 button:hover:not(:disabled) {
-  background: #2c2c2c;
+  background: var(--hover);
 }
 
 button.primary {
@@ -89,7 +92,15 @@ button:focus-visible {
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
+}
+
+.brand img {
+  width: 26px;
+  height: 26px;
 }
 
 #microphone-routing label {

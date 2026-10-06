@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
+import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.activity.ComponentActivity
@@ -69,7 +70,13 @@ class MainActivity : ComponentActivity() {
             insets
         }
         fun text(value: String, size: Float = 16f) = TextView(this).apply { text = value; textSize = size; panel.addView(this) }
-        text("Bragi", 28f)
+        panel.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(ImageView(this@MainActivity).apply { setImageResource(R.drawable.bragi_mark); contentDescription = null },
+                LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
+            addView(TextView(this@MainActivity).apply { text = "Bragi"; textSize = 28f })
+        })
         text("Send phone audio to your network headset, or just listen to it.")
         fun field(label: String, initial: String, type: Int): EditText {
             text(label)

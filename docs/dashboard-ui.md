@@ -133,9 +133,16 @@ which htmx has no equivalent for.
 ## CSS
 
 One file, `app/static/style.css`, plain CSS with no build step, divided by
-comment banners. Theme colours are custom properties on `:root`: neutral
-dark greys and one muted green accent, following the user's Uncodixify
-guide (no pills, no uppercase labels, no blue).
+comment banners. Theme colours are custom properties on `:root`, taken from
+the logo: its cool near-black for the greys and its two teals for the
+accent, following the user's Uncodixify guide (no pills, no uppercase
+labels, no blue). The Android app's `res/values/colors.xml` uses the same
+values.
+
+The logo's source is `docs/brand/bragi-logo.png`. `dev/brand.py` cuts out
+its background and writes every icon from it: the favicon and header mark
+here, the Android launcher, notification and header icons, and the desktop
+tray icons. Rerun it when the logo changes.
 
 The layout has to fit a 1080p browser window without scrolling, and half
 of one (about 960px wide), which is how the dashboard is most often used.

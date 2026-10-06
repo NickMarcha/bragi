@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application android:name=".BragiApplication" android:label="Bragi" android:theme="@style/AppTheme"
                  android:allowBackup="false" android:usesCleartextTraffic="false"
-                 android:icon="@drawable/ic_bragi">
+                 android:icon="@mipmap/ic_launcher">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -154,7 +154,7 @@ class BragiService : Service() {
     private fun notification(): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop = PendingIntent.getService(this, 1, Intent(this, BragiService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        return NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_bragi)
+        return NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_bragi)
             .setContentTitle("Bragi audio bridge").setContentText(mutableState.value.connection)
             .setContentIntent(open).setOngoing(true).addAction(0, "Stop", stop).build()
     }
