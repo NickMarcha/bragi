@@ -213,6 +213,8 @@ class AudioEngine(
                                 while (running.get() && offset < samples.size) {
                                     val written = playback.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
                                     if (written < 0) throw IOException("Audio playback failed ($written).")
+                                    // stop() pauses the track mid-write, which then returns 0.
+                                    if (written == 0 && !running.get()) return
                                     if (written == 0) throw IOException("Audio playback stopped accepting samples.")
                                     offset += written
                                 }
