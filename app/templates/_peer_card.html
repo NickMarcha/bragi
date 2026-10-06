@@ -21,9 +21,16 @@
 <article class="device" id="peer-{{ view.name }}" data-peer="{{ view.name }}" data-client-tracked="{{ 'true' if view.client_connected is not none else 'false' }}"
          style="order: {{ order_of.get('peer:' ~ view.name, 999) }}">
   <div class="device-head">
-    <button class="icon-btn grip" type="button" title="Drag to reorder">{{ icons.grip() }}</button>
     <span class="status-dot {{ peer_status }}" title="{{ peer_status_title }}"></span>
     <h3 title="{{ view.name }}">{{ view.name }}</h3>
+  </div>
+  {% if android %}
+  {% set client_text %}{% if view.client_status and view.client_status.error %}{{ view.client_status.error }}{% elif view.client_status %}{{ "Sending" if view.client_status.send_active else "Sender paused" }} · {{ "Listening" if view.client_status.receive_active else "Receiver paused" }}{% else %}Start the Android service on the phone.{% endif %}{% endset %}
+  {# The phone's own status is more useful here than its address, which
+     stays in the tooltip. #}
+  <div class="device-bar">
+    <button class="icon-btn grip" type="button" title="Drag to reorder">{{ icons.grip() }}</button>
+    <p class="device-meta client-stream-status" title="Android · {{ view.tailscale_ip }}">{{ client_text }}</p>
     {% if view.managed %}
     <button class="icon-btn remove-btn" title="Remove {{ view.name }}"
             hx-post="/peers/{{ view.name }}/delete"
@@ -31,8 +38,6 @@
             hx-confirm="Remove {{ view.name }}?">{{ icons.remove() }}</button>
     {% endif %}
   </div>
-  <p class="device-meta" title="{{ kind }} · {{ view.tailscale_ip }}{{ '' if view.managed else ' · configured outside Bragi' }}">{{ kind }} · {{ view.tailscale_ip }}</p>
-  {% if android %}
   <div class="client-controls" data-send-enabled="{{ 'true' if view.send_enabled else 'false' }}"
        data-receive-enabled="{{ 'true' if view.receive_enabled else 'false' }}">
     {% if view.capture_mode != "none" %}
@@ -42,8 +47,17 @@
     {% endif %}
     <button class="client-control-btn {{ 'active' if view.receive_enabled }}" data-action="toggle-stream"
             data-key="{{ view.name }}" data-stream="receive" title="Listen to headset audio">Listen</button>
-    {% set client_text %}{% if view.client_status and view.client_status.error %}{{ view.client_status.error }}{% elif view.client_status %}{{ "Sending" if view.client_status.send_active else "Sender paused" }} · {{ "Listening" if view.client_status.receive_active else "Receiver paused" }}{% else %}Start the Android service on the phone.{% endif %}{% endset %}
-    <p class="client-stream-status" title="{{ client_text }}">{{ client_text }}</p>
+  </div>
+  {% else %}
+  <div class="device-bar">
+    <button class="icon-btn grip" type="button" title="Drag to reorder">{{ icons.grip() }}</button>
+    <p class="device-meta" title="{{ kind }} · {{ view.tailscale_ip }}{{ '' if view.managed else ' · configured outside Bragi' }}">{{ kind }} · {{ view.tailscale_ip }}</p>
+    {% if view.managed %}
+    <button class="icon-btn remove-btn" title="Remove {{ view.name }}"
+            hx-post="/peers/{{ view.name }}/delete"
+            hx-target="#peers" hx-swap="innerHTML"
+            hx-confirm="Remove {{ view.name }}?">{{ icons.remove() }}</button>
+    {% endif %}
   </div>
   {% endif %}
 

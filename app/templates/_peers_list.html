@@ -1,3 +1,15 @@
-{% for view in peers %}
+{# Peers with at least one direction in the graph sit in the row; the rest
+   (a phone whose app isn't running) stack in #parked with switched-off
+   headsets. #parked lives here, inside the #peers swap target, so adding or
+   removing a peer re-renders it from the server's view too. #}
+{% for view in peers if view.outgoing.connected or view.incoming.connected %}
 {% include "_peer_card.html" %}
 {% endfor %}
+<div id="parked" title="Switched off or offline">
+  {% for view in headsets if not view.enabled %}
+  {% include "_headset_card.html" %}
+  {% endfor %}
+  {% for view in peers if not (view.outgoing.connected or view.incoming.connected) %}
+  {% include "_peer_card.html" %}
+  {% endfor %}
+</div>

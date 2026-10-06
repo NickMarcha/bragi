@@ -16,9 +16,11 @@
   --warn: #c9a352;
   --strip-width: 58px;
   --thumb: 22px;
-  /* Faders take whatever height the window leaves after the toolbar, the
-     device header, labels, pan and mute (~330px), within sane limits. */
-  --fader-height: clamp(150px, calc(100vh - 330px), 420px);
+  /* Faders take whatever height each row of devices gets (ws.js counts
+     rows into --rows when a narrow window wraps them) after the toolbar
+     (44px), the console padding (24px) and a device's header, labels, pan
+     and mute (~240px), within sane limits. */
+  --fader-height: clamp(110px, calc((100vh - 68px) / var(--rows, 1) - 240px), 420px);
 }
 
 * { box-sizing: border-box; }
@@ -135,12 +137,14 @@ button:focus-visible {
 
 /* --- the console: one row of devices --- */
 
+/* Wraps rather than scrolling sideways, so a half-screen window still
+   shows every device; see --fader-height for how rows share the height. */
 #console {
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
   gap: 8px;
   padding: 12px;
-  overflow-x: auto;
 }
 
 /* Keeps #peers a valid independent htmx swap target (add/remove peer)
@@ -155,10 +159,13 @@ button:focus-visible {
   align-self: center;
 }
 
+/* The strips set a device's width, never its name or status text: two
+   strips, their gap, padding and border. */
 .device {
   display: flex;
   flex: none;
   flex-direction: column;
+  min-width: calc(2 * var(--strip-width) + 24px);
   gap: 6px;
   padding: 8px;
   background: var(--panel);
@@ -166,32 +173,54 @@ button:focus-visible {
   border-radius: 6px;
 }
 
+.device-head,
+.device-bar {
+  width: 0;
+  min-width: 100%;
+}
+
+/* The name gets its own line, up to two of them: headset names are long
+   and differ late ("HyperX Cloud III" against "... III S Wireless"). */
 .device-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
-  min-height: 22px;
+}
+
+.device-head .status-dot {
+  margin-top: 5px;
+}
+
+.device-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: -4px;
 }
 
 .device-head h3 {
+  display: -webkit-box;
   flex: 1;
+  min-width: 0;
   margin: 0;
-  max-width: 120px;
   overflow: hidden;
   font-size: 13px;
   font-weight: 600;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .device-meta {
-  margin: -4px 0 0;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
   overflow: hidden;
   color: var(--muted);
   font-size: 11px;
   white-space: nowrap;
   text-overflow: ellipsis;
-  max-width: calc(2 * var(--strip-width) + 6px);
 }
 
 .status-dot {
@@ -245,7 +274,9 @@ button:focus-visible {
   display: none;
 }
 
-#parked .grip {
+#parked .grip,
+#parked .strips,
+#parked .client-controls {
   display: none;
 }
 
@@ -475,16 +506,6 @@ body.viz-enabled .level-meter {
   color: #0e1512;
 }
 
-.client-stream-status {
-  grid-column: 1 / -1;
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 
 /* --- dialogs --- */
 
@@ -548,6 +569,18 @@ dialog h2 {
   margin-bottom: 16px;
 }
 
+/* --- half a 1080p screen and other mid widths: narrower strips --- */
+
+@media (min-width: 641px) and (max-width: 1280px) {
+  :root {
+    --strip-width: 48px;
+  }
+
+  .strip-label {
+    font-size: 11px;
+  }
+}
+
 /* --- phones: rows with horizontal faders --- */
 
 @media (max-width: 640px) {
@@ -578,10 +611,6 @@ dialog h2 {
     align-self: stretch;
   }
 
-  .device-head h3,
-  .device-meta {
-    max-width: none;
-  }
 
   .strips {
     flex-direction: column;

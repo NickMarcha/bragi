@@ -206,17 +206,53 @@
     devices.forEach((card, i) => { card.style.order = i; });
   }
 
-  // A switched-off headset has nothing to mix, so it leaves the row for
-  // the stack at the end, and returns to its old place when switched on.
+  // A switched-off headset, or a peer with neither direction in the graph
+  // (a phone whose app isn't running), has nothing to mix: it leaves the
+  // row for the stack at the end (#parked, inside #peers) and returns to
+  // its old place when it comes back. _peers_list.html makes the same call
+  // on first render.
+  function shouldPark(card) {
+    if (card.dataset.headset) return card.classList.contains("headset-disabled");
+    const offline = card.querySelectorAll(".strip .offline");
+    return offline.length > 0 && Array.from(offline).every((el) => !el.hidden);
+  }
+
   function placeDevice(card) {
     const parked = document.getElementById("parked");
-    const console_ = document.getElementById("console");
-    if (!parked || !console_) return;
-    if (card.classList.contains("headset-disabled")) {
-      if (card.parentElement !== parked) parked.appendChild(card);
+    if (!parked || card === draggingCard) return;
+    if (shouldPark(card)) {
+      if (card.parentElement === parked) return;
+      parked.appendChild(card);
     } else if (card.parentElement === parked) {
-      console_.insertBefore(card, document.getElementById("peers"));
+      if (card.dataset.headset) {
+        document.getElementById("console").insertBefore(card, document.getElementById("peers"));
+      } else {
+        document.getElementById("peers").insertBefore(card, parked);
+      }
+    } else {
+      return;
     }
+    scheduleRowCount();
+  }
+
+  // Devices wrap onto more rows when the window is too narrow for one (half
+  // a 1080p screen, say). --rows lets style.css shrink the faders so every
+  // row still fits the window's height.
+  let rowCountPending = false;
+  function scheduleRowCount() {
+    if (rowCountPending) return;
+    rowCountPending = true;
+    requestAnimationFrame(() => {
+      rowCountPending = false;
+      const tops = new Set();
+      for (const card of rowDevices()) tops.add(card.offsetTop);
+      const parked = document.getElementById("parked");
+      if (parked && parked.querySelector(".device")) tops.add(parked.offsetTop);
+      const rows = String(Math.max(1, tops.size));
+      if (document.documentElement.style.getPropertyValue("--rows") !== rows) {
+        document.documentElement.style.setProperty("--rows", rows);
+      }
+    });
   }
 
   // Dragging the grip moves a device along the row (or down the column on
@@ -402,6 +438,7 @@
     }
 
     updateCardStatus(card);
+    placeDevice(card);
   }
 
   // Recomputes the card-level status dot from its strips' current
@@ -453,8 +490,9 @@
     if (!controls) return;
     controls.dataset.sendEnabled = String(msg.send_enabled);
     controls.dataset.receiveEnabled = String(msg.receive_enabled);
-    controls.querySelector('[data-stream="send"]').classList.toggle("active", msg.send_enabled);
-    controls.querySelector('[data-stream="receive"]').classList.toggle("active", msg.receive_enabled);
+    // Listen-only phones have no Send button.
+    controls.querySelector('[data-stream="send"]')?.classList.toggle("active", msg.send_enabled);
+    controls.querySelector('[data-stream="receive"]')?.classList.toggle("active", msg.receive_enabled);
   }
 
   function applyPeerStatus(msg) {
@@ -666,6 +704,8 @@
     wireSettingsDialog();
     wireAddPeerDialog();
     wireReorder();
+    scheduleRowCount();
+    window.addEventListener("resize", scheduleRowCount);
     connect();
   });
 
@@ -677,5 +717,6 @@
   document.addEventListener("htmx:afterSwap", (evt) => {
     levelFills.clear();
     wireControls(evt.detail.target);
+    scheduleRowCount();
   });
 })();

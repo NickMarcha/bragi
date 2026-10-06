@@ -49,3 +49,13 @@ def test_a_disabled_headset_is_parked_out_of_the_row(session):
     parked = html[html.index('id="parked"'):html.index("</main>")]
     assert f'data-headset="{SECOND_CARD_ID}"' in parked
     assert f'data-headset="{HEADSET_CARD_ID}"' not in parked
+
+
+def test_a_peer_with_nothing_in_the_graph_is_parked_too(session):
+    """A phone whose app isn't running has neither direction to mix."""
+    from app import peers
+    peers.register_android_peer("fairphone", "100.98.253.67", "microphone")
+    html = TestClient(app).get("/").text
+    parked = html[html.index('id="parked"'):html.index("</main>")]
+    assert 'data-peer="fairphone"' in parked
+    assert 'data-peer="sagedeck"' not in parked

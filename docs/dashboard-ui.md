@@ -33,9 +33,11 @@ index.html                     page shell
   capture are connected (`online` / `offline` / `partial` / `disabled`).
   Two strips: Speakers (`playback`) and Mic (`capture`). A disabled headset
   folds down to its header.
-- **`_peer_card.html`** renders one peer as a `.device`: header (status dot,
-  name, remove button for managed peers), a meta line (`Roc`, `VBAN` or
-  `Android`, and the IP), Android's Send/Listen toggles, then two strips:
+- **`_peer_card.html`** renders one peer as a `.device`: the name on its
+  own line (up to two lines, with the status dot), then a bar with the
+  reorder grip, a meta line (`Roc` or `VBAN` and the IP, or for a phone its
+  own status) and the remove button for managed peers, Android's
+  Send/Listen toggles, then two strips:
   `outgoing` (labelled Mic, or Headset for a phone) and `incoming` (Audio,
   or Mic for a phone in microphone mode). The full direction is in each
   strip's `title`. The status dot uses real tray-app reachability when
@@ -66,10 +68,16 @@ column on a phone) by rewriting those `order` values, then sends
 property, not DOM moves, because headsets and peers live in different
 containers and `#peers` (the htmx swap target) is `display: contents`.
 
-Switched-off headsets render inside `#parked`, a stack at the end of the
-row, folded to their header. When one is switched on or off, `ws.js`
-(`placeDevice`) moves it between `#parked` and the row; its `order` value
-puts it back where it was.
+Switched-off headsets, and peers with neither direction in the graph (a
+phone whose app isn't running), render inside `#parked`, a stack at the
+end of the row folded to the header. `#parked` lives in `_peers_list.html`,
+inside the `#peers` swap target, so adding or removing a peer re-renders it
+from the server's view as well. When a device switches off, goes offline
+or comes back, `ws.js` (`placeDevice`, called after every direction
+update) moves it between `#parked` and the row; its `order` value puts it
+back where it was. Desktop Roc peers are never parked: Bragi's modules
+keep their nodes alive even when the machine is off, and their status dot
+shows the tray app's reachability instead.
 
 ## The data contract
 
@@ -125,11 +133,14 @@ comment banners. Theme colours are custom properties on `:root`: neutral
 dark greys and one muted green accent, following the user's Uncodixify
 guide (no pills, no uppercase labels, no blue).
 
-The layout has to fit a 1080p browser window without scrolling. Faders get
-`--fader-height`, which is the window height minus everything else in a
-device (`clamp(150px, 100vh - 330px, 420px)`), so the console grows and
-shrinks with the window. Devices sit in one row and the row scrolls
-sideways if there are too many.
+The layout has to fit a 1080p browser window without scrolling, and half
+of one (about 960px wide), which is how the dashboard is most often used.
+Devices wrap onto a second row rather than scrolling sideways; `ws.js`
+counts the rows into `--rows`, and `--fader-height` gives each row its
+share of the window height after the device chrome
+(`clamp(110px, (100vh - 68px) / rows - 240px, 420px)`). Strips are 58px
+wide, 48px between 641px and 1280px. A device's width comes from its two
+strips only; names and status text truncate rather than widen it.
 
 Below 640px wide the same markup becomes rows: each strip is a small grid
 (label and balance on top, a horizontal fader and mute below), and the
