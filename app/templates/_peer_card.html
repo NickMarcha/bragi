@@ -18,8 +18,10 @@
 {% endif %}
 {% set android = view.client_kind == "android" %}
 {% set kind = "Android" if android else ("Roc" if view.protocol == "roc" else "VBAN") %}
-<article class="device" id="peer-{{ view.name }}" data-peer="{{ view.name }}" data-client-tracked="{{ 'true' if view.client_connected is not none else 'false' }}">
+<article class="device" id="peer-{{ view.name }}" data-peer="{{ view.name }}" data-client-tracked="{{ 'true' if view.client_connected is not none else 'false' }}"
+         style="order: {{ order_of.get('peer:' ~ view.name, 999) }}">
   <div class="device-head">
+    <button class="icon-btn grip" type="button" title="Drag to reorder">{{ icons.grip() }}</button>
     <span class="status-dot {{ peer_status }}" title="{{ peer_status_title }}"></span>
     <h3 title="{{ view.name }}">{{ view.name }}</h3>
     {% if view.managed %}

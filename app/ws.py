@@ -48,6 +48,7 @@ from . import audio_state
 from . import headsets as headsets_module
 from . import pipewire
 from . import views
+from . import layout
 from . import viz_settings
 
 logger = logging.getLogger("bragi.ws")
@@ -361,6 +362,15 @@ async def apply_action(action: dict) -> None:
         return
 
     if verb in ("set_volume", "set_balance") and not _accept_ts((target, key, direction), action.get("ts")):
+        return
+
+    if verb == "set_order":
+        # Global too: the dashboard's device order, see layout.py.
+        order = action.get("value")
+        if not layout.valid_order(order):
+            return
+        await asyncio.to_thread(layout.set_order, order)
+        manager.broadcast_nowait({"type": "order", "order": order})
         return
 
     if verb == "set_viz_enabled":

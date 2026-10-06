@@ -80,6 +80,7 @@
       else if (msg.type === "microphone") htmx.ajax("GET", "/audio/microphone", { target: "#microphone-routing", swap: "innerHTML" });
       else if (msg.type === "levels") applyLevels(msg);
       else if (msg.type === "viz_settings") applyVizSettings(msg);
+      else if (msg.type === "order") applyOrder(msg.order);
     });
     socket.addEventListener("close", () => {
       setStatus("disconnected");
@@ -176,6 +177,88 @@
     });
   }
 
+  // --- device order and the parked stack ---
+  //
+  // Devices are ordered with the CSS order property, not by moving them:
+  // headsets and peers live in different containers (#peers is the htmx
+  // swap target, display: contents), and order works across both. The
+  // order is saved on the Pi (app/layout.py) and broadcast to every tab.
+
+  let draggingCard = null;
+
+  function deviceId(card) {
+    return card.dataset.headset ? `headset:${card.dataset.headset}` : `peer:${card.dataset.peer}`;
+  }
+
+  function rowDevices() {
+    return Array.from(document.querySelectorAll("#console .device"))
+      .filter((card) => !card.closest("#parked"))
+      .sort((a, b) => Number(a.style.order) - Number(b.style.order));
+  }
+
+  function applyOrder(order) {
+    if (draggingCard || !Array.isArray(order)) return;
+    const saved = new Map(order.map((id, i) => [id, i]));
+    const devices = Array.from(document.querySelectorAll("#console .device"));
+    devices.sort((a, b) =>
+      (saved.get(deviceId(a)) ?? Infinity) - (saved.get(deviceId(b)) ?? Infinity)
+      || Number(a.style.order) - Number(b.style.order));
+    devices.forEach((card, i) => { card.style.order = i; });
+  }
+
+  // A switched-off headset has nothing to mix, so it leaves the row for
+  // the stack at the end, and returns to its old place when switched on.
+  function placeDevice(card) {
+    const parked = document.getElementById("parked");
+    const console_ = document.getElementById("console");
+    if (!parked || !console_) return;
+    if (card.classList.contains("headset-disabled")) {
+      if (card.parentElement !== parked) parked.appendChild(card);
+    } else if (card.parentElement === parked) {
+      console_.insertBefore(card, document.getElementById("peers"));
+    }
+  }
+
+  // Dragging the grip moves a device along the row (or down the column on
+  // a phone). Wired once on the document, so cards htmx swaps in later
+  // work without rewiring.
+  function wireReorder() {
+    let devices = [];
+    let vertical = false;
+    document.addEventListener("pointerdown", (evt) => {
+      const grip = evt.target.closest && evt.target.closest(".grip");
+      if (!grip || grip.closest("#parked")) return;
+      evt.preventDefault();
+      draggingCard = grip.closest(".device");
+      devices = rowDevices();
+      vertical = getComputedStyle(document.getElementById("console")).flexDirection === "column";
+      grip.setPointerCapture(evt.pointerId);
+      draggingCard.classList.add("dragging");
+    });
+    document.addEventListener("pointermove", (evt) => {
+      if (!draggingCard) return;
+      const pointer = vertical ? evt.clientY : evt.clientX;
+      const others = devices.filter((card) => card !== draggingCard);
+      let index = 0;
+      for (const card of others) {
+        const r = card.getBoundingClientRect();
+        if (pointer > (vertical ? r.top + r.height / 2 : r.left + r.width / 2)) index++;
+      }
+      others.splice(index, 0, draggingCard);
+      others.forEach((card, i) => { card.style.order = i; });
+      devices = others;
+    });
+    const drop = () => {
+      if (!draggingCard) return;
+      draggingCard.classList.remove("dragging");
+      draggingCard = null;
+      const parkedIds = Array.from(document.querySelectorAll("#parked .device")).map(deviceId);
+      send({ action: "set_order", value: devices.map(deviceId).concat(parkedIds) });
+    };
+    document.addEventListener("pointerup", drop);
+    document.addEventListener("pointercancel", drop);
+  }
+
   // --- applying server state ---
 
   function applyState(state) {
@@ -249,6 +332,7 @@
     const card = document.querySelector(`[data-headset="${cssEscape(msg.key)}"]`);
     if (!card) return;
     card.classList.toggle("headset-disabled", !msg.enabled);
+    placeDevice(card);
     const toggleBtn = card.querySelector('[data-action="toggle_enabled"]');
     if (toggleBtn) toggleBtn.title = msg.enabled ? "Disable headset" : "Enable headset";
     if (msg.playback) applyDirection(card, "playback", msg.playback);
@@ -581,6 +665,7 @@
     wireUnitToggle();
     wireSettingsDialog();
     wireAddPeerDialog();
+    wireReorder();
     connect();
   });
 

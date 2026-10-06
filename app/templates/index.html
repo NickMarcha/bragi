@@ -58,11 +58,18 @@
     {% if not headsets %}
     <p class="empty">No USB headset on sagepi.</p>
     {% endif %}
-    {% for view in headsets %}
+    {% for view in headsets if view.enabled %}
     {% include "_headset_card.html" %}
     {% endfor %}
     <div id="peers">
       {% include "_peers_list.html" %}
+    </div>
+    {# Disabled devices stack here, out of the row; ws.js moves a headset
+       in or out when it is switched off or on. #}
+    <div id="parked" title="Switched off">
+      {% for view in headsets if not view.enabled %}
+      {% include "_headset_card.html" %}
+      {% endfor %}
     </div>
   </main>
 </body>

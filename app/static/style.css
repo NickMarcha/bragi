@@ -230,9 +230,43 @@ button:focus-visible {
   color: var(--danger);
 }
 
-/* A disabled headset folds down to its header: there is nothing to mix. */
-.headset-disabled {
+/* Switched-off devices stack at the end of the row, folded down to their
+   header: there is nothing to mix. ws.js moves them in and out. */
+#parked {
+  order: 100000;
+  display: flex;
+  flex: none;
+  flex-direction: column;
   align-self: flex-start;
+  gap: 8px;
+}
+
+#parked:not(:has(.device)) {
+  display: none;
+}
+
+#parked .grip {
+  display: none;
+}
+
+.grip {
+  width: 16px;
+  margin-left: -4px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.grip:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+}
+
+.device.dragging {
+  opacity: 0.6;
+  outline: 1px dashed var(--accent);
 }
 
 .headset-disabled .strips {
@@ -540,7 +574,7 @@ dialog h2 {
     overflow-x: visible;
   }
 
-  .headset-disabled {
+  #parked {
     align-self: stretch;
   }
 

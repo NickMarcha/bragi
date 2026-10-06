@@ -156,13 +156,13 @@ def add_peer(request: Request, name: str = Form(...), tailscale_ip: str = Form(.
     except peers_module.ConfigWriteError as exc:
         raise HTTPException(502, str(exc)) from exc
     state = views.build_state()
-    return templates.TemplateResponse(request, "_peers_list.html", {"peers": state["peers"]})
+    return templates.TemplateResponse(request, "_peers_list.html", {"peers": state["peers"], "order_of": state["order_of"]})
 
 
 @app.get("/peers", response_class=HTMLResponse)
 def peer_cards(request: Request):
     state = views.build_state()
-    return templates.TemplateResponse(request, "_peers_list.html", {"peers": state["peers"]})
+    return templates.TemplateResponse(request, "_peers_list.html", {"peers": state["peers"], "order_of": state["order_of"]})
 
 
 @app.post("/peers/{name}/delete", response_class=HTMLResponse)
@@ -175,4 +175,4 @@ async def delete_peer(request: Request, name: str):
         raise HTTPException(502, str(exc)) from exc
     peer_control.remove(name)
     state = await asyncio.to_thread(views.build_state)
-    return templates.TemplateResponse(request, "_peers_list.html", {"peers": state["peers"]})
+    return templates.TemplateResponse(request, "_peers_list.html", {"peers": state["peers"], "order_of": state["order_of"]})

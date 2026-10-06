@@ -56,6 +56,21 @@ index.html                     page shell
   `mic_mute`, `settings`, `remove`), stroked with `currentColor` so button
   state colours apply for free. No icon font.
 
+## Device order and the parked stack
+
+Every device carries an inline `style="order: N"` from `order_of` in the
+state (`app/layout.py`). Dragging a device's grip reorders the row (the
+column on a phone) by rewriting those `order` values, then sends
+`set_order`; the Pi saves it to `data/layout.yaml` and broadcasts an
+`order` message so every tab follows. Ordering uses the CSS `order`
+property, not DOM moves, because headsets and peers live in different
+containers and `#peers` (the htmx swap target) is `display: contents`.
+
+Switched-off headsets render inside `#parked`, a stack at the end of the
+row, folded to their header. When one is switched on or off, `ws.js`
+(`placeDevice`) moves it between `#parked` and the row; its `order` value
+puts it back where it was.
+
 ## The data contract
 
 Templates and WebSocket broadcasts both consume the dict from

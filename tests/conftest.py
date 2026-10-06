@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import audio_state, level_meter, peers as peers_module, pipewire, viz_settings, ws  # noqa: E402
+from app import audio_state, layout, level_meter, peers as peers_module, pipewire, viz_settings, ws  # noqa: E402
 
 from . import fake_pipewire  # noqa: E402
 
@@ -30,6 +30,7 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(peers_module, "MANAGED_CONF_FILE", tmp_path / "peers.conf")
     monkeypatch.setattr(audio_state, "STATE_FILE", tmp_path / "balance.yaml")
     monkeypatch.setattr(viz_settings, "SETTINGS_FILE", tmp_path / "viz_settings.yaml")
+    monkeypatch.setattr(layout, "LAYOUT_FILE", tmp_path / "layout.yaml")
     return tmp_path
 
 

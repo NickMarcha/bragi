@@ -11,6 +11,7 @@ from . import headsets as headsets_module
 from . import peer_presence
 from . import peers as peers_module
 from . import pipewire
+from . import layout
 from . import viz_settings
 
 
@@ -147,9 +148,11 @@ def build_state() -> dict:
     node_ids |= {resolve_node_id(graph, p, d) for p in peers for d in ("outgoing", "incoming")}
     node_ids.discard(None)
     volumes = pipewire.get_volume_mute_many(node_ids)
+    default_order = [f"headset:{h.key}" for h in headsets] + [f"peer:{p.name}" for p in peers]
     return {
         "headsets": [headset_view(h, device_by_card.get(h.key), volumes) for h in headsets],
         "peers": [peer_view(graph, p, volumes) for p in peers],
+        "order_of": layout.positions(default_order),
         "viz_settings": {"enabled": viz_settings.get_enabled()},
         "microphone": microphone.view(),
     }

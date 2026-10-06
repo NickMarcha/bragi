@@ -98,6 +98,7 @@ that shape still need the real thing:
 | `peer_presence.py` | ~15 | The `/ws/peer/{name}` endpoint. The Bragi Client tray app holds this open for as long as its Roc link is enabled; that live socket is the peer card's real reachability signal, which a loaded Roc module cannot give on its own over UDP. |
 | `level_meter.py` | ~260 | Live VU-style metering. Captures each node's signal with `pw-cat --record`, and a single ticker pushes every meter's current level as one `levels` frame per ~50ms rather than one frame per meter. Two gates in `supervise()`: `viz_settings.get_enabled()` (a real off switch, not a display toggle) and `ws.manager.has_clients()`; it reconciles on `ws.manager.wake` as well as its own timer, so opening a tab starts the meters at once. |
 | `viz_settings.py` | ~45 | One global on/off toggle for the level meters, persisted to `data/viz_settings.yaml`. Separate from `audio_state.py` because it is global, not per-node, and it gates whether `level_meter.py` captures anything at all. |
+| `layout.py` | ~50 | The dashboard's device order, set by dragging a device's grip and shared by every browser via `data/layout.yaml`. Devices the saved order doesn't name follow it in their default order. |
 
 ## Data files
 
@@ -130,6 +131,8 @@ Everything under `data/` is bind-mounted in production (see
 - `balance.yaml` — `{node_name: {volume: float, balance: float}}`,
   balance in `[-1.0, 1.0]`.
 - `viz_settings.yaml` — `{enabled: bool}`.
+- `layout.yaml` — `{order: [device ids]}`, the dashboard's device order
+  (`headset:<card key>`, `peer:<name>`), set by dragging (`app/layout.py`).
 
 ## Deploying a change
 

@@ -9,8 +9,10 @@
 {% else %}
   {% set hs_status = "partial" %}
 {% endif %}
-<article class="device headset-card {{ 'headset-disabled' if not view.enabled }}" id="headset-{{ view.key }}" data-headset="{{ view.key }}">
+<article class="device headset-card {{ 'headset-disabled' if not view.enabled }}" id="headset-{{ view.key }}" data-headset="{{ view.key }}"
+         style="order: {{ order_of.get('headset:' ~ view.key, 999) }}">
   <div class="device-head">
+    <button class="icon-btn grip" type="button" title="Drag to reorder">{{ icons.grip() }}</button>
     <span class="status-dot {{ hs_status }}" title="{{ {'online': 'Speakers and mic connected', 'offline': 'Speakers and mic offline', 'partial': 'Only one of speakers/mic connected', 'disabled': 'Headset disabled'}[hs_status] }}"></span>
     <h3 title="{{ view.label }}">{{ view.label }}</h3>
     <button class="icon-btn enable-toggle-btn"
