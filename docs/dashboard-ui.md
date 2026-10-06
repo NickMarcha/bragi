@@ -68,16 +68,18 @@ column on a phone) by rewriting those `order` values, then sends
 property, not DOM moves, because headsets and peers live in different
 containers and `#peers` (the htmx swap target) is `display: contents`.
 
-Switched-off headsets, and peers with neither direction in the graph (a
-phone whose app isn't running), render inside `#parked`, a stack at the
+Switched-off headsets, peers whose client is away (a phone's app or a
+desktop's tray app, the red dot) and peers with neither direction in the
+graph render inside `#parked`, a stack at the
 end of the row folded to the header. `#parked` lives in `_peers_list.html`,
 inside the `#peers` swap target, so adding or removing a peer re-renders it
 from the server's view as well. When a device switches off, goes offline
 or comes back, `ws.js` (`placeDevice`, called after every direction
 update) moves it between `#parked` and the row; its `order` value puts it
-back where it was. Desktop Roc peers are never parked: Bragi's modules
-keep their nodes alive even when the machine is off, and their status dot
-shows the tray app's reachability instead.
+back where it was. Client presence, not node presence, decides for peers
+with a client: Bragi's Roc modules keep their nodes alive whether the
+device is there or not (`view.parked` in `app/views.py`; `applyPeerPresence`
+moves the card live).
 
 ## The data contract
 

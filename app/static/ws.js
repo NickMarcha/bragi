@@ -213,6 +213,9 @@
   // on first render.
   function shouldPark(card) {
     if (card.dataset.headset) return card.classList.contains("headset-disabled");
+    // Same rule as app/views.py's peer_view "parked": a peer with a client
+    // (phone app, desktop tray app) parks while it is away.
+    if (card.dataset.clientTracked === "true") return card.dataset.clientConnected !== "true";
     const offline = card.querySelectorAll(".strip .offline");
     return offline.length > 0 && Array.from(offline).every((el) => !el.hidden);
   }
@@ -479,6 +482,8 @@
     if (!dot) return;
     dot.className = `status-dot ${msg.connected ? "online" : "offline"}`;
     dot.title = msg.connected ? "Client connected" : "Client not connected to sagepi";
+    card.dataset.clientConnected = String(!!msg.connected);
+    placeDevice(card);
     if (!msg.connected) {
       const status = card.querySelector(".client-stream-status");
       if (status) status.textContent = "Android service disconnected.";

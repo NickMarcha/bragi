@@ -75,6 +75,7 @@ def peer_view(graph: pipewire.Graph, peer: peers_module.Peer, volumes: Volumes |
     from . import peer_control
     out_id = resolve_node_id(graph, peer, "outgoing")
     in_id = resolve_node_id(graph, peer, "incoming")
+    client_connected = peer.name in peer_presence.connected_peers if peer.protocol == "roc" else None
     return {
         "name": peer.name,
         "protocol": peer.protocol,
@@ -92,7 +93,13 @@ def peer_view(graph: pipewire.Graph, peer: peers_module.Peer, volumes: Volumes |
         # client/README.md). None (not False) for other protocols, so the
         # template can tell "no client mechanism exists for this peer" apart
         # from "client exists but isn't connected right now".
-        "client_connected": peer.name in peer_presence.connected_peers if peer.protocol == "roc" else None,
+        "client_connected": client_connected,
+        # Folded into the dashboard's parked stack (_peers_list.html). A peer
+        # with a client (a phone's app, a desktop's tray app) is parked
+        # while that client is away: its Roc modules live in peers.conf, so
+        # its nodes exist either way. Others park when neither direction
+        # has a node.
+        "parked": client_connected is False or (out_id is None and in_id is None),
     }
 
 

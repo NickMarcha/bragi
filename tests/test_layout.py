@@ -58,4 +58,28 @@ def test_a_peer_with_nothing_in_the_graph_is_parked_too(session):
     html = TestClient(app).get("/").text
     parked = html[html.index('id="parked"'):html.index("</main>")]
     assert 'data-peer="fairphone"' in parked
-    assert 'data-peer="sagedeck"' not in parked
+    assert 'data-peer="sage"' not in parked
+
+
+def test_a_peer_parks_while_its_client_is_disconnected(session):
+    """A phone's Roc modules live in peers.conf, so its nodes exist whether or
+    not the phone is there; only the app's control socket says it is."""
+    from app import peers
+    from .fake_pipewire import FakeNode
+    peers.register_android_peer("fairphone", "100.98.253.67", "none")
+    session.free_nodes += [FakeNode(901, "fairphone-outgoing-sink", "fairphone", "Audio/Sink"),
+                           FakeNode(902, "fairphone-incoming-source", "fairphone", "Stream/Output/Audio")]
+    client = TestClient(app)
+
+    def parked() -> str:
+        html = client.get("/").text
+        return html[html.index('id="parked"'):html.index("</main>")]
+
+    assert 'data-peer="fairphone"' in parked()
+    # Desktop peers too: sagedeck's tray app holds the same kind of socket.
+    assert 'data-peer="sagedeck"' in parked()
+    with client.websocket_connect("/ws/peer/fairphone?client=android") as phone, \
+            client.websocket_connect("/ws/peer/sagedeck"):
+        phone.receive_json()
+        assert 'data-peer="fairphone"' not in parked()
+        assert 'data-peer="sagedeck"' not in parked()
