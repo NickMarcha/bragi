@@ -135,3 +135,24 @@ def test_only_a_local_dev_server_accepts_a_loopback_phone(session, monkeypatch):
     monkeypatch.setenv('BRAGI_LOCAL_DEV', '1')
     assert register(client, tailscale_ip='127.0.0.1').status_code == 200
     assert register(client, tailscale_ip='10.0.2.15').status_code == 422
+
+
+def test_phone_card_shows_the_delays_the_phone_measures(session):
+    client = TestClient(app)
+    register(client)
+    with client.websocket_connect('/ws/peer/fairphone?client=android') as socket:
+        socket.receive_json()
+        socket.send_json({'type': 'peer_status', 'send_active': True, 'receive_active': True,
+                          'error': None, 'send_delay_ms': 31, 'listen_delay_ms': 102})
+        status = socket.receive_json()
+        assert status['send_delay_ms'] == 31
+        assert status['listen_delay_ms'] == 102
+        html = client.get('/peers').text
+        assert 'Sending 31 ms · Listening 102 ms' in html
+        # Anything that is not a plausible millisecond count is dropped, not shown.
+        socket.send_json({'type': 'peer_status', 'send_active': True, 'receive_active': True,
+                          'error': None, 'send_delay_ms': '<b>', 'listen_delay_ms': 99999})
+        status = socket.receive_json()
+        assert status['send_delay_ms'] is None
+        assert status['listen_delay_ms'] is None
+        assert 'Sending · Listening' in client.get('/peers').text

@@ -26,12 +26,12 @@
     <h3 title="{{ view.name }}">{{ view.name }}</h3>
   </div>
   {% if android %}
-  {% set client_text %}{% if view.client_status and view.client_status.error %}{{ view.client_status.error }}{% elif view.client_status %}{{ "Sending" if view.client_status.send_active else "Sender paused" }} · {{ "Listening" if view.client_status.receive_active else "Receiver paused" }}{% else %}Start the Android service on the phone.{% endif %}{% endset %}
+  {% set client_text %}{% if view.client_status and view.client_status.error %}{{ view.client_status.error }}{% elif view.client_status %}{% set st = view.client_status %}{{ "Sending" if st.send_active else "Sender paused" }}{% if st.send_active and st.send_delay_ms is not none %} {{ st.send_delay_ms }} ms{% endif %} · {{ "Listening" if st.receive_active else "Receiver paused" }}{% if st.receive_active and st.listen_delay_ms is not none %} {{ st.listen_delay_ms }} ms{% endif %}{% else %}Start the Android service on the phone.{% endif %}{% endset %}
   {# The phone's own status is more useful here than its address, which
      stays in the tooltip. #}
   <div class="device-bar">
     <button class="icon-btn grip" type="button" title="Drag to reorder">{{ icons.grip() }}</button>
-    <p class="device-meta client-stream-status" title="Android · {{ view.tailscale_ip }}">{{ client_text }}</p>
+    <p class="device-meta client-stream-status" data-ip="{{ view.tailscale_ip }}" title="{{ client_text }} · Android · {{ view.tailscale_ip }}">{{ client_text }}</p>
     {% if view.managed %}
     <button class="icon-btn remove-btn" title="Remove {{ view.name }}"
             hx-post="/peers/{{ view.name }}/delete"

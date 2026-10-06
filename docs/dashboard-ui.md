@@ -36,7 +36,9 @@ index.html                     page shell
 - **`_peer_card.html`** renders one peer as a `.device`: the name on its
   own line (up to two lines, with the status dot), then a bar with the
   reorder grip, a meta line (`Roc` or `VBAN` and the IP, or for a phone its
-  own status) and the remove button for managed peers, Android's
+  own status with the sending and listening delays it measures, e.g.
+  `Sending 31 ms · Listening 102 ms`; desktop strips truncate it, so its
+  `title` repeats the whole line) and the remove button for managed peers, Android's
   Send/Listen toggles, then two strips:
   `outgoing` (labelled Mic, or Headset for a phone) and `incoming` (Audio,
   or Mic for a phone in microphone mode). The full direction is in each

@@ -27,6 +27,13 @@ def config(peer: peers.Peer) -> dict:
     }
 
 
+def _delay_ms(value) -> int | None:
+    """A delay the phone measured, or None when it is missing or implausible."""
+    if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 5000:
+        return value
+    return None
+
+
 def publish_streams(peer: peers.Peer) -> dict:
     message = {'type': 'peer_streams', 'name': peer.name,
                'send_enabled': peer.send_enabled, 'receive_enabled': peer.receive_enabled}
@@ -75,7 +82,9 @@ async def endpoint(socket: WebSocket, name: str) -> None:
                         status = {'type': 'peer_status', 'name': name,
                                   'send_active': message.get('send_active') is True,
                                   'receive_active': message.get('receive_active') is True,
-                                  'error': str(message['error'])[:300] if message.get('error') else None}
+                                  'error': str(message['error'])[:300] if message.get('error') else None,
+                                  'send_delay_ms': _delay_ms(message.get('send_delay_ms')),
+                                  'listen_delay_ms': _delay_ms(message.get('listen_delay_ms'))}
                         statuses[name] = status
                         ws.manager.broadcast_nowait(status)
                         queue.put_nowait(status)
