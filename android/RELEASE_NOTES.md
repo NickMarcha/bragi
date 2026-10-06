@@ -130,3 +130,11 @@ Mobile carriers can hand out addresses in the same 100.x range, and 0.1.10 and
 0.1.11 could pick that one instead, save it, and send it to Bragi. Listening
 then stayed silent (issue #2). Open the app once after updating so it saves the
 right address.
+
+## 0.1.13 diagnostics
+
+Playback health lines in Diagnostics now show how much data arrived
+(`receivedKiB`). About 0 while listening means no audio reaches the phone; a
+normal amount with no sound means the audio itself is silent. Report on GitHub
+shortens long runs of health lines, so the startup events, such as the address
+the phone listens on, stay in the issue. Nothing about audio changed since 0.1.12.

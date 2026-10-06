@@ -6,8 +6,8 @@ android {
         applicationId = "com.nickmarcha.bragi"
         minSdk = 29
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.1.12"
+        versionCode = 14
+        versionName = "0.1.13"
         buildConfigField("String", "DEFAULT_SERVER", "\"https://sagepi.tail08dfa.ts.net/\"")
     }
     buildFeatures { buildConfig = true }
