@@ -43,13 +43,6 @@ is a one-liner in the meantime.
 
 ## Operational
 
-### Remove the old VBAN binaries from sagepi
-
-`sage` moved to the PipeWire VBAN modules on 2026-10-06 and works;
-`vban-sage.service` is disabled. Once that has held up for a while, delete the
-unit file, `~/.local/bin/vban-connect-sage`, and the `~/.local/bin/vban_*`
-binaries.
-
 ### Autostart entry for the tray app on sage-dev
 
 `sagedeck` has `~/.config/autostart/bragi-client.desktop`. `sage-dev` has

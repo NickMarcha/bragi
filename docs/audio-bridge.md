@@ -218,6 +218,10 @@ shows both nodes while `sage` is sending, and that Voicemeeter receives
 have new names. To roll back, re-enable `vban-sage.service` and revert the
 commit.
 
+On 2026-10-06 the old unit file, `~/.local/bin/vban-connect-sage` and the
+`~/.local/bin/vban_*` binaries were deleted from `sagepi`, so rolling back now
+means rebuilding the VBAN tools from source first.
+
 ## Dual-headset playback, and why sagepi runs one headset
 
 The goal was two physical headsets on `sagepi` playing the same mixed feed.
