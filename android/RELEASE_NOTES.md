@@ -116,3 +116,9 @@ saved one, both when the app opens and when the service starts, and says so in
 a short message. A stale saved address is what stopped listening in issue #1.
 The address field is still used when no Tailscale address can be detected.
 
+
+## 0.1.11 new logo
+
+The app has a new icon and a dark look in the logo's colors, to match the
+Bragi web UI. The notification shows the logo's outline. Nothing about audio
+changed since 0.1.10.
