@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import json
 from dataclasses import asdict
 
@@ -17,6 +18,8 @@ from . import peer_presence, peers, ws
 
 _connections: dict[str, dict[WebSocket, asyncio.Queue]] = {}
 statuses: dict[str, dict] = {}
+# The tailnet address each phone's control socket actually came from.
+seen_addresses: dict[str, str] = {}
 
 
 def config(peer: peers.Peer) -> dict:
@@ -32,6 +35,28 @@ def _delay_ms(value) -> int | None:
     if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 5000:
         return value
     return None
+
+
+def _tailnet_source(socket: WebSocket) -> str | None:
+    """The phone's tailnet address as Tailscale Serve forwards it, or None.
+
+    Bragi only listens on loopback behind `tailscale serve`, so the header
+    comes from Tailscale, not from the phone.
+    """
+    forwarded = socket.headers.get('x-forwarded-for', '').split(',')[0].strip()
+    try:
+        address = ipaddress.ip_address(forwarded)
+    except ValueError:
+        return None
+    return forwarded if address in ipaddress.ip_network('100.64.0.0/10') else None
+
+
+def address_warning(peer: peers.Peer) -> str | None:
+    """Says so when audio goes to an address the phone is not at (issue #2)."""
+    seen = seen_addresses.get(peer.name)
+    if seen is None or seen == peer.tailscale_ip:
+        return None
+    return f'Phone is at {seen}, Bragi sends to {peer.tailscale_ip}. Reopen the app.'
 
 
 def publish_streams(peer: peers.Peer) -> dict:
@@ -59,6 +84,8 @@ async def endpoint(socket: WebSocket, name: str) -> None:
     connections = _connections.setdefault(name, {})
     connections[socket] = queue
     peer_presence.connected_peers.add(name)
+    if android and (seen := _tailnet_source(socket)):
+        seen_addresses[name] = seen
     ws.manager.broadcast_nowait({'type': 'peer_presence', 'name': name, 'connected': True})
     receive_task = queue_task = None
     try:
@@ -84,7 +111,10 @@ async def endpoint(socket: WebSocket, name: str) -> None:
                                   'receive_active': message.get('receive_active') is True,
                                   'error': str(message['error'])[:300] if message.get('error') else None,
                                   'send_delay_ms': _delay_ms(message.get('send_delay_ms')),
-                                  'listen_delay_ms': _delay_ms(message.get('listen_delay_ms'))}
+                                  'listen_delay_ms': _delay_ms(message.get('listen_delay_ms')),
+                                  # Re-read: the phone may have registered a new address since.
+                                  'address_warning': address_warning(next(
+                                      (p for p in peers.load_peers() if p.name == name), peer))}
                         statuses[name] = status
                         ws.manager.broadcast_nowait(status)
                         queue.put_nowait(status)
@@ -102,6 +132,7 @@ async def endpoint(socket: WebSocket, name: str) -> None:
         if not connections:
             _connections.pop(name, None)
             statuses.pop(name, None)
+            seen_addresses.pop(name, None)
             peer_presence.connected_peers.discard(name)
             ws.manager.broadcast_nowait({'type': 'peer_presence', 'name': name, 'connected': False})
         for task in (receive_task, queue_task):

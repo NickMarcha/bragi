@@ -38,7 +38,9 @@ index.html                     page shell
   reorder grip, a meta line (`Roc` or `VBAN` and the IP, or for a phone its
   own status with the sending and listening delays it measures, e.g.
   `Sending 31 ms · Listening 102 ms`; desktop strips truncate it, so its
-  `title` repeats the whole line) and the remove button for managed peers, Android's
+  `title` repeats the whole line. If the phone's control socket comes from
+  another tailnet address than the one audio goes to, a warning naming both
+  replaces the status; see `peer_control.address_warning`) and the remove button for managed peers, Android's
   Send/Listen toggles, then two strips:
   `outgoing` (labelled Mic, or Headset for a phone) and `incoming` (Audio,
   or Mic for a phone in microphone mode). The full direction is in each

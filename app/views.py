@@ -86,6 +86,7 @@ def peer_view(graph: pipewire.Graph, peer: peers_module.Peer, volumes: Volumes |
         "send_enabled": peer.send_enabled,
         "receive_enabled": peer.receive_enabled,
         "client_status": peer_control.statuses.get(peer.name),
+        "address_warning": peer_control.address_warning(peer),
         "outgoing": direction_view(out_id, peer_outgoing_node_name(peer), volumes),
         "incoming": direction_view(in_id, peer_incoming_node_name(peer), volumes),
         # Only meaningful for peers with a Bragi Client tray app (currently

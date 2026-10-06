@@ -36,6 +36,10 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
+On Windows, pytest can fail before collecting anything with `PermissionError` on
+`pytest-current` in the temp folder. `pytest -p no:cacheprovider --basetemp=<a fresh folder>`
+gets past it.
+
 CI runs them on every push to `main` and every PR that touches `app/`,
 `tests/`, or the requirements (`.github/workflows/server-tests.yml`), on
 both Python 3.13 (what the Dockerfile ships, so what `sagepi` runs) and

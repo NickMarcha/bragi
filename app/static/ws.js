@@ -505,7 +505,8 @@
     if (!status) return;
     // Delays are measured on the phone only; network and Pi time come on top.
     const delay = (active, ms) => (active && ms != null ? ` ${ms} ms` : "");
-    status.textContent = msg.error ||
+    // A wrong address means silence, so it outranks everything else.
+    status.textContent = msg.address_warning || msg.error ||
       `${msg.send_active ? "Sending" : "Sender paused"}${delay(msg.send_active, msg.send_delay_ms)} · ` +
       `${msg.receive_active ? "Listening" : "Receiver paused"}${delay(msg.receive_active, msg.listen_delay_ms)}`;
     // The desktop strip truncates this line, so the tooltip carries all of it.

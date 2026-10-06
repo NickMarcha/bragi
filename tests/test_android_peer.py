@@ -156,3 +156,27 @@ def test_phone_card_shows_the_delays_the_phone_measures(session):
         assert status['send_delay_ms'] is None
         assert status['listen_delay_ms'] is None
         assert 'Sending · Listening' in client.get('/peers').text
+
+
+def test_phone_card_warns_when_the_phone_is_not_at_the_registered_address(session):
+    # Issue #2: the phone registered its carrier address, and listening was silent.
+    # Tailscale Serve passes the phone's real tailnet address in X-Forwarded-For.
+    client = TestClient(app)
+    register(client, tailscale_ip='100.83.223.246')
+    with client.websocket_connect('/ws/peer/fairphone?client=android',
+                                  headers={'X-Forwarded-For': '100.98.253.67'}) as socket:
+        socket.receive_json()
+        socket.send_json({'type': 'peer_status', 'send_active': True, 'receive_active': True, 'error': None})
+        warning = socket.receive_json()['address_warning']
+        assert warning == 'Phone is at 100.98.253.67, Bragi sends to 100.83.223.246. Reopen the app.'
+        assert warning in client.get('/peers').text
+
+
+def test_no_address_warning_when_the_address_matches_or_is_unknown(session):
+    client = TestClient(app)
+    register(client)
+    for headers in [{'X-Forwarded-For': '100.98.253.67'}, {}, {'X-Forwarded-For': '172.17.0.1'}]:
+        with client.websocket_connect('/ws/peer/fairphone?client=android', headers=headers) as socket:
+            socket.receive_json()
+            socket.send_json({'type': 'peer_status', 'send_active': True, 'receive_active': True, 'error': None})
+            assert socket.receive_json()['address_warning'] is None
