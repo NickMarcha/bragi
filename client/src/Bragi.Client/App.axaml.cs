@@ -29,6 +29,7 @@ public partial class App : Application
             _statusService = new LinkStatusService();
             _trayIconManager = new TrayIconManager(_statusService);
             _ = UpdateService.CheckSilentlyAsync();
+            _ = PatchedLibrocInstaller.EnsureInstalledAsync(new RocLinkController());
 
             var config = RocLinkConfig.TryLoad();
             _presenceClient = new PeerPresenceClient(config?.PeerName, config?.BragiWsBaseUrl);

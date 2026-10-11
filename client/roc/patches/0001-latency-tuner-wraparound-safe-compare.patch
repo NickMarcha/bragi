@@ -1,0 +1,30 @@
+--- a/src/internal_modules/roc_audio/latency_tuner.cpp
++++ b/src/internal_modules/roc_audio/latency_tuner.cpp
+@@ -391,11 +391,11 @@
+         latency = 0;
+     }
+ 
+-    if (stream_pos_ < scale_pos_) {
++    if (packet::stream_timestamp_lt(stream_pos_, scale_pos_)) {
+         return;
+     }
+ 
+-    while (stream_pos_ >= scale_pos_) {
++    while (packet::stream_timestamp_le(scale_pos_, stream_pos_)) {
+         fe_->update((packet::stream_timestamp_t)latency);
+         scale_pos_ += (packet::stream_timestamp_t)scale_interval_;
+     }
+@@ -408,11 +408,11 @@
+ }
+ 
+ void LatencyTuner::report_() {
+-    if (stream_pos_ < report_pos_) {
++    if (packet::stream_timestamp_lt(stream_pos_, report_pos_)) {
+         return;
+     }
+ 
+-    while (stream_pos_ >= report_pos_) {
++    while (packet::stream_timestamp_le(report_pos_, stream_pos_)) {
+         report_pos_ += (packet::stream_timestamp_t)report_interval_;
+     }
+ 

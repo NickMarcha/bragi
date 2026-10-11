@@ -137,6 +137,30 @@ unit's `LOCAL_SINK_NAME`/`LOCAL_SOURCE_NAME` match what the static config
 used, it re-selects them automatically once the unit starts - no manual
 re-routing needed. Confirmed on sage-dev's migration (2026-08-13).
 
+### Patched libroc (installed by the tray app)
+
+The distro roc-toolkit 0.4.0 hangs the link after about 24.9 hours of
+streaming. `LatencyTuner::report_()` compares uint32 sample positions with a
+plain `>=`, and once its position wraps past 2^32 the loop never exits,
+pinning PipeWire's `data-loop.0` at 100% (deck-assistant #081). Upstream
+master still has the bug.
+
+Releases bundle a fixed build (`client/roc/build-libroc.sh` plus
+`client/roc/patches/`). On startup the tray app copies it to
+`~/.local/lib/bragi/roc/libroc.so.0.4` and writes
+`~/.config/systemd/user/bragi-roc-link.service.d/50-bragi-libroc.conf`,
+which sets `LD_LIBRARY_PATH` for the link unit only. If either file changed
+and the link is running, the app restarts the link once. Nothing to do by
+hand. To check it took:
+
+```
+grep -o '/[^ ]*libroc[^ ]*' /proc/$(pgrep -x pw-cli)/maps | sort -u
+# expect ~/.local/lib/bragi/roc/libroc.so.0.4, not /usr/lib/libroc.so.0.4
+```
+
+To back it out, delete the drop-in, `systemctl --user daemon-reload`, and
+restart the unit.
+
 ## Self-update (Velopack)
 
 `Program.cs` runs `VelopackApp.Build().Run()` before anything else, and the

@@ -46,7 +46,15 @@ jobs:
         # derivative where it's also not preinstalled; not verified against
         # ubuntu-latest specifically, so keep this explicit rather than
         # assuming the runner image already has it).
-        run: sudo apt-get update && sudo apt-get install -y squashfs-tools
+        # scons and autotools are for build-libroc.sh (roc-toolkit's build,
+        # plus libuv/speexdsp/ragel which it builds from source).
+        run: sudo apt-get update && sudo apt-get install -y squashfs-tools scons autoconf automake libtool
+
+      - name: Build patched libroc
+        # roc-toolkit 0.4.0 with the LatencyTuner wraparound fix, bundled so
+        # the client installs it at startup (PatchedLibrocInstaller). See
+        # client/roc/build-libroc.sh for why.
+        run: client/roc/build-libroc.sh publish/roc
 
       - name: Install vpk
         run: dotnet tool install -g vpk
