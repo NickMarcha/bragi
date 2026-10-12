@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 
+from . import audio_reset
 from . import microphone
 from . import knob_watcher
 from . import level_meter
@@ -136,6 +137,22 @@ def select_microphone(request: Request, source: str = Form(...)):
         raise HTTPException(502, str(exc)) from exc
     ws.manager.broadcast_nowait({'type': 'microphone'})
     return microphone_controls(request)
+
+
+@app.get("/audio/reset", response_class=HTMLResponse)
+def audio_reset_control(request: Request):
+    return templates.TemplateResponse(request, "_audio_reset.html", {'audio_reset': audio_reset.view()})
+
+
+@app.post("/audio/reset", response_class=HTMLResponse)
+def reset_audio(request: Request):
+    try:
+        audio_reset.request()
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(502, f"could not write the reset request ({exc})") from exc
+    return audio_reset_control(request)
 
 
 @app.post("/peers", response_class=HTMLResponse)

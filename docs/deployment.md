@@ -86,6 +86,40 @@ and hot-loaded peers with a one-shot `pw-cli load-module`, whose modules die
 with that process. That file must not come back: the main daemon would load
 the same peers as `bragi-peers.service`, on the same ports.
 
+## Reset audio button and nightly reset
+
+The dashboard's "Reset audio" button restarts PipeWire, WirePlumber and
+`bragi-peers` on the host. It exists because of deck-assistant #108: every
+sender's audio reached the headset as garbled bursts until the stack was
+restarted, and the default log level held nothing about why.
+
+The container can't restart host services, so the button only writes
+`data/reset-request` (`app/audio_reset.py`). Three more units, installed by
+the same `host/systemd/install.sh`, act on it:
+
+| Unit | Does |
+|---|---|
+| `bragi-audio-reset.path` | Watches `reset-request` and starts `bragi-audio-reset@manual.service`. |
+| `bragi-audio-reset-nightly.timer` | Starts `bragi-audio-reset@nightly.service` at 05:00 Oslo time. |
+| `bragi-audio-reset@.service` | One-shot `~/.local/bin/bragi-audio-reset <reason>` (`host/bragi-audio-reset.sh`). |
+
+The script saves a snapshot first, then restarts. Each snapshot is a folder
+`data/incidents/<UTC stamp>-<reason>/` holding pw-top, `wpctl status`,
+`pw-dump`, the links, ALSA PCM state, dmesg, the last two hours of the
+PipeWire journal, and `levels.txt`: per-second level stats for every stream
+feeding a headset, recorded on its own before mixing. A manual reset also
+keeps those 5 s recordings (`tap-<node>.wav`, about 1 MB each). A `done`
+file marks a finished restart, which is what clears the button's
+"Resetting audio…" state. The newest 20 snapshots are kept, at most about
+120 MB.
+
+sagepi's journal lives in RAM (`Storage=volatile`, the Raspberry Pi OS
+default that spares the SD card). It survives a PipeWire restart but not a
+reboot, so the snapshot's `journal.txt` is the copy that lasts. `sage` reads
+the journal through the `adm` group, no extra setup.
+
+To reset by hand: `systemctl --user start bragi-audio-reset@manual.service`.
+
 ## Deploy webhook
 
 A push to `main` redeploys the Stack in seconds instead of waiting for the

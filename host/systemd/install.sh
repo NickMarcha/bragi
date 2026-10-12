@@ -1,20 +1,25 @@
 #!/bin/bash
 # One-time install, on sagepi, of the units that run the dashboard's
-# Bragi-managed Roc peers. Bragi itself only writes
-# ~/.local/share/bragi/data/peers.conf (app/peers.py); these run it and
-# restart it when it changes. See docs/deployment.md.
+# Bragi-managed Roc peers and its "Reset audio" button. Safe to re-run.
+# Bragi itself only writes ~/.local/share/bragi/data/peers.conf
+# (app/peers.py) and data/reset-request (app/audio_reset.py); these units
+# act on them. See docs/deployment.md.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 UNIT_DIR="$HOME/.config/systemd/user"
 
 mkdir -p "$UNIT_DIR"
-for unit in bragi-peers.service bragi-peers-reload.service bragi-peers.path; do
+for unit in bragi-peers.service bragi-peers-reload.service bragi-peers.path \
+            bragi-audio-reset@.service bragi-audio-reset.path bragi-audio-reset-nightly.timer; do
   install -m 644 "$SCRIPT_DIR/$unit" "$UNIT_DIR/$unit"
 done
+# The dashboard's "Reset audio" button and the nightly reset (deck-assistant #108).
+install -D -m 755 "$SCRIPT_DIR/../bragi-audio-reset.sh" "$HOME/.local/bin/bragi-audio-reset"
 
 systemctl --user daemon-reload
 systemctl --user enable --now bragi-peers.path
+systemctl --user enable --now bragi-audio-reset.path bragi-audio-reset-nightly.timer
 systemctl --user enable bragi-peers.service
 if [[ -f "$HOME/.local/share/bragi/data/peers.conf" ]]; then
   systemctl --user restart bragi-peers.service
@@ -29,4 +34,5 @@ if [[ -f "$old" ]]; then
 fi
 
 echo
-systemctl --user --no-pager status bragi-peers.path bragi-peers.service || true
+systemctl --user --no-pager status bragi-peers.path bragi-peers.service bragi-audio-reset.path || true
+systemctl --user --no-pager list-timers bragi-audio-reset-nightly.timer || true

@@ -1,0 +1,10 @@
+[Unit]
+Description=Snapshot and restart the PipeWire stack (%i)
+Documentation=https://github.com/NickMarcha/bragi/blob/main/docs/deployment.md
+
+[Service]
+# %i is the reason, used in the snapshot's folder name: "manual" from the
+# dashboard button, "nightly" from the timer.
+Type=oneshot
+ExecStart=%h/.local/bin/bragi-audio-reset %i
+TimeoutStartSec=2min

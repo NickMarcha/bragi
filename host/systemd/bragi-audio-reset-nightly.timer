@@ -1,0 +1,12 @@
+[Unit]
+Description=Nightly snapshot and restart of the PipeWire stack
+
+[Timer]
+# deck-assistant #108 broke after 9 days of uptime. A nightly restart costs a
+# few seconds of silence at an hour nobody listens, and its snapshot gives a
+# healthy baseline to compare the next bad one against.
+OnCalendar=*-*-* 05:00:00 Europe/Oslo
+Unit=bragi-audio-reset@nightly.service
+
+[Install]
+WantedBy=timers.target

@@ -146,6 +146,11 @@ button:focus-visible {
 #ws-status.connected .dot { background: var(--accent); }
 #ws-status.connecting .dot { background: var(--warn); }
 
+.audio-reset.pending {
+  color: var(--warn);
+  font-size: 13px;
+}
+
 /* --- the console: one row of devices --- */
 
 /* Wraps rather than scrolling sideways, so a half-screen window still

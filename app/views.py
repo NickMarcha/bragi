@@ -5,6 +5,7 @@ the initial server-rendered page (main.py) and every WebSocket broadcast
 
 from __future__ import annotations
 
+from . import audio_reset
 from . import microphone
 from . import audio_state
 from . import headsets as headsets_module
@@ -163,6 +164,7 @@ def build_state() -> dict:
         "order_of": layout.positions(default_order),
         "viz_settings": {"enabled": viz_settings.get_enabled()},
         "microphone": microphone.view(),
+        "audio_reset": audio_reset.view(),
     }
 
 

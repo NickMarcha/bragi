@@ -1,0 +1,10 @@
+[Unit]
+Description=Reset the PipeWire stack when the dashboard's "Reset audio" button is pressed
+
+[Path]
+# app/audio_reset.py writes this file (via rename) once per press.
+PathChanged=%h/.local/share/bragi/data/reset-request
+Unit=bragi-audio-reset@manual.service
+
+[Install]
+WantedBy=default.target

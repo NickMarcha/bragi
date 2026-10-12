@@ -1,0 +1,10 @@
+{# Lives in the toolbar. Polls while the host is restarting so the label clears on its own. #}
+{% if audio_reset.state == 'pending' %}
+<span class="audio-reset pending" hx-get="/audio/reset" hx-trigger="every 3s" hx-swap="outerHTML">Resetting audio…</span>
+{% else %}
+<button class="audio-reset" type="button" hx-post="/audio/reset" hx-target="this" hx-swap="outerHTML"
+        hx-confirm="Restart PipeWire on sagepi? Every stream drops for a few seconds."
+        title="{% if audio_reset.state == 'stale' %}The last request was never picked up. Are the host units installed (host/systemd/install.sh)?{% elif audio_reset.last %}Last reset {{ audio_reset.last.when }} UTC ({{ audio_reset.last.reason }}){% else %}Saves a snapshot for diagnosis, then restarts PipeWire, WirePlumber and the peers{% endif %}">
+  Reset audio{% if audio_reset.state == 'stale' %} (no response){% endif %}
+</button>
+{% endif %}

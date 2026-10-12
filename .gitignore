@@ -4,3 +4,6 @@ __pycache__/
 venv/
 data/peers.yaml
 .env
+data/reset-request
+data/incidents/
+.pytest_tmp/
