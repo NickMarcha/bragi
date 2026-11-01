@@ -14,7 +14,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 
+from . import access
+from . import api
 from . import audio_reset
+from . import auth
 from . import microphone
 from . import knob_watcher
 from . import level_meter
@@ -48,6 +51,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Bragi", lifespan=lifespan)
+app.add_middleware(access.AccessMiddleware)
+app.include_router(access.router)
+app.include_router(api.router)
 
 _app_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=str(_app_dir / "static")), name="static")
@@ -57,7 +63,7 @@ templates = Jinja2Templates(directory=str(_app_dir / "templates"))
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     state = views.build_state()
-    return templates.TemplateResponse(request, "index.html", state)
+    return templates.TemplateResponse(request, "index.html", {**state, "password_set": auth.password_set()})
 
 
 @app.websocket("/ws")

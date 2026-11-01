@@ -206,7 +206,7 @@ def _apply_pan(node_id: int, node_name: str, volume: float | None = None, balanc
     audio_state.set_state(node_name, new_volume, new_balance)
 
 
-async def broadcast_control(target: str, key: str, direction: str, ts: float | None = None) -> None:
+async def broadcast_control(target: str, key: str, direction: str, ts: float | None = None) -> dict | None:
     """ts, when given, is the originating client's own Date.now() that
     caused this broadcast (see _max_ts_seen) - propagated through so the
     client can reject a broadcast that arrives out of order relative to
@@ -224,8 +224,10 @@ async def broadcast_control(target: str, key: str, direction: str, ts: float | N
 
     view = await asyncio.to_thread(_build)
     if view is None:
-        return
-    manager.broadcast_nowait({"type": "control", "target": target, "key": key, "direction": direction, **view, "ts": ts})
+        return None
+    message = {"type": "control", "target": target, "key": key, "direction": direction, **view, "ts": ts}
+    manager.broadcast_nowait(message)
+    return message
 
 
 async def broadcast_controls(controls: set[tuple[str, str, str]], graph: pipewire.Graph) -> None:
@@ -425,6 +427,9 @@ async def apply_action(action: dict) -> None:
 
             await asyncio.to_thread(_toggle)
             await broadcast_control("headset", key, direction)
+        elif verb == "set_mute" and isinstance(action.get("value"), bool):
+            await asyncio.to_thread(pipewire.set_mute, node_id, action["value"])
+            await broadcast_control("headset", key, direction)
 
     elif target == "peer":
         peer = views.get_peer(key)  # cheap - reads peers.yaml, no subprocess
@@ -468,12 +473,101 @@ async def apply_action(action: dict) -> None:
 
             await asyncio.to_thread(_toggle)
             await broadcast_control("peer", key, direction)
+        elif verb == "set_mute" and isinstance(action.get("value"), bool):
+            await asyncio.to_thread(pipewire.set_mute, node_id, action["value"])
+            await broadcast_control("peer", key, direction)
         elif verb == "set_balance" and pan_node_name:
             await _throttled_apply(
                 ("peer", key, direction),
                 lambda nid=node_id, nm=pan_node_name, b=action["value"]: _apply_pan(nid, nm, balance=b),
                 action.get("ts"),
             )
+
+
+class ControlNotFound(LookupError):
+    """No such device, or no such direction on it."""
+
+
+class ControlOffline(RuntimeError):
+    """The device exists but this direction has no PipeWire node right now:
+    a disabled headset, or a peer whose stream is not running."""
+
+
+DIRECTIONS = {"headset": ("playback", "capture"), "peer": ("outgoing", "incoming")}
+
+
+async def set_control(target: str, key: str, direction: str, *, volume: float | None = None,
+                      muted: bool | None = None, balance: float | None = None) -> dict:
+    """Applies an absolute change from the HTTP API (api.py) and returns
+    the control as read back afterwards, which is also what every open
+    dashboard is sent.
+
+    Applied at once rather than through _throttled_apply: an API call is
+    one discrete request, not a drag, and its caller is waiting for the
+    result. It is marked in _last_applied like a slider tick so the
+    watcher's echo of this same write is suppressed (see
+    _drain_changed_nodes)."""
+    if direction not in DIRECTIONS.get(target, ()):
+        raise ControlNotFound(f"{target} has no {direction!r} control")
+
+    def _apply() -> None:
+        graph = pipewire.dump()
+        pan_name = None
+        if target == "headset":
+            hs = views.get_headset(graph, key)
+            if hs is None:
+                raise ControlNotFound(f"No headset {key!r}")
+            node_id = hs.playback_node_id if direction == "playback" else hs.capture_node_id
+        else:
+            peer = views.get_peer(key)
+            if peer is None:
+                raise ControlNotFound(f"No peer {key!r}")
+            node_id = views.resolve_node_id(graph, peer, direction)
+            pan_name = (views.peer_incoming_node_name(peer) if direction == "incoming"
+                        else views.peer_outgoing_node_name(peer))
+        if balance is not None and not pan_name:
+            raise ValueError("Only peer controls have a balance")
+        if node_id is None:
+            raise ControlOffline(f"{target} {key!r} {direction} is not connected right now")
+        if pan_name and (volume is not None or balance is not None):
+            _apply_pan(node_id, pan_name, volume=volume, balance=balance)
+        elif volume is not None:
+            pipewire.set_volume(node_id, volume)
+        if muted is not None:
+            pipewire.set_mute(node_id, muted)
+
+    _mark_applied((target, key, direction))
+    await asyncio.to_thread(_apply)
+    _mark_applied((target, key, direction))
+    message = await broadcast_control(target, key, direction)
+    if message is None:
+        raise ControlNotFound(f"{target} {key!r} disappeared while being changed")
+    return message
+
+
+async def set_headset_enabled(key: str, enabled: bool) -> dict:
+    """Enables or disables a headset (its ALSA profile, see
+    _toggle_headset_enabled) and returns the headset view afterwards.
+    Leaves it alone when it is already in the asked-for state."""
+    def _apply() -> dict:
+        graph = pipewire.dump()
+        found = views.get_headset_with_device(graph, key)
+        if found is None:
+            raise ControlNotFound(f"No headset {key!r}")
+        hs, device = found
+        current = views.headset_view(hs, device)
+        if current["enabled"] == enabled:
+            return current
+        if device is None or device.off_profile_index is None:
+            raise ControlOffline(f"Headset {key!r} cannot be switched off and on")
+        view = _toggle_headset_enabled(key)
+        if view is None:
+            raise ControlOffline(f"Headset {key!r} could not be switched")
+        return view
+
+    view = await asyncio.to_thread(_apply)
+    manager.broadcast_nowait({"type": "headset", **view})
+    return view
 
 
 async def websocket_endpoint(websocket: WebSocket) -> None:

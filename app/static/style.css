@@ -578,6 +578,135 @@ dialog h2 {
   gap: 8px;
 }
 
+#security-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 8px;
+}
+
+#security-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.security-section {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.security-section h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.security-section > .form-note {
+  margin-bottom: 10px;
+}
+
+.security-section a {
+  color: var(--accent);
+}
+
+.security-form {
+  display: grid;
+  gap: 10px;
+}
+
+.security-form label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.security-form.inline {
+  grid-template-columns: 1fr auto;
+}
+
+.security-section .dialog-actions + .dialog-actions {
+  margin-top: 8px;
+}
+
+.security-section .dialog-actions form {
+  display: contents;
+}
+
+.api-keys {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.api-keys li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.api-keys li > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.api-keys strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.api-key-new {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.api-key-new[hidden] {
+  display: none;
+}
+
+.api-key-new .form-note {
+  grid-column: 1 / -1;
+}
+
+.api-key-new code {
+  padding: 6px 8px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.login-page {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  margin: 0;
+}
+
+.login-card {
+  display: grid;
+  gap: 12px;
+  width: min(320px, calc(100vw - 32px));
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.login-card label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .viz-settings-row {
   display: flex;
   align-items: center;

@@ -53,6 +53,14 @@ public class VolumeTests
         Assert.Equal(socket, result?.Controls.AbsoluteUri);
     }
 
+    [Fact]
+    public void Api_key_goes_on_the_controls_socket_only()
+    {
+        var result = BragiServerAddress.FromPresenceUrl("wss://bragi.example/ws/peer", "bragi_a+b");
+        Assert.Equal("wss://bragi.example/ws?token=bragi_a%2Bb", result?.Controls.AbsoluteUri);
+        Assert.Equal("https://bragi.example/", result?.WebUi.AbsoluteUri);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("not a URL")]

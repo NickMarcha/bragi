@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/static/style.css" />
   <script src="/static/htmx.min.js"></script>
   <script src="/static/ws.js" defer></script>
+  <script src="/static/security.js" defer></script>
 </head>
 <body class="{{ 'viz-enabled' if viz_settings.enabled }}">
   <header id="top-bar">
@@ -21,6 +22,7 @@
       {% include "_audio_reset.html" %}
       <button id="add-peer-toggle" type="button">Add peer</button>
       <button id="settings-toggle" type="button" title="Visualizer settings">{{ icons.settings() }}</button>
+      <button id="security-toggle" type="button" title="Security: password and API connections">{{ icons.lock() }}</button>
       <button id="unit-toggle" type="button" title="Toggle volume readout between % and dB">%</button>
       <div id="ws-status" class="connecting"><span class="dot"></span><span class="label">Connecting…</span></div>
     </div>
@@ -33,6 +35,52 @@
       Show audio level meters
     </label>
     <button id="viz-settings-close" type="button">Close</button>
+  </dialog>
+
+  <dialog id="security-dialog">
+    <h2>Security</h2>
+
+    <section class="security-section">
+      <h3>Web UI password</h3>
+      <p class="form-note" data-password-state>{{ "A password is set. Browsers stay logged in until they log out." if password_set else "No password: anyone who can reach this page can use it." }}</p>
+      <form id="password-form" class="security-form">
+        <label data-needs-password {% if not password_set %}hidden{% endif %}>Current password
+          <input type="password" name="current_password" autocomplete="current-password" />
+        </label>
+        <label>New password
+          <input type="password" name="new_password" autocomplete="new-password" minlength="4" required />
+        </label>
+        <p class="form-error" hidden></p>
+        <div class="dialog-actions">
+          <button type="button" id="password-remove" data-needs-password {% if not password_set %}hidden{% endif %}>Remove password</button>
+          <button type="submit" class="primary">{{ "Change password" if password_set else "Set password" }}</button>
+        </div>
+      </form>
+      <div class="dialog-actions" data-needs-password {% if not password_set %}hidden{% endif %}>
+        <button type="button" id="sessions-revoke">Log out other browsers</button>
+        <form method="post" action="/auth/logout"><button type="submit">Log out</button></form>
+      </div>
+    </section>
+
+    <section class="security-section">
+      <h3>API connections</h3>
+      <p class="form-note">Keys for other apps to list devices and change volume. How it works: <a href="/api/v1/help" target="_blank" rel="noopener">/api/v1/help</a></p>
+      <ul id="api-keys" class="api-keys"></ul>
+      <div id="api-key-new" class="api-key-new" hidden>
+        <p class="form-note">Copy this key now. It is not shown again.</p>
+        <code></code>
+        <button type="button" id="api-key-copy">Copy</button>
+      </div>
+      <form id="api-key-form" class="security-form inline">
+        <input type="text" name="name" placeholder="Connection name, e.g. stream-deck" maxlength="60" required />
+        <button type="submit" class="primary">Add</button>
+      </form>
+      <p class="form-error" data-api-error hidden></p>
+    </section>
+
+    <div class="dialog-actions">
+      <button id="security-close" type="button">Close</button>
+    </div>
   </dialog>
 
   <dialog id="add-peer-dialog">

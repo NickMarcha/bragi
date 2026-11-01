@@ -27,6 +27,13 @@ public sealed class RocLinkConfig
     public string? PeerName { get; init; }
     public string? BragiWsBaseUrl { get; init; }
 
+    /// <summary>
+    /// An API key made in the dashboard's Security dialog. Optional: the
+    /// volume window uses the dashboard's /ws, which needs one once the
+    /// web UI has a password. The presence heartbeat never does.
+    /// </summary>
+    public string? BragiApiKey { get; init; }
+
     public static string ConfigDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "bragi-client");
 
@@ -81,6 +88,7 @@ public sealed class RocLinkConfig
 
         values.TryGetValue("PEER_NAME", out var peerName);
         values.TryGetValue("BRAGI_WS_URL", out var wsUrl);
+        values.TryGetValue("BRAGI_API_KEY", out var apiKey);
 
         return new RocLinkConfig
         {
@@ -89,6 +97,7 @@ public sealed class RocLinkConfig
             LocalSourceName = source,
             PeerName = string.IsNullOrWhiteSpace(peerName) ? null : peerName,
             BragiWsBaseUrl = string.IsNullOrWhiteSpace(wsUrl) ? null : wsUrl,
+            BragiApiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey,
         };
     }
 }

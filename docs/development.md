@@ -95,13 +95,16 @@ that shape still need the real thing:
 | `views.py` | ~190 | Pure functions turning the raw node list plus the peer and headset registries into the dict shape that templates and WebSocket broadcasts consume. `build_state()` is the whole-dashboard payload; `peer_view()`, `headset_view()`, `direction_view()` are the pieces. |
 | `peers.py` | ~320 | The peer registry. Loads and saves `data/peers.yaml`, seeds the hand-configured peers (`_seed_peers()`: `sagedeck`, `sage-dev` via Roc, `sage` via VBAN), allocates port blocks, and writes the Bragi-managed `data/peers.conf` (`_roc_conf_block()`), a standalone PipeWire client config that the host's `bragi-peers.service` runs. Bragi never loads modules itself. `sync_managed_conf()` rewrites it on startup if it's out of date. Also the `Peer` and `Ports` dataclasses and `DATA_DIR`. |
 | `headsets.py` | ~110 | Auto-detects USB headsets by ALSA card id (whatever is plugged in is the list, no registry), pairs each one's playback and capture nodes, and enables or disables a headset by flipping its ALSA card profile to `off` and back. |
-| `ws.py` | ~500 | The WebSocket control plane. `ConnectionManager` (one asyncio queue per tab), `apply_action()` (the verb switch: `set_volume`, `set_balance`, `mute`, `toggle_enabled`, `set_viz_enabled`), `_throttled_apply` (single-flight-per-control worker), `_accept_ts` (client-timestamp ordering), and the broadcasts. Biggest and most fragile file. Read [`realtime-control-plane.md`](realtime-control-plane.md) before changing it. |
+| `ws.py` | ~500 | The WebSocket control plane. `ConnectionManager` (one asyncio queue per tab), `apply_action()` (the verb switch: `set_volume`, `set_balance`, `toggle_mute`, `set_mute`, `toggle_enabled`, `set_viz_enabled`), `set_control()` / `set_headset_enabled()` (the HTTP API's immediate writes), `_throttled_apply` (single-flight-per-control worker), `_accept_ts` (client-timestamp ordering), and the broadcasts. Biggest and most fragile file. Read [`realtime-control-plane.md`](realtime-control-plane.md) before changing it. |
 | `watcher.py` | ~80 | Runs `pw-mon` and fires a callback on any PipeWire graph change (a headset plugged or unplugged, another client changing a node) so the dashboard reflects changes Bragi did not make. Also forgets `pipewire.py`'s cached volume for every id pw-mon reports. |
 | `knob_watcher.py` | ~150 | Reads `/dev/input/eventN` directly for the headset's hardware volume knob, which sends standard `KEY_VOLUMEUP` / `KEY_VOLUMEDOWN` HID events that nothing catches on a headless Pi. Translates knob turns into real volume steps. |
 | `audio_state.py` | ~65 | Persists an authoritative `(volume, balance)` pair per pannable node to `data/balance.yaml` and reapplies both together on every change, so the volume fader and the balance pad do not fight each other (both are the same raw `channelVolumes` write underneath). |
 | `peer_presence.py` | ~15 | The `/ws/peer/{name}` endpoint. The Bragi Client tray app holds this open for as long as its Roc link is enabled; that live socket is the peer card's real reachability signal, which a loaded Roc module cannot give on its own over UDP. |
 | `level_meter.py` | ~260 | Live VU-style metering. Captures each node's signal with `pw-cat --record`, and a single ticker pushes every meter's current level as one `levels` frame per ~50ms rather than one frame per meter. Two gates in `supervise()`: `viz_settings.get_enabled()` (a real off switch, not a display toggle) and `ws.manager.has_clients()`; it reconciles on `ws.manager.wake` as well as its own timer, so opening a tab starts the meters at once. |
 | `viz_settings.py` | ~45 | One global on/off toggle for the level meters, persisted to `data/viz_settings.yaml`. Separate from `audio_state.py` because it is global, not per-node, and it gates whether `level_meter.py` captures anything at all. |
+| `auth.py` | ~330 | The web UI password (scrypt), browser sessions (signed access token plus rotating refresh token), and API keys, all in `data/auth.yaml`. See [`api-and-access.md`](api-and-access.md). |
+| `access.py` | ~280 | `AccessMiddleware`, which decides per path whether a request needs nothing, an API key, or a session; the login page; the Security dialog's `/auth/*` endpoints. |
+| `api.py` | ~330 | The `/api/v1` HTTP API for other apps (list devices, read and change controls, switch headsets) and the `/api/v1/help` explainer it serves as Markdown. |
 | `layout.py` | ~50 | The dashboard's device order, set by dragging a device's grip and shared by every browser via `data/layout.yaml`. Devices the saved order doesn't name follow it in their default order. |
 
 ## Data files
@@ -135,6 +138,8 @@ Everything under `data/` is bind-mounted in production (see
 - `balance.yaml` — `{node_name: {volume: float, balance: float}}`,
   balance in `[-1.0, 1.0]`.
 - `viz_settings.yaml` — `{enabled: bool}`.
+- `auth.yaml` — the web UI password hash, browser sessions, and API keys,
+  all hashed. Schema in [`api-and-access.md`](api-and-access.md).
 - `layout.yaml` — `{order: [device ids]}`, the dashboard's device order
   (`headset:<card key>`, `peer:<name>`), set by dragging (`app/layout.py`).
 

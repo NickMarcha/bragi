@@ -57,8 +57,22 @@
     }
   }
 
-  function connect() {
+  // An expired access cookie cannot be refreshed by a WebSocket handshake
+  // (it cannot set cookies), so ask an ordinary endpoint first: reaching
+  // it refreshes the cookie, and a 401 means this browser has to log in.
+  async function connect() {
     setStatus("connecting");
+    try {
+      const response = await fetch("/auth/session", { credentials: "same-origin" });
+      if (response.status === 401) {
+        location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search);
+        return;
+      }
+    } catch (_) {
+      setStatus("disconnected");
+      scheduleReconnect();
+      return;
+    }
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     socket = new WebSocket(`${proto}//${location.host}/ws`);
     socket.addEventListener("open", () => {

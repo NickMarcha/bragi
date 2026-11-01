@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bragi - Log in</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png" />
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="login-page">
+  <form class="login-card" method="post" action="/auth/login">
+    <span class="brand"><img src="/static/logo.png" alt="" />Bragi</span>
+    <label>Password
+      <input type="password" name="password" autocomplete="current-password" required autofocus />
+    </label>
+    <input type="hidden" name="next" value="{{ next }}" />
+    {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+    <button type="submit" class="primary">Log in</button>
+    <p class="form-note">You stay logged in on this browser until you log out.</p>
+  </form>
+</body>
+</html>

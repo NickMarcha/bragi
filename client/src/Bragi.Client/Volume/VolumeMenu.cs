@@ -17,7 +17,7 @@ public sealed class VolumeMenu : IDisposable
 
     public VolumeMenu(RocLinkConfig? config)
     {
-        _server = BragiServerAddress.FromPresenceUrl(config?.BragiWsBaseUrl);
+        _server = BragiServerAddress.FromPresenceUrl(config?.BragiWsBaseUrl, config?.BragiApiKey);
         _peerName = config?.PeerName;
         Item = new NativeMenuItem { Header = "Volume", IsEnabled = _server is not null };
         Item.Click += (_, _) => Open();

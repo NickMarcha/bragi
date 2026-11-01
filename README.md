@@ -24,6 +24,9 @@ that pushes voices around a network.
   (Komodo git-sourced Stack, `tailscale serve`, the deploy webhook).
 - [`docs/realtime-control-plane.md`](docs/realtime-control-plane.md) — how
   live updates work and the race conditions behind the odd-looking guards.
+- [`docs/api-and-access.md`](docs/api-and-access.md) — the web UI
+  password, session cookies, API keys, and how the `/api/v1` API fits the
+  control plane. The API's usage guide is served at `/api/v1/help`.
 - [`docs/backlog.md`](docs/backlog.md) — known bugs and deferred work.
 - [`android/README.md`](android/README.md) — the Android peer app: build,
   releases, playback latency, and what is still untested on a phone.
