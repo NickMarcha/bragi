@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -16,7 +18,10 @@ namespace Bragi.Client.Tray;
 /// </summary>
 public static class UpdateService
 {
-    private const string RepoUrl = "https://github.com/NickMarcha/bragi";
+    // Baked in at build time from the csproj's BragiRepoUrl property.
+    private static readonly string RepoUrl = typeof(UpdateService).Assembly
+        .GetCustomAttributes<AssemblyMetadataAttribute>()
+        .First(a => a.Key == "BragiRepoUrl").Value!;
     private const string Channel = "linux";
 
     private static UpdateManager BuildManager() =>

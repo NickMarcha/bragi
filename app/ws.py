@@ -5,7 +5,7 @@ Replaces the old per-control POST routes + 3s card polling. Domain logic
 (pipewire/headsets/peers/audio_state) is unchanged from that version -
 only the transport moved here.
 
-Two things that weren't obvious until tested live against sagepi's real
+Two things that weren't obvious until tested live against a real
 PipeWire graph, both still true and worth knowing before touching this file:
 
 1. Every broadcast source (a client's own throttled slider action, the
@@ -49,7 +49,7 @@ from . import headsets as headsets_module
 from . import pipewire
 from . import views
 from . import layout
-from . import viz_settings
+from . import audio_reset, viz_settings
 
 logger = logging.getLogger("bragi.ws")
 
@@ -375,6 +375,15 @@ async def apply_action(action: dict) -> None:
         manager.broadcast_nowait({"type": "order", "order": order})
         return
 
+    if verb == "set_nightly_reset":
+        # Global, like the viz toggle: the hour the host's nightly reset runs.
+        try:
+            await asyncio.to_thread(audio_reset.set_nightly_hour, action.get("value"))
+        except ValueError:
+            return
+        manager.broadcast_nowait({"type": "nightly_reset", "hour": action.get("value")})
+        return
+
     if verb == "set_viz_enabled":
         # No target/key/direction - a single global toggle, not a per-node
         # control, see viz_settings.py.
@@ -637,7 +646,7 @@ _WATCHER_SUPPRESS_SECONDS = 0.3
 
 # How long on_node_changed collects ids before resolving them as one batch.
 # Long enough to swallow a profile flip's whole event storm (measured on
-# sagepi: 147 events across 72 ids, all inside ~100ms), short enough that a
+# a Pi 4: 147 events across 72 ids, all inside ~100ms), short enough that a
 # physical knob turn still feels immediate.
 _WATCHER_COALESCE_SECONDS = 0.15
 
@@ -667,7 +676,7 @@ async def on_node_changed(node_id: int) -> None:
     Cheap and synchronous on purpose. watcher.py dispatches this
     fire-and-forget per event line, and the events arrive in bursts far
     bigger than the number of controls they represent: one headset profile
-    flip emits 147 events across 72 distinct ids (measured on sagepi), and a
+    flip emits 147 events across 72 distinct ids (measured on a Pi 4), and a
     fast fader drag emits two per wpctl call. The previous version resolved
     each id independently, each paying its own pw-dump - ~7s of subprocess
     work for a single click, which is most of why enable/disable took 9.7s.

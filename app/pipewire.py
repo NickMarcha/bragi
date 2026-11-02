@@ -129,7 +129,7 @@ def forget_volumes() -> None:
 def get_volume_mute_many(node_ids: set[int]) -> dict[int, tuple[float | None, bool]]:
     """get_volume_mute for several nodes at once, with the ones the cache
     can't answer read concurrently - each is its own wpctl process (~50ms
-    on sagepi), so a whole dashboard's worth of them back to back was most
+    on a Pi 4), so a whole dashboard's worth of them back to back was most
     of the cost of building one."""
     with _volume_lock:
         result = {i: _volumes[i] for i in node_ids if i in _volumes}
@@ -181,7 +181,7 @@ class Graph:
 
     Passed around explicitly rather than re-fetched, because a dump is
     expensive and there is no cheaper query: 85ms to run plus 17ms to parse
-    ~495KB of JSON on sagepi's Pi 4. An earlier version had separate
+    ~495KB of JSON on a Pi 4. An earlier version had separate
     list_nodes()/list_devices() calls, which meant the enable/disable path
     alone paid for three dumps - and, far worse, the pw-mon watcher paid for
     one *per changed object id*. A single headset profile flip emits 147

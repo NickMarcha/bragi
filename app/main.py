@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 import contextlib
 import logging
 import ipaddress
@@ -82,10 +83,9 @@ async def peer_presence_ws(websocket: WebSocket, name: str) -> None:
     await peer_control.endpoint(websocket, name)
 
 
-class AndroidRegistration(BaseModel):
+class DesktopRegistration(BaseModel):
     name: str = Field(pattern=r"^[a-z][a-z0-9-]{0,39}$")
     tailscale_ip: str
-    capture_mode: Literal["microphone", "device_audio", "none"] = "microphone"
 
     @field_validator("tailscale_ip")
     @classmethod
@@ -96,13 +96,30 @@ class AndroidRegistration(BaseModel):
         if os.environ.get("BRAGI_LOCAL_DEV") == "1" and address == ipaddress.ip_address("127.0.0.1"):
             return str(address)
         if address not in ipaddress.ip_network("100.64.0.0/10"):
-            raise ValueError("Use the phone's Tailscale IPv4 address")
+            raise ValueError("Use the device's Tailscale IPv4 address")
         return str(address)
 
 
 class StreamSettings(BaseModel):
     send_enabled: bool = Field(strict=True)
     receive_enabled: bool = Field(strict=True)
+
+
+class AndroidRegistration(DesktopRegistration):
+    capture_mode: Literal["microphone", "device_audio", "none"] = "microphone"
+
+
+@app.post("/api/peers/register-desktop")
+async def register_desktop_peer(settings: DesktopRegistration):
+    """The Bragi Client's setup window. Returns the ports its link unit needs."""
+    try:
+        peer = await asyncio.to_thread(peers_module.register_desktop_peer, settings.name, settings.tailscale_ip)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except peers_module.ConfigWriteError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    ws.manager.broadcast_nowait({'type': 'peer_registry'})
+    return {'name': peer.name, 'ports': asdict(peer.ports)}
 
 
 @app.post("/api/peers/register")
@@ -168,9 +185,9 @@ def add_peer(request: Request, name: str = Form(...), tailscale_ip: str = Form(.
     name = name.strip().lower().replace(" ", "-")
     try:
         if protocol == "vban":
-            # The Pi's mic goes out as SagepiMic and the peer's audio comes
-            # back as <Name>Audio, matching how sage's Voicemeeter is set up.
-            peers_module.add_vban_peer(name, tailscale_ip.strip(), stream_send.strip() or "SagepiMic",
+            # Defaults: the Pi's mic goes out as BragiMic and the peer's
+            # audio comes back as <Name>Audio. Set Voicemeeter to match.
+            peers_module.add_vban_peer(name, tailscale_ip.strip(), stream_send.strip() or "BragiMic",
                                        stream_receive.strip() or f"{name.replace('-', '').capitalize()[:11]}Audio")
         else:
             peers_module.add_roc_peer(name, tailscale_ip.strip())

@@ -21,7 +21,7 @@
     <div class="top-bar-actions">
       {% include "_audio_reset.html" %}
       <button id="add-peer-toggle" type="button">Add peer</button>
-      <button id="settings-toggle" type="button" title="Visualizer settings">{{ icons.settings() }}</button>
+      <button id="settings-toggle" type="button" title="Settings">{{ icons.settings() }}</button>
       <button id="security-toggle" type="button" title="Security: password and API connections">{{ icons.lock() }}</button>
       <button id="unit-toggle" type="button" title="Toggle volume readout between % and dB">%</button>
       <div id="ws-status" class="connecting"><span class="dot"></span><span class="label">Connecting…</span></div>
@@ -29,11 +29,21 @@
   </header>
 
   <dialog id="viz-settings-dialog">
-    <h2>Visualizer settings</h2>
+    <h2>Settings</h2>
     <label class="viz-settings-row">
       <input type="checkbox" id="viz-enabled-checkbox" {% if viz_settings.enabled %}checked{% endif %} />
       Show audio level meters
     </label>
+    <label class="viz-settings-row" title="Restarts PipeWire and the peers once a day, after saving a snapshot, like Reset audio. Every stream drops for a few seconds.">
+      Nightly audio reset
+      <select id="nightly-reset-select">
+        <option value="off" {% if nightly_reset.hour is none %}selected{% endif %}>Off</option>
+        {% for hour in range(24) %}
+        <option value="{{ hour }}" {% if nightly_reset.hour == hour %}selected{% endif %}>{{ '%02d' % hour }}:00</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="form-note">Reset times are in the Bragi host's time zone.</p>
     <button id="viz-settings-close" type="button">Close</button>
   </dialog>
 
@@ -86,7 +96,7 @@
   <dialog id="add-peer-dialog">
     <h2>Add peer</h2>
     <form id="add-peer" hx-post="/peers" hx-target="#peers" hx-swap="innerHTML">
-      <label>Name <input type="text" name="name" placeholder="sage-laptop" required /></label>
+      <label>Name <input type="text" name="name" placeholder="laptop" required /></label>
       <label>Tailscale IP <input type="text" name="tailscale_ip" placeholder="100.x.x.x" required pattern="^100\.\d+\.\d+\.\d+$" /></label>
       <label>Protocol
         <select name="protocol">
@@ -94,7 +104,7 @@
           <option value="vban">VBAN (Windows, Voicemeeter)</option>
         </select>
       </label>
-      <label class="vban-only">Stream to peer <input type="text" name="stream_send" placeholder="SagepiMic" maxlength="16" pattern="^[A-Za-z0-9_\-]{1,16}$" /></label>
+      <label class="vban-only">Stream to peer <input type="text" name="stream_send" placeholder="BragiMic" maxlength="16" pattern="^[A-Za-z0-9_\-]{1,16}$" /></label>
       <label class="vban-only">Stream from peer <input type="text" name="stream_receive" placeholder="&lt;Name&gt;Audio" maxlength="16" pattern="^[A-Za-z0-9_\-]{1,16}$" /></label>
       <p class="vban-only form-note">Must match the peer's Voicemeeter VBAN settings: port 6980, 48 kHz.</p>
       <p class="form-error" hidden></p>
@@ -107,7 +117,7 @@
 
   <main id="console">
     {% if not headsets %}
-    <p class="empty">No USB headset on sagepi.</p>
+    <p class="empty">No USB headset plugged in.</p>
     {% endif %}
     {% for view in headsets if view.enabled %}
     {% include "_headset_card.html" %}

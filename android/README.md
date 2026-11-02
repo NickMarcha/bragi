@@ -14,7 +14,7 @@ block capture, and calls are not guaranteed to be capturable. Change sources by
 stopping and restarting. The persistent notification has a Stop action. After
 process death, open the app and start again. It does not start capture on boot.
 The Listen to Bragi audio button plays the same mix as the Pi headset, through
-AudioTrack. In the web UI, Microphone for desktops selects the Pi headset mic or a
+AudioTrack. In the web UI, "Desktop mic" selects the headset microphone or a
 phone running in microphone mode. Phone microphone input is not played through
 the headset; device-audio input still is. A selected unavailable microphone stays
 silent. Android itself does not expose received audio as another app's microphone.

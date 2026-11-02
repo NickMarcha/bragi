@@ -11,7 +11,7 @@ class GitHubUpdatesTest {
                         host: String = "github.com") = JSONObject().put("tag_name", tag)
         .put("draft", draft).put("prerelease", pre).put("assets", JSONArray().put(JSONObject()
             .put("name", asset).put("digest", "sha256:$checksum")
-            .put("browser_download_url", "https://$host/NickMarcha/bragi/releases/download/$tag/$asset")))
+            .put("browser_download_url", "https://$host/${BuildConfig.GITHUB_REPO}/releases/download/$tag/$asset")))
 
     @Test fun only_stable_android_apks_are_candidates() {
         val releases = JSONArray().put(release("client-v9.0.0"))

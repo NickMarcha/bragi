@@ -160,7 +160,7 @@ def test_peer_apps_still_work_with_a_password_set(session):
     auth.set_password("hunter22")
     client = TestClient(app)
     response = client.post("/api/peers/register", json={
-        "name": "fairphone", "tailscale_ip": "100.98.253.67", "capture_mode": "microphone"})
+        "name": "fairphone", "tailscale_ip": "100.64.0.20", "capture_mode": "microphone"})
     assert response.status_code == 200
     with client.websocket_connect("/ws/peer/fairphone?client=android") as socket:
         assert socket.receive_json()["type"] == "peer_config"

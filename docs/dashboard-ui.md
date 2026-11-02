@@ -21,8 +21,8 @@ index.html                     page shell
 ```
 
 - **`index.html`** is the shell: one 44px toolbar (`#top-bar`: the desktop
-  mic picker, Add peer, visualizer settings, the `%`/dB toggle, connection
-  status), the two `<dialog>`s (visualizer settings, add peer), and
+  mic picker, Add peer, settings (level meters, nightly reset hour), the `%`/dB toggle, connection
+  status), the two `<dialog>`s (settings, add peer), and
   `main#console`, a single row of devices. The `<body>` gets class
   `viz-enabled` when the level meters are on, which is the single switch
   the CSS reads.

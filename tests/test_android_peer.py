@@ -7,7 +7,7 @@ from app import peers, peer_presence
 
 def register(client, **changes):
     return client.post('/api/peers/register', json={
-        'name': 'fairphone', 'tailscale_ip': '100.98.253.67',
+        'name': 'fairphone', 'tailscale_ip': '100.64.0.20',
         'capture_mode': 'microphone', **changes,
     })
 
@@ -35,12 +35,12 @@ def test_registration_rejects_config_injection_and_non_tailnet_addresses(session
         {'tailscale_ip': '100.1.2.3'}, {'capture_mode': 'system-mic-injection'},
     ]:
         assert register(client, **values).status_code == 422
-    assert [p.name for p in peers.load_peers()] == ['sagedeck', 'sage-dev', 'sage']
+    assert [p.name for p in peers.load_peers()] == ['deck', 'studio', 'desktop']
 
 
 def test_android_cannot_take_over_a_desktop_peer(session):
     client = TestClient(app)
-    assert register(client, name='sagedeck').status_code == 409
+    assert register(client, name='deck').status_code == 409
 
 
 def test_control_delivery_status_and_presence_survive_reconnect(session):
@@ -68,11 +68,11 @@ def test_control_delivery_status_and_presence_survive_reconnect(session):
 
 def test_a_second_presence_socket_does_not_make_the_first_go_offline(session):
     client = TestClient(app)
-    with client.websocket_connect('/ws/peer/sagedeck'):
-        with client.websocket_connect('/ws/peer/sagedeck'):
-            assert 'sagedeck' in peer_presence.connected_peers
-        assert 'sagedeck' in peer_presence.connected_peers
-    assert 'sagedeck' not in peer_presence.connected_peers
+    with client.websocket_connect('/ws/peer/deck'):
+        with client.websocket_connect('/ws/peer/deck'):
+            assert 'deck' in peer_presence.connected_peers
+        assert 'deck' in peer_presence.connected_peers
+    assert 'deck' not in peer_presence.connected_peers
 
 
 def test_removing_phone_closes_control_socket_and_stops_its_session(session):
@@ -162,20 +162,20 @@ def test_phone_card_warns_when_the_phone_is_not_at_the_registered_address(sessio
     # Issue #2: the phone registered its carrier address, and listening was silent.
     # Tailscale Serve passes the phone's real tailnet address in X-Forwarded-For.
     client = TestClient(app)
-    register(client, tailscale_ip='100.83.223.246')
+    register(client, tailscale_ip='100.64.0.21')
     with client.websocket_connect('/ws/peer/fairphone?client=android',
-                                  headers={'X-Forwarded-For': '100.98.253.67'}) as socket:
+                                  headers={'X-Forwarded-For': '100.64.0.20'}) as socket:
         socket.receive_json()
         socket.send_json({'type': 'peer_status', 'send_active': True, 'receive_active': True, 'error': None})
         warning = socket.receive_json()['address_warning']
-        assert warning == 'Phone is at 100.98.253.67, Bragi sends to 100.83.223.246. Reopen the app.'
+        assert warning == 'Phone is at 100.64.0.20, Bragi sends to 100.64.0.21. Reopen the app.'
         assert warning in client.get('/peers').text
 
 
 def test_no_address_warning_when_the_address_matches_or_is_unknown(session):
     client = TestClient(app)
     register(client)
-    for headers in [{'X-Forwarded-For': '100.98.253.67'}, {}, {'X-Forwarded-For': '172.17.0.1'}]:
+    for headers in [{'X-Forwarded-For': '100.64.0.20'}, {}, {'X-Forwarded-For': '172.17.0.1'}]:
         with client.websocket_connect('/ws/peer/fairphone?client=android', headers=headers) as socket:
             socket.receive_json()
             socket.send_json({'type': 'peer_status', 'send_active': True, 'receive_active': True, 'error': None})

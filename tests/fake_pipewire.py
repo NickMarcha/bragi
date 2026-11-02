@@ -4,7 +4,7 @@ mock").
 
 Faking at the subprocess boundary rather than at `pipewire.dump()` is
 deliberate: subprocess *count* is the thing that actually made the dashboard
-slow. A `pw-dump` costs ~100ms on sagepi's Pi 4 (85ms to run, 17ms to parse
+slow. A `pw-dump` costs ~100ms on a Raspberry Pi 4 (85ms to run, 17ms to parse
 495KB of JSON) and a `wpctl get-volume` ~50ms, so "how many times did we
 shell out" is the real performance contract, and it is the one thing a test
 can assert exactly. Every call lands in `calls`; the perf tests assert on
@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from app import pipewire
+from app import peers, pipewire
 
 OFF_PROFILE = 0
 STEREO_PROFILE = 1
@@ -141,7 +141,7 @@ class FakeSession:
                     },
                 }
             )
-        # Filler of the kind a real dump carries alongside (a live sagepi dump
+        # Filler of the kind a real dump carries alongside (a live dump from the Pi
         # is 167 objects, only 24 of them Nodes), so type filtering is
         # exercised the way it is in production.
         for i in range(300, 340):
@@ -183,20 +183,20 @@ class FakeSession:
         raise pipewire.PipewireError(f"fake has no handler for pw-cli {args[0]}")
 
 
-HEADSET_CARD_ID = "usb-HP__Inc_HyperX_Cloud_III_S_Wireless_C1V5340J99-00"
+HEADSET_CARD_ID = "usb-HP__Inc_HyperX_Cloud_III_S_Wireless_0000000001-00"
 SECOND_CARD_ID = "usb-HP__Inc_HyperX_Cloud_III_Wireless_0000000000000000-00"
 
 
-def sagepi_session() -> FakeSession:
-    """The graph as it actually stands on sagepi, captured from a live
+def demo_session() -> FakeSession:
+    """A Pi running Bragi, modelled on a live
     `pw-dump`: three peers, one enabled headset, one disabled headset."""
     peer_nodes = [
-        FakeNode(50, "sagedeck-test-sink", "sagedeck-test-sink", "Audio/Sink"),
-        FakeNode(53, "sagedeck-audio", "sagedeck-audio", "Stream/Output/Audio"),
-        FakeNode(56, "sagedev-test-sink", "sagedev-test-sink", "Audio/Sink"),
-        FakeNode(58, "sagedev-audio", "sagedev-audio", "Stream/Output/Audio"),
-        FakeNode(211, "sage-outgoing-sink", "sage (VBAN, via Bragi)", "Audio/Sink"),
-        FakeNode(220, "sage-incoming-source", "sage (VBAN, via Bragi)", "Stream/Output/Audio"),
+        FakeNode(50, "deck-test-sink", "deck-test-sink", "Audio/Sink"),
+        FakeNode(53, "deck-audio", "deck-audio", "Stream/Output/Audio"),
+        FakeNode(56, "studio-test-sink", "studio-test-sink", "Audio/Sink"),
+        FakeNode(58, "studio-audio", "studio-audio", "Stream/Output/Audio"),
+        FakeNode(211, "desktop-outgoing-sink", "desktop (VBAN, via Bragi)", "Audio/Sink"),
+        FakeNode(220, "desktop-incoming-source", "desktop (VBAN, via Bragi)", "Stream/Output/Audio"),
         FakeNode(117, "alsa_output.platform-fe00b840.mailbox.stereo-fallback", "Built-in Audio", "Audio/Sink"),
     ]
     enabled = FakeCard(
@@ -239,3 +239,29 @@ def sagepi_session() -> FakeSession:
         ],
     )
     return FakeSession(nodes=peer_nodes, cards=[enabled, disabled])
+
+
+def demo_peers() -> list[peers.Peer]:
+    """The peers.yaml that goes with demo_session(): two Roc peers
+    configured by hand outside Bragi, and one Bragi-managed VBAN peer."""
+    return [
+        peers.Peer(
+            name="deck",
+            protocol="roc",
+            tailscale_ip="100.64.0.11",
+            managed=False,
+            ports=peers.RocPorts(10001, 10002, 10003, 10011, 10012, 10013),
+            outgoing_sink_name="deck-test-sink",
+            incoming_source_name="deck-audio",
+        ),
+        peers.Peer(
+            name="studio",
+            protocol="roc",
+            tailscale_ip="100.64.0.12",
+            managed=False,
+            ports=peers.RocPorts(10021, 10022, 10023, 10031, 10032, 10033),
+            outgoing_sink_name="studio-test-sink",
+            incoming_source_name="studio-audio",
+        ),
+        peers._vban_peer("desktop", "100.64.0.13", "BragiMic", "DesktopAudio"),
+    ]

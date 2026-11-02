@@ -7,3 +7,4 @@ data/peers.yaml
 data/reset-request
 data/incidents/
 .pytest_tmp/
+handoffs/

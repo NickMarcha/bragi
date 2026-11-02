@@ -23,7 +23,7 @@ services:
     tmpfs: [/data]
     ports: ["127.0.0.1:20080:8000"]
 
-  # Stands in for sagepi's Roc receiver: records what the phone sends.
+  # Stands in for the Bragi host's Roc receiver: records what the phone sends.
   recv:
     <<: *dev
     profiles: [audio]
@@ -33,7 +33,7 @@ services:
       -o file:/out/from-phone.wav --target-latency 200ms
     ports: ["127.0.0.1:20144:20144/udp", "127.0.0.1:20146:20146/udp"]
 
-  # Stands in for sagepi's Roc sender: streams a test tone to the phone
+  # Stands in for the Bragi host's Roc sender: streams a test tone to the phone
   # through `adb emu redir` on the host loopback (10.0.2.2 from a container).
   send:
     <<: *dev

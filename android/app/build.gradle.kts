@@ -6,9 +6,13 @@ android {
         applicationId = "com.nickmarcha.bragi"
         minSdk = 29
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.1.13"
-        buildConfigField("String", "DEFAULT_SERVER", "\"https://sagepi.tail08dfa.ts.net/\"")
+        versionCode = 15
+        versionName = "0.1.14"
+        // Empty: each user enters their own Bragi URL on first launch.
+        buildConfigField("String", "DEFAULT_SERVER", "\"\"")
+        // Where update checks and "Report a problem" go. GitHub Actions sets
+        // GITHUB_REPOSITORY, so a fork's release builds point at the fork.
+        buildConfigField("String", "GITHUB_REPO", "\"${System.getenv("GITHUB_REPOSITORY") ?: "NickMarcha/bragi"}\"")
     }
     buildFeatures { buildConfig = true }
     compileOptions {

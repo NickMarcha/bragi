@@ -1,6 +1,6 @@
 """Enabling and disabling a headset - the slowest thing in the dashboard.
 
-Measured on the live sagepi before these tests existed: 9.7s from click to
+Measured on the live Pi before these tests existed: 9.7s from click to
 the UI updating. The cost is subprocess calls, so that is what is asserted
 here (see fake_pipewire's docstring for the per-call costs).
 """

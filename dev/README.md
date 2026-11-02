@@ -4,8 +4,8 @@ Drive the Android app from an emulator against a Bragi server on this
 machine, with no Tailscale and no Pi. The server is the real app on the fake
 PipeWire from the tests, so registration, the dashboard, and the peer
 control socket are real; the audio graph is not. Audio is checked with the
-Roc 0.4 CLI tools (`roc-toolkit-tools` from Debian trixie, as on sagepi)
-standing in for sagepi's Roc modules.
+Roc 0.4 CLI tools (`roc-toolkit-tools` from Debian trixie, as on Raspberry Pi OS)
+standing in for the Bragi host's Roc modules.
 
 ```
 dev/android.sh up        # dev server on 127.0.0.1:20080, UDP redirects, debug APK installed
@@ -41,7 +41,7 @@ under `~/.config/systemd/user/docker.service.d/`.
 Debug builds talk only to `10.0.2.2`, `127.0.0.1`, or `localhost`, over
 cleartext allowed by `android/app/src/debug/res/xml/network_security_config.xml`,
 and register only as `127.0.0.1`. They refuse the production server URL, so a
-debug build cannot touch sagepi by accident. Release builds are unchanged:
+debug build cannot touch a real Bragi server by accident. Release builds are unchanged:
 HTTPS and Tailscale addresses only. Debug builds skip the daily update check,
 since a release APK cannot replace a debug install.
 

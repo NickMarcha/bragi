@@ -1,6 +1,6 @@
 """Live level metering: what actually goes out over the WebSocket.
 
-The meters were measured working (all 8 at ~20Hz on sagepi) but expensive
+The meters were measured working (all 8 at ~20Hz on the Pi) but expensive
 and edge-buggy. One dashboard client cost 160 WebSocket frames per second -
 8 metered directions x 20Hz, one frame each - which showed up as 39% CPU in
 tailscaled alone. The information in those 160 frames fits in 20.
@@ -20,7 +20,7 @@ from .fake_pipewire import HEADSET_CARD_ID as HYPERX_CARD
 
 HEADSET_PLAYBACK = ("headset", "hyperx", "playback")
 HEADSET_CAPTURE = ("headset", "hyperx", "capture")
-PEER_INCOMING = ("peer", "sagedeck", "incoming")
+PEER_INCOMING = ("peer", "deck", "incoming")
 
 
 class FakeCapture:
@@ -84,7 +84,7 @@ async def test_one_frame_carries_every_meter(broadcasts):
     assert frame["values"] == [
         {"target": "headset", "key": "hyperx", "direction": "capture", "value": 0.5},
         {"target": "headset", "key": "hyperx", "direction": "playback", "value": 0.5},
-        {"target": "peer", "key": "sagedeck", "direction": "incoming", "value": 0.5},
+        {"target": "peer", "key": "deck", "direction": "incoming", "value": 0.5},
     ]
 
 
@@ -147,12 +147,12 @@ async def test_metering_starts_the_moment_a_client_connects(session, broadcasts,
         assert sorted(started) == [
             ("headset", HYPERX_CARD, "capture"),
             ("headset", HYPERX_CARD, "playback"),
-            ("peer", "sage", "incoming"),
-            ("peer", "sage", "outgoing"),
-            ("peer", "sage-dev", "incoming"),
-            ("peer", "sage-dev", "outgoing"),
-            ("peer", "sagedeck", "incoming"),
-            ("peer", "sagedeck", "outgoing"),
+            ("peer", "deck", "incoming"),
+            ("peer", "deck", "outgoing"),
+            ("peer", "desktop", "incoming"),
+            ("peer", "desktop", "outgoing"),
+            ("peer", "studio", "incoming"),
+            ("peer", "studio", "outgoing"),
         ]
     finally:
         supervisor.cancel()

@@ -1,6 +1,6 @@
 """The volume/mute cache behind pipewire.get_volume_mute.
 
-Every wpctl get-volume is its own process (~50ms on sagepi), and even run
+Every wpctl get-volume is its own process (~50ms on the Pi), and even run
 concurrently a dashboard's worth of them kept a page load near 0.5s. A
 reading only goes stale when something changes the node, and every such
 change is either Bragi's own write or shows up as a pw-mon event - so those

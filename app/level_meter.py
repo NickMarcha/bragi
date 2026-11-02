@@ -3,7 +3,7 @@
 Nothing else in this codebase can answer "how loud is it right now" -
 wpctl/pw-dump only ever report the *volume setting* (see pipewire.py), never
 the actual signal. Getting a real level means tapping the audio stream
-itself, via `pw-cat --record` targeting a node (confirmed live on sage-dev:
+itself, via `pw-cat --record` targeting a node (confirmed live on an x86_64 desktop:
 `--target <node.name-or-id> --channels 1 --format s16 --rate 8000 --raw`
 streams clean headerless raw PCM, byte count matches the format math
 exactly - no WAV header, no surprises).
@@ -138,7 +138,7 @@ async def broadcast_levels_once() -> None:
     8 metered directions at 20Hz was 160 WebSocket frames a second for a
     single dashboard, which cost more in framing, tailnet encryption and
     client-side JSON parsing than the levels themselves are worth - it
-    measured as 39% CPU in tailscaled on sagepi. The same information fits
+    measured as 39% CPU in tailscaled on a Pi 4. The same information fits
     in 20 frames a second, unchanged in content or rate of update."""
     if not _levels:
         return
@@ -172,7 +172,7 @@ async def _read_levels(stream, target: str, key: str, direction: str) -> None:
         chunk = await stream.readexactly(_CHUNK_BYTES)
         n = len(chunk) // 2
         samples = struct.unpack(f"<{n}h", chunk)  # s16 is native, but every
-        # box this runs on (sage-dev x86_64, sagepi arm64) is little-endian -
+        # box this runs on (x86_64 desktops, arm64 Pis) is little-endian -
         # forcing '<' here makes that explicit instead of assumed.
         rms = math.sqrt(sum(s * s for s in samples) / n) / 32768.0 if n else 0.0
         coeff = _ATTACK_COEFF if rms > level else _RELEASE_COEFF

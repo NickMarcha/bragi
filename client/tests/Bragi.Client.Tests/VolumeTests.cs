@@ -152,7 +152,7 @@ public class VolumeTests
         await using var server = await FakeBragi.Start();
         using var menu = new VolumeMenu(new RocLinkConfig
         {
-            SagepiTailscaleIp = "127.0.0.1", LocalSinkName = "sink", LocalSourceName = "source",
+            BragiHostIp = "127.0.0.1", LocalSinkName = "sink", LocalSourceName = "source",
             PeerName = "laptop", BragiWsBaseUrl = server.Uri.AbsoluteUri + "/peer",
         });
         Assert.Equal("Volume", menu.Item.Header);

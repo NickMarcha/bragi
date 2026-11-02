@@ -7,7 +7,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 fun diagnosticsIssueUrl(logs: String, version: String, device: String): HttpUrl {
     var excerpt = collapseHealthLines(logs).takeLast(2500)
     while (true) {
-        val url = "https://github.com/NickMarcha/bragi/issues/new".toHttpUrl().newBuilder()
+        val url = "https://github.com/${BuildConfig.GITHUB_REPO}/issues/new".toHttpUrl().newBuilder()
             .addQueryParameter("template", "android-app.yml")
             .addQueryParameter("app-version", version)
             .addQueryParameter("device", device)

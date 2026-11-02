@@ -2,8 +2,8 @@
 data/auth.yaml.
 
 No password set (the default, and how Bragi ran before this existed) means
-the web UI is open to anyone who can reach it, which on sagepi is the
-tailnet. Setting one from the dashboard's Security dialog turns on login.
+the web UI is open to anyone who can reach it, which in the
+usual Tailscale setup is the tailnet. Setting one from the dashboard's Security dialog turns on login.
 
 A browser session is two cookies:
 

@@ -6,7 +6,7 @@ live by reading raw input events while turning one: it sends standard
 KEY_VOLUMEUP/KEY_VOLUMEDOWN media-key codes through a separate USB HID
 "Consumer Control" interface, once per detent. On a normal desktop, the
 running session's media-key handler catches that and calls into PipeWire -
-that's the whole reason the knob "just works" there. sagepi is headless
+that's the whole reason the knob "just works" there. A headless Pi
 (Raspberry Pi OS Lite, no desktop session), so nothing is listening for
 those keys at all; this module is that listener, purpose-built for exactly
 this one job, run continuously since Bragi is the only thing on this box

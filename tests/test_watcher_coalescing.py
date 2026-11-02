@@ -1,7 +1,7 @@
 """The pw-mon watcher's reaction to graph changes.
 
 pw-mon events arrive in bursts far larger than the number of controls they
-represent. Measured on sagepi: one headset profile flip emits 147 "changed"
+represent. Measured on the Pi: one headset profile flip emits 147 "changed"
 events across 72 distinct object ids, and the dashboard displays two
 controls for that headset. Resolving each id separately, each against its
 own pw-dump, was ~7s of subprocess work per click.
@@ -51,7 +51,7 @@ async def test_burst_broadcasts_each_affected_control_once(session, broadcasts):
     assert sorted(controls) == [
         ("headset", HEADSET_CARD_ID, "capture"),
         ("headset", HEADSET_CARD_ID, "playback"),
-        ("peer", "sagedeck", "outgoing"),
+        ("peer", "deck", "outgoing"),
     ]
 
 

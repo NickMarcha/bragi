@@ -30,11 +30,11 @@ def next_of_type(socket, msg_type: str) -> dict:
 
 
 def test_explainer_is_public_and_uses_the_callers_address(session):
-    response = TestClient(app).get("/api/v1/help", headers={"host": "sagepi.example", "x-forwarded-proto": "https"})
+    response = TestClient(app).get("/api/v1/help", headers={"host": "bragi.example", "x-forwarded-proto": "https"})
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/markdown")
-    assert "https://sagepi.example/api/v1/devices" in response.text
-    assert "wss://sagepi.example/ws?token=" in response.text
+    assert "https://bragi.example/api/v1/devices" in response.text
+    assert "wss://bragi.example/ws?token=" in response.text
 
 
 def test_api_needs_a_key_even_without_a_password(session):
@@ -60,19 +60,19 @@ def test_list_devices(api):
     devices = api.get("/api/v1/devices").json()["devices"]
     ids = [d["id"] for d in devices]
     assert ids == [f"headset:{HEADSET_CARD_ID}", f"headset:{SECOND_CARD_ID}",
-                   "peer:sagedeck", "peer:sage-dev", "peer:sage"]
+                   "peer:deck", "peer:studio", "peer:desktop"]
     headset = devices[0]
     assert headset["enabled"] is True
     assert set(headset["controls"]) == {"playback", "capture"}
     assert headset["controls"]["playback"]["pannable"] is False
     assert "balance" not in headset["controls"]["playback"]
-    sage = devices[-1]
-    assert sage["controls"]["incoming"]["pannable"] is True
-    assert sage["controls"]["incoming"]["balance"] == 0.0
+    desktop = devices[-1]
+    assert desktop["controls"]["incoming"]["pannable"] is True
+    assert desktop["controls"]["incoming"]["balance"] == 0.0
 
 
 def test_get_one_device_and_a_missing_one(api):
-    assert api.get("/api/v1/devices/peer/sage").json()["id"] == "peer:sage"
+    assert api.get("/api/v1/devices/peer/desktop").json()["id"] == "peer:desktop"
     assert api.get("/api/v1/devices/peer/nobody").status_code == 404
     assert api.get("/api/v1/devices/speaker/x").status_code == 404
 
@@ -80,7 +80,7 @@ def test_get_one_device_and_a_missing_one(api):
 def test_setting_a_peer_volume_returns_the_result_and_tells_dashboards(api):
     with api.websocket_connect(f"/ws?token={api.key}") as socket:
         assert socket.receive_json()["type"] == "state"
-        response = api.patch("/api/v1/devices/peer/sage/controls/incoming",
+        response = api.patch("/api/v1/devices/peer/desktop/controls/incoming",
                              json={"volume": 0.5, "balance": -0.25})
         assert response.status_code == 200
         body = response.json()
@@ -90,8 +90,8 @@ def test_setting_a_peer_volume_returns_the_result_and_tells_dashboards(api):
         assert body["control"]["connected"] is True
 
         message = next_of_type(socket, "control")
-        assert (message["key"], message["direction"], message["volume"]) == ("sage", "incoming", 0.5)
-    assert audio_state.get_state("sage-incoming-source") == (0.5, -0.25)
+        assert (message["key"], message["direction"], message["volume"]) == ("desktop", "incoming", 0.5)
+    assert audio_state.get_state("desktop-incoming-source") == (0.5, -0.25)
 
 
 def test_setting_a_headset_volume_and_mute(api):
@@ -140,7 +140,7 @@ def test_dashboard_socket_refuses_a_wrong_key_even_without_a_password(session):
 def test_set_mute_action_on_the_socket(api):
     with api.websocket_connect(f"/ws?token={api.key}") as socket:
         socket.receive_json()
-        socket.send_json({"action": "set_mute", "target": "peer", "key": "sage",
+        socket.send_json({"action": "set_mute", "target": "peer", "key": "desktop",
                           "direction": "incoming", "value": True})
         assert next_of_type(socket, "control")["muted"] is True
 
