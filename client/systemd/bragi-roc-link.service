@@ -1,5 +1,5 @@
 [Unit]
-Description=Bragi Roc audio link to sagepi (persistent pw-cli session, hot-loaded modules, no pipewire restart)
+Description=Bragi Roc audio link to the Bragi host (persistent pw-cli session, hot-loaded modules, no pipewire restart)
 Documentation=https://github.com/NickMarcha/bragi/blob/main/client/README.md
 After=pipewire.service wireplumber.service
 Requisite=pipewire.service

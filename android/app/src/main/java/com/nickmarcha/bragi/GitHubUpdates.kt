@@ -42,7 +42,7 @@ fun androidUpdate(releases: JSONArray, installed: AppVersion): AppUpdate? {
             if (asset.optString("name") != "BragiAndroid.apk") continue
             val url = asset.optString("browser_download_url")
             val hash = asset.optString("digest").removePrefix("sha256:")
-            if (!url.startsWith("https://github.com/NickMarcha/bragi/releases/download/$tag/") ||
+            if (!url.startsWith("https://github.com/${BuildConfig.GITHUB_REPO}/releases/download/$tag/") ||
                 !Regex("^[0-9a-fA-F]{64}$").matches(hash)) continue
             candidates += AppUpdate(version, url, hash.lowercase())
         }
@@ -58,7 +58,7 @@ class GitHubUpdates {
         var best: AppUpdate? = null
         // Paginate because this repository also contains desktop releases.
         for (page in 1..5) {
-            val request = Request.Builder().url("https://api.github.com/repos/NickMarcha/bragi/releases?per_page=100&page=$page")
+            val request = Request.Builder().url("https://api.github.com/repos/${BuildConfig.GITHUB_REPO}/releases?per_page=100&page=$page")
                 .header("Accept", "application/vnd.github+json").header("User-Agent", "Bragi-Android/${BuildConfig.VERSION_NAME}").build()
             val releases = http.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) throw IOException("GitHub update check failed (${response.code}). Try again later.")

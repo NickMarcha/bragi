@@ -162,7 +162,7 @@ def _base_url(request: Request) -> str:
 HELP = """\
 # Bragi API
 
-Bragi is the audio mixer on sagepi. This API lets another app list its
+Bragi is the audio mixer running on this host. This API lets another app list its
 audio devices, read their volume, mute and balance, and change them. Every
 change shows up live in any open dashboard.
 
@@ -182,7 +182,7 @@ A missing or wrong key gets `401`. This page and nothing else is public.
 
 ## Devices and controls
 
-A device is a USB headset plugged into sagepi (`kind: headset`) or a
+A device is a USB headset plugged into the host (`kind: headset`) or a
 network peer (`kind: peer`). Each device has two controls, one per
 direction:
 
@@ -190,8 +190,8 @@ direction:
 |---------|------------|--------------------------------------------|
 | headset | `playback` | the headset's speakers                     |
 | headset | `capture`  | the headset's mic                          |
-| peer    | `outgoing` | sagepi's mic as the peer hears it          |
-| peer    | `incoming` | the peer's audio in sagepi's headset mix   |
+| peer    | `outgoing` | the host's mic as the peer hears it        |
+| peer    | `incoming` | the peer's audio in the host's headset mix |
 
 Each control has:
 
@@ -223,12 +223,12 @@ Every device with every control.
                   "muted": false, "connected": true, "pannable": false},
      "capture":  {"direction": "capture", "label": "Mic", "volume": 1.0,
                   "muted": false, "connected": true, "pannable": false}}},
-  {"id": "peer:sage", "kind": "peer", "key": "sage", "name": "sage",
+  {"id": "peer:desktop", "kind": "peer", "key": "desktop", "name": "desktop",
    "protocol": "vban", "client_connected": null,
    "controls": {
-     "outgoing": {"direction": "outgoing", "label": "Mic to sage", "volume": 1.0,
+     "outgoing": {"direction": "outgoing", "label": "Mic to desktop", "volume": 1.0,
                   "muted": false, "connected": true, "pannable": true, "balance": 0.0},
-     "incoming": {"direction": "incoming", "label": "sage to headset", "volume": 0.6,
+     "incoming": {"direction": "incoming", "label": "desktop to headset", "volume": 0.6,
                   "muted": false, "connected": true, "pannable": true, "balance": -0.2}}}
 ]}
 ```
@@ -248,15 +248,15 @@ what should stay as it is. Values are absolute, not steps.
     curl -X PATCH -H "Authorization: Bearer $BRAGI_KEY" \\
          -H "Content-Type: application/json" \\
          -d '{"volume": 0.5, "muted": false}' \\
-         {base}/api/v1/devices/peer/sage/controls/incoming
+         {base}/api/v1/devices/peer/desktop/controls/incoming
 
 The response is the control as read back from PipeWire after the change,
 next to what you asked for:
 
 ```json
-{"device": "peer:sage", "direction": "incoming",
+{"device": "peer:desktop", "direction": "incoming",
  "requested": {"volume": 0.5, "muted": false},
- "control": {"direction": "incoming", "label": "sage to headset", "volume": 0.5,
+ "control": {"direction": "incoming", "label": "desktop to headset", "volume": 0.5,
              "muted": false, "connected": true, "pannable": true, "balance": -0.2}}
 ```
 
@@ -290,7 +290,7 @@ After that, the server sends only what changes:
 
 - `control`: one control changed, by anyone (the dashboard, this API, a
   hardware volume knob).
-  `{"type": "control", "target": "peer", "key": "sage", "direction": "incoming",
+  `{"type": "control", "target": "peer", "key": "desktop", "direction": "incoming",
     "volume": 0.5, "muted": false, "connected": true, "balance": -0.2, "ts": null}`
 - `headset`: a headset was switched on or off; carries the full headset view.
 - `levels`: live signal meters, about 20 a second, while level meters are
@@ -306,10 +306,10 @@ After that, the server sends only what changes:
 You can also send actions on the socket. `target` is `headset` or `peer`,
 `key` the device key, `direction` as above:
 
-    {"action": "set_volume", "target": "peer", "key": "sage", "direction": "incoming", "value": 0.5}
-    {"action": "set_mute",   "target": "peer", "key": "sage", "direction": "incoming", "value": true}
-    {"action": "toggle_mute","target": "peer", "key": "sage", "direction": "incoming"}
-    {"action": "set_balance","target": "peer", "key": "sage", "direction": "incoming", "value": -0.2}
+    {"action": "set_volume", "target": "peer", "key": "desktop", "direction": "incoming", "value": 0.5}
+    {"action": "set_mute",   "target": "peer", "key": "desktop", "direction": "incoming", "value": true}
+    {"action": "toggle_mute","target": "peer", "key": "desktop", "direction": "incoming"}
+    {"action": "set_balance","target": "peer", "key": "desktop", "direction": "incoming", "value": -0.2}
     {"action": "toggle_enabled", "target": "headset", "key": "usb-headset"}
 
 Actions get no direct reply; the resulting `control` (or `headset`)

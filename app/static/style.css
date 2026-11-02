@@ -840,3 +840,7 @@ dialog h2 {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+#viz-settings-dialog .form-note {
+  margin-bottom: 12px;
+}

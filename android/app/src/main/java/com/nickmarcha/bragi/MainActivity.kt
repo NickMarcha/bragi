@@ -83,6 +83,7 @@ class MainActivity : ComponentActivity() {
             return EditText(this).apply { setText(initial); inputType = type; setSingleLine(); panel.addView(this) }
         }
         server = field("Bragi server", preferences.getString("server", BuildConfig.DEFAULT_SERVER)!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+            .apply { hint = "https://bragi.your-tailnet.ts.net/" }
         val defaultName = Build.MODEL.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(35).let { if (it.firstOrNull()?.isLetter() == true) it else "phone-$it" }.take(40)
         name = field("Peer name", preferences.getString("name", defaultName)!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
         ip = field("Phone Tailscale IPv4 address", preferences.getString("ip", if (BuildConfig.DEBUG) "127.0.0.1" else "")!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)

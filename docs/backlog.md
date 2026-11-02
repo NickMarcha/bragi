@@ -1,14 +1,13 @@
 # Backlog
 
-Known bugs and deferred work. Most of this came out of deck-assistant issue
-#061. Items are roughly ordered by how much they bite.
+Known bugs and deferred work, roughly ordered by how much they bite.
 
 ## Bugs
 
 ### Re-enabling a headset can leave the card on with no nodes
 
-Seen once in roughly six enable/disable cycles on `sagepi`'s HyperX Cloud
-III S Wireless (device 88), while verifying the enable/disable latency fix.
+Seen once in roughly six enable/disable cycles on a HyperX Cloud III S
+Wireless (device 88), while verifying the enable/disable latency fix.
 
 After a disable, the following enable wrote the card's restore profile back
 (`active_profile_index` went to 1, which is what it was before), the UI
@@ -41,30 +40,21 @@ plus a wait back on the click path that was just brought from 9.7s to
 0.55s. Worth revisiting if it turns out to be common - the recovery above
 is a one-liner in the meantime.
 
-## Operational
-
-### Autostart entry for the tray app on sage-dev
-
-`sagedeck` has `~/.config/autostart/bragi-client.desktop`. `sage-dev` has
-the file written but the tray GUI has not been launched there since (X11,
-and a non-interactive SSH shell has no `DISPLAY` access). Someone needs to
-start it locally on `sage-dev` once, or log out and back in.
-
 ## Deferred features
 
 ### Hand-configured peers cannot be removed from the UI
 
-Roc peers seeded in `app/peers.py`'s `_seed_peers()` (`sagedeck`, `sage-dev`)
-are volume-controllable but not removable. Editing them means
-touching `~/.config/pipewire/pipewire.conf.d/` on `sagepi` directly.
+Peers listed in `peers.yaml` with `managed: false` are volume-controllable
+but not removable. Editing them means touching
+`~/.config/pipewire/pipewire.conf.d/` on the host directly.
 
-### Dual-headset playback on sagepi
+### Dual-headset playback on a Pi
 
 Deprioritized in favor of one headset working reliably. The Pi 4's shared
 Full-Speed USB hub cannot carry two headset streams stably even forced to
 16-bit. Fixing it needs a udev or path-unit auto-relink-on-reconnect script,
 or accepting single-headset as the design. See
-[`audio-bridge.md`](audio-bridge.md#dual-headset-playback-and-why-sagepi-runs-one-headset).
+[`audio-bridge.md`](audio-bridge.md#dual-headset-playback-and-why-the-pi-runs-one-headset).
 
 ### Second headset mic capture
 
@@ -98,7 +88,7 @@ Still open:
 
 ### Windows tray client
 
-`sage`'s VBAN link has no enable/disable/status control outside the web UI.
+A VBAN peer's link has no enable/disable/status control outside the web UI.
 The Avalonia tray client is Linux-only right now.
 
 ### Realtime control plane

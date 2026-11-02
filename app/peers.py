@@ -1,13 +1,13 @@
 """Peer registry: the source of truth for who Bragi bridges audio to/from.
 
-Existing hand-written peers (sagedeck, sage-dev via Roc; sage via VBAN) are
-seeded here to match what's already deployed on sagepi - Bragi controls
-their volume like any other peer, but won't rewrite their config unless
-you remove/re-add them through the UI. Peers added *through* Bragi get a
+A fresh install starts with no peers. Peers added *through* Bragi get a
 dedicated, Bragi-owned config file that's safe to regenerate freely.
+Roc peers you already run from your own pipewire.conf.d can be listed in
+data/peers.yaml with `managed: false` - Bragi controls their volume like
+any other peer, but never writes their config (see docs/deployment.md).
 
 Bragi never loads a managed peer's modules itself. It only writes that file
-(MANAGED_CONF_FILE), a standalone PipeWire client config. On sagepi a
+(MANAGED_CONF_FILE), a standalone PipeWire client config. On the host a
 systemd --user unit runs it as its own process (`pipewire -c`, the way
 filter-chain runs), and a path unit restarts that process whenever the
 file changes - see host/systemd/. The earlier hot-load ran a one-shot
@@ -37,8 +37,8 @@ PEERS_FILE = DATA_DIR / "peers.yaml"
 # binding every managed peer's ports twice.
 MANAGED_CONF_FILE = DATA_DIR / "peers.conf"
 
-# First free port block after the hand-allocated 10001-10033 range
-# documented in issue #061 (sagedeck/sage-dev). Each Roc peer needs 6 ports
+# First free port block after 10001-10033, left for Roc peers configured by
+# hand in pipewire.conf.d. Each Roc peer needs 6 ports
 # (mic source/repair/control, playback source/repair/control).
 # BRAGI_ROC_PORT_BASE moves local dev peers into a free port range.
 _PORT_BASE = int(os.environ.get("BRAGI_ROC_PORT_BASE", "10041"))
@@ -88,31 +88,6 @@ class Peer:
         return d
 
 
-def _seed_peers() -> list[Peer]:
-    """Mirrors the peers already hand-configured on sagepi as of #061."""
-    return [
-        Peer(
-            name="sagedeck",
-            protocol="roc",
-            tailscale_ip="100.86.187.54",
-            managed=False,
-            ports=RocPorts(10001, 10002, 10003, 10011, 10012, 10013),
-            outgoing_sink_name="sagedeck-test-sink",
-            incoming_source_name="sagedeck-audio",
-        ),
-        Peer(
-            name="sage-dev",
-            protocol="roc",
-            tailscale_ip="100.79.103.97",
-            managed=False,
-            ports=RocPorts(10021, 10022, 10023, 10031, 10032, 10033),
-            outgoing_sink_name="sagedev-test-sink",
-            incoming_source_name="sagedev-audio",
-        ),
-        _vban_peer("sage", "100.71.149.116", "SagepiMic", "SageAudio"),
-    ]
-
-
 def _vban_peer(name: str, tailscale_ip: str, stream_send: str, stream_receive: str) -> Peer:
     return Peer(
         name=name, protocol="vban", tailscale_ip=tailscale_ip, managed=True,
@@ -122,9 +97,9 @@ def _vban_peer(name: str, tailscale_ip: str, stream_send: str, stream_receive: s
 
 
 def _migrate_vban_peers(peers: list[Peer]) -> bool:
-    """sage ran on vban_emitter/vban_receptor under a hand-written unit
-    (vban-sage.service) until VBAN peers moved into peers.conf. Its stream
-    names and address carry over unchanged."""
+    """VBAN peers once ran on vban_emitter/vban_receptor under a hand-written
+    unit, stored with managed: false, until they moved into peers.conf. Their
+    stream names and addresses carry over unchanged."""
     changed = False
     for i, peer in enumerate(peers):
         if peer.protocol == "vban" and not peer.managed:
@@ -135,9 +110,7 @@ def _migrate_vban_peers(peers: list[Peer]) -> bool:
 
 def load_peers() -> list[Peer]:
     if not PEERS_FILE.exists():
-        peers = _seed_peers()
-        save_peers(peers)
-        return peers
+        return []
     raw = yaml.safe_load(PEERS_FILE.read_text()) or []
     peers = []
     for item in raw:
@@ -199,10 +172,10 @@ def _roc_conf_block(peer: Peer) -> str:
     # through to its normal default-source policy instead of just failing -
     # and on this box that picked a HEADSET'S OWN OUTPUT MONITOR as the
     # substitute "mic", silently routing whatever's playing on it (from
-    # every connected peer) back out to every other peer, sage's VBAN mic
-    # included. dont-fallback stops that fallback outright; linger keeps
+    # every connected peer) back out to every other peer, VBAN peers'
+    # mics included. dont-fallback stops that fallback outright; linger keeps
     # the node alive waiting rather than destroying it, so it relinks on
-    # its own the moment the real mic reappears - confirmed live on sagepi
+    # its own the moment the real mic reappears - confirmed live on a Pi
     # (disable/re-enable headset via this dashboard) rather than assumed
     # from docs alone.
     return f"""\
@@ -259,7 +232,7 @@ def _mic_loopback_block(peer: Peer, capture_target: str, capture_monitor: str = 
 
 
 def _vban_send_block(peer: Peer) -> str:
-    # 48 kHz 16-bit stereo is what sage's Voicemeeter got from vban_emitter.
+    # 48 kHz 16-bit stereo is what Voicemeeter expects from a VBAN emitter.
     mic_source_name = _headset_mic_source_name() or "alsa_input.MISSING"
     return f"""\
     {{ name = libpipewire-module-vban-send
@@ -369,7 +342,7 @@ def _regenerate_managed_conf(peers: list[Peer]) -> None:
 
 def sync_managed_conf() -> None:
     """Brings MANAGED_CONF_FILE in line with peers.yaml - run on startup, so
-    a fresh install or a change to the template itself reaches sagepi
+    a fresh install or a change to the template itself reaches the host
     without waiting for the next add or remove."""
     with _lock:
         peers = load_peers()
@@ -432,7 +405,7 @@ def remove_peer(name: str) -> None:
         if not peer.managed:
             raise ValueError(
                 f"'{name}' was hand-configured outside Bragi - remove it by editing "
-                "sagepi's pipewire.conf.d directly, not through the UI"
+                "the host's pipewire.conf.d directly, not through the UI"
             )
         peers = [p for p in peers if p.name != name]
         save_peers(peers)
@@ -460,6 +433,34 @@ def register_android_peer(name: str, tailscale_ip: str, capture_mode: str) -> Pe
             peer.send_enabled = capture_mode != "none"
             peer.receive_enabled = capture_mode == "none"
         peer.capture_mode = capture_mode
+        save_peers(peers)
+        _regenerate_managed_conf(peers)
+        return peer
+
+
+def register_desktop_peer(name: str, tailscale_ip: str) -> Peer:
+    """The Bragi Client's "Connect to Bragi" window. Repeatable, like the
+    Android registration: connecting again keeps the port block. A Roc peer
+    added from the dashboard under the same name is claimed rather than
+    refused, since adding it there first is the natural order. A peer
+    configured by hand is returned as it is, never rewritten."""
+    with _lock:
+        peers = load_peers()
+        peer = next((p for p in peers if p.name == name), None)
+        if peer is not None and (peer.protocol != "roc" or peer.client_kind not in (None, "desktop")):
+            raise ValueError(f"'{name}' already belongs to another client")
+        if peer is not None and not peer.managed:
+            return peer
+        if peer is None:
+            peer = Peer(
+                name=name, protocol="roc", tailscale_ip=tailscale_ip, managed=True,
+                ports=_next_free_ports(peers),
+                outgoing_sink_name=f"{name}-outgoing-sink",
+                incoming_source_name=f"{name}-incoming-source",
+            )
+            peers.append(peer)
+        peer.client_kind = "desktop"
+        peer.tailscale_ip = tailscale_ip
         save_peers(peers)
         _regenerate_managed_conf(peers)
         return peer

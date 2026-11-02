@@ -16,8 +16,8 @@ public sealed record VolumeDirection(double? Volume, bool Muted, bool Connected)
 public sealed record VolumeDevice(string Target, string Key, string Label,
     VolumeDirection Output, VolumeDirection Input)
 {
-    // The server names peer directions from sagepi's perspective. The menu
-    // names them from the peer's perspective: its output arrives at sagepi.
+    // The server names peer directions from the Bragi host's perspective. The menu
+    // names them from the peer's perspective: its output arrives at the host.
     public string OutputDirection => Target == "peer" ? "incoming" : "playback";
     public string InputDirection => Target == "peer" ? "outgoing" : "capture";
 }

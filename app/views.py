@@ -17,8 +17,8 @@ from . import viz_settings
 
 
 def resolve_node_id(graph: pipewire.Graph, peer: peers_module.Peer, direction: str) -> int | None:
-    """direction: 'outgoing' (sagepi's mic, going to this peer) or
-    'incoming' (this peer's audio, arriving at sagepi's headset)."""
+    """direction: 'outgoing' (the host's mic, going to this peer) or
+    'incoming' (this peer's audio, arriving at the host's headset)."""
     # Roc and VBAN peers alike: the managed modules name both nodes.
     name = peer.outgoing_sink_name if direction == "outgoing" else peer.incoming_source_name
     return pipewire.find_node_id(graph.nodes, name) if name else None
@@ -91,7 +91,7 @@ def peer_view(graph: pipewire.Graph, peer: peers_module.Peer, volumes: Volumes |
         "outgoing": direction_view(out_id, peer_outgoing_node_name(peer), volumes),
         "incoming": direction_view(in_id, peer_incoming_node_name(peer), volumes),
         # Only meaningful for peers with a Bragi Client tray app (currently
-        # Roc peers only - VBAN peers like "sage" have no client yet, see
+        # Roc peers only - VBAN peers have no client yet, see
         # client/README.md). None (not False) for other protocols, so the
         # template can tell "no client mechanism exists for this peer" apart
         # from "client exists but isn't connected right now".
@@ -152,7 +152,7 @@ def build_state() -> dict:
     peers = peers_module.load_peers()
     # Every displayed node's volume, read in one concurrent batch before any
     # view is built - one wpctl per direction back to back was ~0.5s of a
-    # sagepi page load, growing by two calls with every peer.
+    # Pi 4 page load, growing by two calls with every peer.
     node_ids = {i for h in headsets for i in (h.playback_node_id, h.capture_node_id)}
     node_ids |= {resolve_node_id(graph, p, d) for p in peers for d in ("outgoing", "incoming")}
     node_ids.discard(None)
@@ -165,6 +165,7 @@ def build_state() -> dict:
         "viz_settings": {"enabled": viz_settings.get_enabled()},
         "microphone": microphone.view(),
         "audio_reset": audio_reset.view(),
+        "nightly_reset": {"hour": audio_reset.nightly_hour()},
     }
 
 

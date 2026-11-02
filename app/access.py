@@ -35,6 +35,7 @@ _PUBLIC_PATHS = {"/login", "/auth/login", "/api/v1/help", "/favicon.ico"}
 _PEER_PATTERNS = (
     re.compile(r"^/ws/peer/[^/]+$"),
     re.compile(r"^/api/peers/register$"),
+    re.compile(r"^/api/peers/register-desktop$"),
     re.compile(r"^/api/peers/[^/]+/streams$"),
 )
 

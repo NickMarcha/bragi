@@ -1,19 +1,21 @@
 #!/bin/bash
 # ExecStart for bragi-roc-link.service. Loads the two Roc PipeWire modules
-# (sink: sagepi headset -> local playback; source: local mic -> sagepi) into
+# (sink: local audio -> Bragi host's headset; source: Bragi host's mic -> local) into
 # a *persistent* pw-cli session and then blocks for the unit's whole
 # lifetime - see the .service file's comment for why this can't be a
 # oneshot script that loads and exits.
 #
 # Required env vars (from ~/.config/bragi-client/roc-link.env via
-# EnvironmentFile=): SAGEPI_TAILSCALE_IP, REMOTE_SOURCE_PORT,
+# EnvironmentFile=): BRAGI_HOST_IP, REMOTE_SOURCE_PORT,
 # REMOTE_REPAIR_PORT, REMOTE_CONTROL_PORT, LOCAL_SINK_NAME,
 # LOCAL_SOURCE_PORT, LOCAL_REPAIR_PORT, LOCAL_CONTROL_PORT,
 # LOCAL_SOURCE_NAME, SESS_LATENCY_MSEC, ROC_MODULE_DIR.
+# SAGEPI_TAILSCALE_IP is still read as the old name for BRAGI_HOST_IP.
 
 set -euo pipefail
 
-: "${SAGEPI_TAILSCALE_IP:?missing}" "${REMOTE_SOURCE_PORT:?missing}" "${REMOTE_REPAIR_PORT:?missing}" \
+BRAGI_HOST_IP="${BRAGI_HOST_IP:-${SAGEPI_TAILSCALE_IP:-}}"
+: "${BRAGI_HOST_IP:?missing}" "${REMOTE_SOURCE_PORT:?missing}" "${REMOTE_REPAIR_PORT:?missing}" \
   "${REMOTE_CONTROL_PORT:?missing}" "${LOCAL_SINK_NAME:?missing}" "${LOCAL_SOURCE_PORT:?missing}" \
   "${LOCAL_REPAIR_PORT:?missing}" "${LOCAL_CONTROL_PORT:?missing}" "${LOCAL_SOURCE_NAME:?missing}" \
   "${SESS_LATENCY_MSEC:?missing}" "${ROC_MODULE_DIR:?missing}"
@@ -22,28 +24,28 @@ set -euo pipefail
 # needs the same module dir the daemon uses to find the locally-built .so,
 # pw-cli does its own dlopen for this, independent of whatever the daemon
 # already has loaded. ROC_MODULE_DIR is NOT hardcoded - the build directory
-# name differs per machine (sage-dev: ~/.local/lib/pipewire-0.3-roc,
-# sagedeck: ~/.local/lib/pipewire-0.3-roc-test - found by checking sagedeck
+# name differs per machine (e.g. ~/.local/lib/pipewire-0.3-roc on one,
+# ~/.local/lib/pipewire-0.3-roc-test on another - check each machine
 # directly, don't assume they match).
 export PIPEWIRE_MODULE_DIR="${ROC_MODULE_DIR}:/usr/lib/pipewire-0.3"
 
 # audio.rate 48000 on both node props keeps the whole local graph at one
 # rate: without it the Roc modules come up at their 44100 default and, on a
-# machine whose PipeWire clock isn't pinned (unlike sagepi, which has
-# clock.allowed-rates = [ 48000 ]), the 44100 Roc sink tries to drag the
+# machine whose PipeWire clock isn't pinned (unlike a Bragi host set
+# up with clock.allowed-rates = [ 48000 ]), the 44100 Roc sink tries to drag the
 # whole graph to 44100. With EasyEffects in the path that rate switch
-# wedged its output stage and playback to sagepi silently stopped. See
-# issue #080. Also pin the clock via 10-clock-rate.conf as a backstop.
+# wedged its output stage and playback to the Bragi host silently stopped.
+# Also pin the clock via 10-clock-rate.conf as a backstop.
 # log.level "INFO" makes both modules' underlying libroc session (not just
 # the PipeWire node) report connect/disconnect/endpoint state through
-# pw_log - see issue #081, where a Roc sink/source silently lost its UDP
+# pw_log - added after a Roc sink/source silently lost its UDP
 # sockets for a day with nothing in any log to explain why. Module-side
 # props accept "NONE"/"ERROR"/"INFO"/"DEBUG"/"TRACE"
 # (src/modules/module-roc/common.h:pw_roc_parse_log_level).
-sink_args=$(printf '{"remote.ip":"%s","remote.source.port":%s,"remote.repair.port":%s,"remote.control.port":%s,"fec.code":"disable","sink.name":"%s","sink.props":{"node.name":"%s","node.description":"sagepi headset (Roc, via Bragi Client)","audio.rate":48000,"log.level":"INFO"}}' \
-  "$SAGEPI_TAILSCALE_IP" "$REMOTE_SOURCE_PORT" "$REMOTE_REPAIR_PORT" "$REMOTE_CONTROL_PORT" "$LOCAL_SINK_NAME" "$LOCAL_SINK_NAME")
+sink_args=$(printf '{"remote.ip":"%s","remote.source.port":%s,"remote.repair.port":%s,"remote.control.port":%s,"fec.code":"disable","sink.name":"%s","sink.props":{"node.name":"%s","node.description":"Bragi headset (Roc, via Bragi Client)","audio.rate":48000,"log.level":"INFO"}}' \
+  "$BRAGI_HOST_IP" "$REMOTE_SOURCE_PORT" "$REMOTE_REPAIR_PORT" "$REMOTE_CONTROL_PORT" "$LOCAL_SINK_NAME" "$LOCAL_SINK_NAME")
 
-source_args=$(printf '{"local.ip":"0.0.0.0","local.source.port":%s,"local.repair.port":%s,"local.control.port":%s,"fec.code":"disable","sess.latency.msec":%s,"source.name":"%s","source.props":{"node.name":"%s","node.description":"sagepi mic (Roc, via Bragi Client)","media.class":"Audio/Source","audio.rate":48000,"log.level":"INFO"}}' \
+source_args=$(printf '{"local.ip":"0.0.0.0","local.source.port":%s,"local.repair.port":%s,"local.control.port":%s,"fec.code":"disable","sess.latency.msec":%s,"source.name":"%s","source.props":{"node.name":"%s","node.description":"Bragi mic (Roc, via Bragi Client)","media.class":"Audio/Source","audio.rate":48000,"log.level":"INFO"}}' \
   "$LOCAL_SOURCE_PORT" "$LOCAL_REPAIR_PORT" "$LOCAL_CONTROL_PORT" "$SESS_LATENCY_MSEC" "$LOCAL_SOURCE_NAME" "$LOCAL_SOURCE_NAME")
 
 fifo=$(mktemp -u "${XDG_RUNTIME_DIR:-/tmp}/bragi-roc-link.XXXXXX.fifo")
@@ -57,7 +59,7 @@ cleanup() {
   # this trap AND overwrites the script's real exit status with the kill's
   # failure code - discovered because it silently turned every graceful
   # `systemctl stop` into a reported "failed" unit once this trim-loop
-  # cleanup was added (issue #081). Confirmed in isolation: a failing
+  # cleanup was added. Confirmed in isolation: a failing
   # command as the last thing an EXIT trap runs replaces `exit 0`'s status
   # with its own, `set +e` here is what stops that.
   set +e
@@ -74,7 +76,7 @@ trap cleanup EXIT
 # pw-cli's raw output used to go ONLY to $pwcli_log, a tmpfile in
 # /run/user nobody ever looked at - `journalctl --user -u
 # bragi-roc-link.service` showed nothing at all, even the run where a Roc
-# socket silently died (#081). pw-cli mirrors the *entire* PipeWire
+# socket silently died. pw-cli mirrors the *entire* PipeWire
 # registry (every client connect/disconnect bus-wide) into this stream, so
 # a raw copy grows tens of MB a day of pure noise and drowns any real line
 # in it. Fix: keep the raw copy in $pwcli_log (capped below, it's tmpfs -
@@ -89,7 +91,7 @@ trap cleanup EXIT
 # and ordinary desktop noise alone - Steam, Discord, browser, whatever else
 # is running - burns through that in well under a day, so by the time
 # anyone goes looking after a days-later recurrence the entries are already
-# rotated out. #081 originally read that as a bug in this logging (a
+# rotated out. This was first read as a bug in this logging (a
 # synergy.service crash loop eating the budget); disabling that helped but
 # didn't fix the underlying problem, the shared budget is just too small
 # regardless of what else is or isn't flapping. So the filtered copy also

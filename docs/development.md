@@ -20,7 +20,7 @@ uvicorn app.main:app --reload
 ```
 
 It needs a real PipeWire session to do anything. `pw-dump` and `wpctl` have
-to resolve against a running daemon, so in practice you develop on `sagepi`
+to resolve against a running daemon, so in practice you develop on the Pi
 itself or another PipeWire-based Linux machine with a headset and at least
 one peer configured. Against a machine with no PipeWire the app starts but
 every card is empty.
@@ -42,13 +42,13 @@ gets past it.
 
 CI runs them on every push to `main` and every PR that touches `app/`,
 `tests/`, or the requirements (`.github/workflows/server-tests.yml`), on
-both Python 3.13 (what the Dockerfile ships, so what `sagepi` runs) and
+both Python 3.13 (what the Dockerfile ships) and
 3.14 (what this page says to develop on).
 
 They run anywhere - no PipeWire needed. `tests/fake_pipewire.py` replaces
 `pipewire._run`, the single place the app shells out, with a fake host
-modelling the graph as it actually stands on `sagepi` (captured from a live
-`pw-dump`): three peers, one enabled headset, one disabled one. Card
+modelled on a live Pi's `pw-dump`, with the matching peers.yaml from
+`demo_peers()`: three peers, one enabled headset, one disabled one. Card
 enable/disable is modelled faithfully, including the part that makes it
 awkward - a card set to profile "off" loses its Sink/Source nodes entirely.
 
@@ -68,7 +68,7 @@ What is covered, and where:
 | `test_watcher_coalescing.py` | A pw-mon burst costs one dump no matter how many ids it carries, still suppresses echoes of a client's own action, and still lets a hardware knob turn through. |
 | `test_level_meter.py` | The dB mapping against a known -20dBFS signal, one WebSocket frame per tick rather than one per meter, and a stopped capture falling to zero instead of freezing. |
 | `test_dashboard_state.py` | `build_state()` and the fader/mute/balance actions, including client-timestamp ordering. |
-| `test_peers.py` | Adding and removing managed Roc peers: what lands in `peers.conf` (no one-shot `pw-cli`, no `media.class` override, the client preamble, the #086 loopback flags), and that a startup sync never rewrites it for nothing or with the headset off. |
+| `test_peers.py` | Adding and removing managed Roc peers: what lands in `peers.conf` (no one-shot `pw-cli`, no `media.class` override, the client preamble, the loopback's no-fallback flags), and that a startup sync never rewrites it for nothing or with the headset off. |
 | `test_volume_cache.py` | The per-node volume cache: a repeat page load reads no volumes, and every path that can change a node (Bragi's own writes, pw-mon events, a pw-mon restart, a read overtaken by a change) drops the stale reading. |
 | `test_connection.py` | A new tab gets its state snapshot first, and connecting wakes the meters. |
 
@@ -93,7 +93,7 @@ that shape still need the real thing:
 | `main.py` | ~100 | The FastAPI app: routes, static mount, templates, and the lifespan that starts three background tasks (`watcher.watch`, `knob_watcher.watch`, `level_meter.supervise`). |
 | `pipewire.py` | ~230 | The only place that shells out to `pw-dump` / `wpctl` / `pw-cli`. `dump()` returns a `Graph` (the Audio nodes *and* the ALSA card devices, from one `pw-dump`) that callers pass down rather than re-fetching; plus `get_volume_mute()` (cached per node: every write here and every pw-mon `added`/`removed`/`changed` event forgets the reading, a pw-mon restart forgets all of them; `get_volume_mute_many()` reads the misses concurrently for `build_state()`), `set_volume`, `set_mute`, `set_channel_volumes` (raw `channelVolumes` for panning, since PipeWire has no pan control), `set_device_profile`, `load_module` / `unload_module`. |
 | `views.py` | ~190 | Pure functions turning the raw node list plus the peer and headset registries into the dict shape that templates and WebSocket broadcasts consume. `build_state()` is the whole-dashboard payload; `peer_view()`, `headset_view()`, `direction_view()` are the pieces. |
-| `peers.py` | ~320 | The peer registry. Loads and saves `data/peers.yaml`, seeds the hand-configured peers (`_seed_peers()`: `sagedeck`, `sage-dev` via Roc, `sage` via VBAN), allocates port blocks, and writes the Bragi-managed `data/peers.conf` (`_roc_conf_block()`), a standalone PipeWire client config that the host's `bragi-peers.service` runs. Bragi never loads modules itself. `sync_managed_conf()` rewrites it on startup if it's out of date. Also the `Peer` and `Ports` dataclasses and `DATA_DIR`. |
+| `peers.py` | ~320 | The peer registry. Loads and saves `data/peers.yaml` (empty on a fresh install), allocates port blocks, and writes the Bragi-managed `data/peers.conf` (`_roc_conf_block()`), a standalone PipeWire client config that the host's `bragi-peers.service` runs. Bragi never loads modules itself. `sync_managed_conf()` rewrites it on startup if it's out of date. Also the `Peer` and `Ports` dataclasses and `DATA_DIR`. |
 | `headsets.py` | ~110 | Auto-detects USB headsets by ALSA card id (whatever is plugged in is the list, no registry), pairs each one's playback and capture nodes, and enables or disables a headset by flipping its ALSA card profile to `off` and back. |
 | `ws.py` | ~500 | The WebSocket control plane. `ConnectionManager` (one asyncio queue per tab), `apply_action()` (the verb switch: `set_volume`, `set_balance`, `toggle_mute`, `set_mute`, `toggle_enabled`, `set_viz_enabled`), `set_control()` / `set_headset_enabled()` (the HTTP API's immediate writes), `_throttled_apply` (single-flight-per-control worker), `_accept_ts` (client-timestamp ordering), and the broadcasts. Biggest and most fragile file. Read [`realtime-control-plane.md`](realtime-control-plane.md) before changing it. |
 | `watcher.py` | ~80 | Runs `pw-mon` and fires a callback on any PipeWire graph change (a headset plugged or unplugged, another client changing a node) so the dashboard reflects changes Bragi did not make. Also forgets `pipewire.py`'s cached volume for every id pw-mon reports. |
@@ -115,7 +115,7 @@ Everything under `data/` is bind-mounted in production (see
 - `peers.yaml` — peers added through the UI. Each entry:
 
   ```yaml
-  - name: sage-laptop
+  - name: laptop
     tailscale_ip: 100.x.x.x
     protocol: roc          # roc | vban
     managed: true          # true = Bragi owns it, removable from the UI
@@ -123,14 +123,15 @@ Everything under `data/` is bind-mounted in production (see
       mic_source: 10041
       mic_repair: 10042
       mic_control: 10043
-      playback_source: 10051
-      playback_repair: 10052
-      playback_control: 10053
+      playback_source: 10044
+      playback_repair: 10045
+      playback_control: 10046
   ```
 
-  Hand-configured peers (`_seed_peers()`) are `managed: false` and are not
-  written here; they live in `~/.config/pipewire/pipewire.conf.d/` on
-  `sagepi` directly.
+  A fresh install has no peers. Roc peers you run from your own
+  `pipewire.conf.d` can be added here by hand with `managed: false`; Bragi
+  controls their volume but never writes their config. See
+  [`deployment.md`](deployment.md#peers-you-already-run-by-hand).
 
 - `peers.conf` — generated from the managed peers in `peers.yaml`, never
   edited by hand. Run by the host's `bragi-peers.service`, restarted by
@@ -145,10 +146,9 @@ Everything under `data/` is bind-mounted in production (see
 
 ## Deploying a change
 
-Push to `main`. The GitHub webhook triggers a Komodo rebuild and redeploy
-on `sagepi` in under a minute. There is no staging environment. See
-[`deployment.md`](deployment.md), including why `webhook_force_deploy` has
-to be on for this to work at all.
+`git pull && docker compose up -d --build` on the host. If you deploy
+through Komodo, read [`deployment.md`](deployment.md#running-it-as-a-komodo-stack)
+first: two of its defaults stop a build-from-source Stack from redeploying.
 
 ## Style
 

@@ -1,209 +1,173 @@
+<p align="center">
+  <img src="docs/brand/bragi-logo.png" alt="Bragi" width="160">
+</p>
+
 # Bragi
 
-A small web UI for managing a Raspberry Pi's network audio bridge: which
-peers are connected, per-peer volume in each direction, and adding or
-removing Roc peers without hand-editing PipeWire config. The Pi it runs on
-is `sagepi`, part of the [deck-assistant](https://github.com/NickMarcha/deck-assistant)
-fleet.
+A dedicated, headless audio hub with a web mixer. Plug a USB headset into
+an always-on Linux box (a Raspberry Pi is plenty), run Bragi on it, and the
+headset is shared by every machine on your tailnet. Linux desktops, Windows PCs and Android
+phones send their audio to it and hear its mic. Bragi is the control panel
+on top: per-peer volume and balance in both directions, live level meters,
+and adding or removing peers without hand-editing PipeWire config.
+
+![The Bragi dashboard: one USB headset and three peers, each with a mic and an audio fader](docs/screenshots/dashboard.png)
 
 Named after the Norse god of poetry and eloquence, fitting for something
 that pushes voices around a network.
 
-## Docs
-
-- [`docs/development.md`](docs/development.md) — start here to work on the
-  backend: the `app/` module map, local setup, the test suite (and what it
-  deliberately cannot cover), the `data/` file schemas.
-- [`docs/dashboard-ui.md`](docs/dashboard-ui.md) — the template tree, the
-  data contract templates render from, how a control reaches the server,
-  and where htmx stops and the WebSocket takes over.
-- [`docs/audio-bridge.md`](docs/audio-bridge.md) — the PipeWire graph, the
-  Roc and VBAN transports, and the parts that took several tries to make
-  stable. Read this to understand what Bragi is controlling.
-- [`docs/deployment.md`](docs/deployment.md) — how this runs on `sagepi`
-  (Komodo git-sourced Stack, `tailscale serve`, the deploy webhook).
-- [`docs/realtime-control-plane.md`](docs/realtime-control-plane.md) — how
-  live updates work and the race conditions behind the odd-looking guards.
-- [`docs/api-and-access.md`](docs/api-and-access.md) — the web UI
-  password, session cookies, API keys, and how the `/api/v1` API fits the
-  control plane. The API's usage guide is served at `/api/v1/help`.
-- [`docs/backlog.md`](docs/backlog.md) — known bugs and deferred work.
-- [`android/README.md`](android/README.md) — the Android peer app: build,
-  releases, playback latency, and what is still untested on a phone.
-- [`dev/README.md`](dev/README.md) — local Android debugging against a dev
-  server and Roc tools in Docker, with an emulator. No Tailscale or Pi needed.
-
 ## What it does
 
-A Voicemeeter-style mixer console, updated live over a WebSocket instead of
-polling - see [`docs/realtime-control-plane.md`](docs/realtime-control-plane.md)
-for how that actually works and the (non-trivial) history of getting it to
-not visibly glitch.
+- **Mixer console.** Every headset and peer gets a card with two faders,
+  one per direction, with mute, balance, live level meters, and % or dB
+  readouts. Every open tab and client stays in sync over a WebSocket.
+- **USB headsets, detected automatically.** Whatever is plugged in shows up.
+  Switching a headset off releases the USB device entirely, not just mutes
+  it. Its physical volume knob works even though the host has no desktop
+  session to catch the media keys.
+- **Peers over Roc or VBAN.** [Roc](https://roc-streaming.org/) for Linux
+  and Android, VBAN for Windows machines running Voicemeeter. Peers added
+  from the dashboard go live within about a second, and survive PipeWire
+  restarts, reboots and redeploys.
+- **Real presence.** A peer running the Bragi desktop client or the
+  Android app shows a status dot driven by a live connection, not by
+  whether a PipeWire node happens to exist.
+- **A desktop tray client and an Android app.** Both are released from this
+  repo and update themselves.
+- **An HTTP and WebSocket API** with API keys, so other tools can read and
+  set volumes. Its guide is served at `/api/v1/help`.
+- **Recovery tools.** A "Reset audio" button and a nightly reset (its hour
+  set in the dashboard's Settings) restart the PipeWire stack, saving a
+  diagnostic snapshot first.
 
-- **Local headsets**: any USB headset physically plugged into `sagepi` is
-  auto-detected (paired by ALSA card id, no registry needed - whatever's
-  plugged in *is* the list) and gets a **Speakers** fader (+ mute) and a
-  **Mic** fader (+ mute). No balance control on these - see Known
-  Limitations, it's a hardware constraint, not a missing feature.
-  - **Enable/disable**: flips the ALSA card's profile to `off` and back,
-    fully releasing the USB device (no PipeWire nodes, no USB bandwidth)
-    instead of just muting it. For running two headsets but only using one
-    at a time without either drawing power/bandwidth unnecessarily.
-  - **Physical volume knob**: these headsets' knobs send standard
-    `KEY_VOLUMEUP`/`KEY_VOLUMEDOWN` media keys over a separate USB HID
-    "Consumer Control" interface - exactly like a keyboard volume key. On a
-    normal desktop, the running session's media-key handler catches that;
-    `sagepi` is headless with nothing to catch it, so Bragi does
-    (`app/knob_watcher.py`), translating knob turns into real volume steps.
-- **Peers**: every configured peer (hand-configured ones already running
-  on `sagepi`, or ones added through the UI) gets two faders:
-  - **Mic → peer** - how loud `sagepi`'s headset mic sounds to that peer.
-    Mono, so volume + mute only.
-  - **Peer → headset** - how loud that peer's incoming audio is in
-    `sagepi`'s own mixed headset output. Stereo, so it also gets an L/R
-    balance pad (drag horizontally to pan; right-click either control to
-    reset - fader to unity, pad to centered).
-- **Add/remove Roc and VBAN peers** from the UI: Roc for Linux machines,
-  VBAN for Windows machines running Voicemeeter.
-  Bragi writes them to its own config file, which a host-side systemd
-  unit runs as a separate PipeWire client and restarts whenever the file
-  changes (`host/systemd/`). So a new peer is live within a second or so,
-  and it survives a `pipewire.service` restart, a reboot, or a Bragi
-  redeploy without Bragi needing to be running.
-  VBAN peers run on PipeWire's own `vban-send`/`vban-recv` modules in the
-  same file, so each gets its own nodes and any number can coexist.
-  Hand-configured Roc peers (seeded to match the current deployment -
-  `sagedeck`, `sage-dev`) show up too, with working volume control, but
-  can't be removed from the UI. `sage`, the Windows VBAN peer, is managed.
-- **Per-card status dot** (headsets and peers): green/amber/red/grey next
-  to each name. For Roc peers running the Bragi Client tray app
-  (`sage-dev`, `sagedeck` - see `client/`), this is *real* reachability - a
-  live WebSocket the tray app holds open to `app/main.py`'s
-  `/ws/peer/{name}` for as long as its Roc link is enabled
-  (`app/peer_presence.py`), not just "does a PipeWire node exist locally."
-  That distinction matters: a Roc module can exist and look fine on both
-  ends even when the other side is completely gone, since Roc runs over
-  connectionless UDP - confirmed directly while building this (`pw-dump`
-  node state and `pw-top`'s RATE/status didn't change at all between a
-  genuinely-connected and a deliberately-disabled peer). For the VBAN
-  `sage` peer (no tray app) and any custom peer without a client, the dot
-  falls back to local PipeWire node presence, same as headsets.
-- **Android phones** (`android/`): a native Kotlin app registers the phone
-  as a managed Roc peer over Tailscale. The phone sends its microphone,
-  eligible device audio, or nothing (listen only), and can listen to the
-  headset mix. The peer card's buttons pause sending and toggle listening
-  inside the running app.
-- **%/dB toggle** and a **connection status indicator** in the top corner.
+<p align="center">
+  <img src="docs/screenshots/mobile.png" alt="The dashboard on a phone" width="300">
+  &nbsp;
+  <img src="docs/screenshots/add-peer.png" alt="Adding a Roc or VBAN peer" width="520">
+</p>
 
-Balance is implemented as raw per-channel PipeWire volume (`channelVolumes`
-via `pw-cli set-param`) since PipeWire has no native pan control - Bragi
-remembers each pannable node's intended volume+balance pair in
-`data/balance.yaml` (keyed by node name) and reapplies both together on
-every change, so the two controls don't fight each other (see
-`app/audio_state.py`).
-
-## Architecture
-
-Bragi is a Python/FastAPI app that never talks to the PipeWire socket
-directly - it shells out to `pw-dump`, `wpctl`, and `pw-cli`, the same
-tools you'd use by hand. PipeWire itself, WirePlumber, and the Roc and VBAN
-modules all stay bare-metal on the host - only this UI runs in Docker.
+## How it fits together
 
 ```
-┌─────────────── sagepi (bare metal) ─────────────────┐
-│  PipeWire + WirePlumber + Roc and VBAN modules       │
-│  /dev/input/eventN (headset volume-knob HID)         │
-│  ~/.config/pipewire/pipewire.conf.d/*.conf           │
-│  bragi-peers.service: `pipewire -c peers.conf`       │
-└───────────────────┬───────────────────────────────--┘
-                     │ /run/user/1000 (socket) bind-mounted
-                     │ /dev/input device-mapped (cgroup access, not just visible)
-                     │ ~/.local/share/bragi/data bind-mounted (peers.conf)
-┌────────────────────▼─────────────────────────────---┐
-│  Docker: bragi (this repo)                           │
-│  FastAPI + WebSocket, shells out to pw-dump/wpctl/   │
-│  pw-cli. Background: pw-mon watcher (hardware/other- │
-│  client changes) + knob_watcher (HID volume keys).   │
-└───────────────────────────────────────────────────--┘
+                          ┌─ Raspberry Pi ─────────────────────────────┐
+ Linux desktop ── Roc ──▶ │  PipeWire + WirePlumber                    │
+ Android phone ── Roc ──▶ │  Roc and VBAN modules ◀──▶ USB headset     │
+ Windows PC ─── VBAN ───▶ │        ▲                                   │
+                          │        │ pw-dump / wpctl / pw-cli          │
+ browser, API ─ HTTPS ──▶ │  Bragi (Docker, FastAPI)                   │
+                          └────────────────────────────────────────────┘
+                                  all over Tailscale
 ```
 
-The dashboard's *initial* load is still plain server-rendered HTML
-(`GET /`), but every live update after that goes over one WebSocket per
-browser tab (`app/ws.py`) - see the linked doc for the actual design
-(single-flight-per-control worker, client-timestamp-based ordering, why a
-"just poll every few seconds" version was replaced). Add/remove-peer stays
-a plain form POST (htmx) - infrequent, no reason to put it on the socket.
+Bragi doesn't carry audio. PipeWire does. Bragi shells out to `pw-dump`,
+`wpctl` and `pw-cli`, the same tools you'd use by hand, through the
+PipeWire socket bind-mounted into its container. Peers added from the
+dashboard go into a config file that a `systemd --user` unit on the host
+runs as its own PipeWire client, so they keep running whether or not Bragi
+is up.
 
-See `docker-compose.yml` for the exact bind mounts. In production this
-runs as a Komodo git-sourced Stack targeting the `sagepi` Server rather
-than plain `docker compose`, but the compose file is what the Stack
-mirrors. See [`docs/deployment.md`](docs/deployment.md).
+## Quick start
 
-## Known limitations (v1)
+On any Linux box with PipeWire, a USB headset, Docker and Tailscale:
 
-These are the design constraints. For open bugs and deferred features, see
+```bash
+git clone https://github.com/NickMarcha/bragi.git && cd bragi
+host/systemd/install.sh     # host units, and a .env with this host's uid and groups
+docker compose up -d --build
+tailscale serve --bg --https=443 http://127.0.0.1:8000
+```
+
+Open `https://<host>.<tailnet>.ts.net/`, set a password under the lock
+icon, and add peers. [`docs/deployment.md`](docs/deployment.md) has the
+details: host requirements, peers you already configured by hand, and
+running it as a Komodo Stack.
+
+Then connect the peers:
+
+- **Linux desktop.** Run `BragiClient.AppImage` from the latest `client-v*`
+  [release](https://github.com/NickMarcha/bragi/releases). Its "Connect to
+  Bragi" window registers the machine and sets up the audio link.
+  [`client/README.md`](client/README.md).
+- **Android.** Install `BragiAndroid.apk` from the latest `android-v*`
+  release, enter your Bragi URL, and start.
+  [`android/README.md`](android/README.md).
+- **Windows.** Add a VBAN peer in the dashboard and point Voicemeeter at
+  the Pi on port 6980. The default stream names are `BragiMic` (to the PC)
+  and `<Name>Audio` (from it).
+
+## Repository layout
+
+| Path | What |
+|---|---|
+| `app/` | The server: FastAPI, Jinja templates, htmx and a WebSocket control plane. |
+| `host/` | `systemd --user` units and scripts that run on the host, outside the container. |
+| `client/` | The Linux tray app (Avalonia, .NET) and its Roc link unit. |
+| `android/` | The Android app (Kotlin). |
+| `dev/` | A local dev loop: the server on a fake PipeWire, Roc CLI tools, an emulator. |
+| `tests/` | Server tests. They run anywhere, no PipeWire needed. |
+| `docs/` | Design notes and operations docs. |
+
+## Docs
+
+- [`docs/deployment.md`](docs/deployment.md): installing and running it on
+  a host, Tailscale, the host units, the reset button.
+- [`docs/development.md`](docs/development.md): the `app/` module map,
+  local setup, the test suite and what it can't cover, the `data/` files.
+- [`docs/audio-bridge.md`](docs/audio-bridge.md): the PipeWire graph, the
+  Roc and VBAN transports, and the parts that took several tries to make
+  stable.
+- [`docs/dashboard-ui.md`](docs/dashboard-ui.md): the templates, the data
+  they render from, and where htmx stops and the WebSocket takes over.
+- [`docs/realtime-control-plane.md`](docs/realtime-control-plane.md): how
+  live updates work, and the race conditions behind the odd-looking guards.
+- [`docs/api-and-access.md`](docs/api-and-access.md): the password, session
+  cookies, API keys, and the `/api/v1` API.
+- [`docs/backlog.md`](docs/backlog.md): known bugs and deferred work.
+- [`dev/README.md`](dev/README.md): Android debugging against a local dev
+  server, no Pi or Tailscale needed.
+
+## Development
+
+The tests run on any OS:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Running the server for real needs a PipeWire session, so in practice you
+work on the Pi or another PipeWire-based Linux machine. For UI work without
+one, `dev/server.py` runs the real app against the tests' fake PipeWire.
+See [`docs/development.md`](docs/development.md).
+
+## Known limitations
+
+These are design constraints. Open bugs are in
 [`docs/backlog.md`](docs/backlog.md).
 
-- **Headset balance doesn't exist, on purpose.** WirePlumber's
-  alsa-monitor treats the physical hardware mixer as authoritative and
-  reverts any software per-channel (`channelVolumes`) write on a real ALSA
-  sink within milliseconds - confirmed live, not a bug to fix. Balance only
-  holds on software nodes (the Roc/VBAN peer streams), which is why only
-  peer "incoming" strips have a pad.
-- **VBAN peers share one port and one format.** Every VBAN peer uses port
-  6980 at 48 kHz, 16-bit stereo, and each must send a stream name no other
-  VBAN peer uses: the receiver tells streams apart by name.
-- **Adding or removing one managed peer briefly drops all of them.** The
-  host unit restarts the whole `peers.conf` process to apply a change -
-  about a second of silence on every Bragi-managed peer, none on the
-  hand-configured ones.
-- Hand-configured peers (seeded in `app/peers.py`'s `_seed_peers()`) can't
-  be removed from the UI at all - only their volume is controllable. Edit
-  `~/.config/pipewire/pipewire.conf.d/` on `sagepi` directly for those.
-- **Not designed for multiple browser tabs/clients moving the same control
-  at once.** Broadcasts sync everyone's *display*, but the timestamp-based
-  ordering that keeps a drag from visibly glitching (see the architecture
-  doc) deliberately only orders one client's own messages against
-  itself - a second client dragging the same fader at the same time isn't
-  a designed-for case.
-- **The realtime control plane is still under live observation.** It went
-  through several rounds of "looks fixed" that turned out not to be under
-  real dragging, each one root-caused by actually reproducing it (see the
-  architecture doc's history section) rather than reasoning about the code -
-  worth being skeptical of "this is definitely fixed now" until it's held
-  up under more real-world use than one session's worth of testing.
+- **No balance on headsets.** WirePlumber treats the hardware mixer as
+  authoritative and reverts per-channel volume writes on a real ALSA sink
+  within milliseconds. Balance only holds on the software peer nodes.
+- **One headset at a time on a Pi 4.** All four USB ports share one
+  Full-Speed hub, and two headset streams don't fit reliably. Keep a second
+  headset plugged in and switched off. See
+  [`docs/audio-bridge.md`](docs/audio-bridge.md#dual-headset-playback-and-why-the-pi-runs-one-headset).
+- **VBAN peers share one port and one format.** All use port 6980 at 48 kHz,
+  16-bit stereo, and each needs a stream name no other VBAN peer uses.
+- **Adding or removing a managed peer briefly drops all of them.** The host
+  unit restarts the whole `peers.conf` process, about a second of silence.
+- **Peers configured outside Bragi** (`managed: false` in `peers.yaml`) get
+  volume control but can't be removed from the UI.
+- **Two people dragging the same fader at once** isn't a designed-for case.
+  Every client sees the result, but ordering only holds within one client.
 
-## Local development
+## License
 
-Needs a real PipeWire session to do anything useful (`pw-dump`/`wpctl`
-must resolve against a running daemon), so this is realistically only
-testable on `sagepi` itself or another PipeWire-based Linux machine:
+[PolyForm Noncommercial 1.0.0](LICENSE.md). You can use, change and share
+Bragi for any noncommercial purpose; commercial use needs permission. This
+is source-available, not open source in the OSI sense.
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-## Deployment
-
-```bash
-docker compose up -d --build
-```
-
-expects, on the host:
-- User `sage` (uid 1000) with an active PipeWire session at
-  `/run/user/1000/pipewire-0`.
-- `~/.local/share/bragi/data/` for the persisted peer registry, balance
-  state, and `peers.conf`.
-- The `host/systemd/` units installed once (`host/systemd/install.sh`), or
-  peers added from the dashboard are written but never run.
-- `/dev/input/*` readable, for the knob watcher (see `app/knob_watcher.py`).
-  Needs the host's `input` group's GID added via `group_add` (996 on
-  sagepi - `getent group input` to confirm on any other host) *and* the
-  device mapped via `devices:`, not just bind-mounted via `volumes:` - a
-  plain bind mount only makes the nodes visible in the container's
-  filesystem, it does not grant the cgroup permission to actually open
-  them (surfaces as `PermissionError: [Errno 1]` / EPERM, not the EACCES a
-  real Unix permission mismatch would give - confirmed live, see
-  `docker-compose.yml`'s comments on this).
+Third-party files keep their own licenses: htmx (`app/static/htmx.min.js`,
+BSD Zero Clause), the roc-toolkit patch in `client/roc/patches/` (MPL-2.0,
+like roc-toolkit), and the agent skills in `.claude/skills/` (adapted from
+[mattpocock/skills](https://github.com/mattpocock/skills), MIT).

@@ -25,6 +25,9 @@ public sealed class TrayIconManager : IDisposable
     private readonly NativeMenuItem _autostartItem;
     private readonly VolumeMenu _volumeMenu;
 
+    /// <summary>"Connect to Bragi..." was chosen; App opens the setup window.</summary>
+    public event Action? SetupRequested;
+
     private readonly WindowIcon _disabledIcon = LoadIcon("tray-disabled.png");
     private readonly WindowIcon _enabledIcon = LoadIcon("tray-enabled.png");
     private readonly WindowIcon _errorIcon = LoadIcon("tray-error.png");
@@ -38,8 +41,7 @@ public sealed class TrayIconManager : IDisposable
         _toggleItem = new NativeMenuItem { Header = "Enable Link", IsEnabled = false };
         _toggleItem.Click += async (_, _) => await _statusService.ToggleAsync();
 
-        // Manual recovery for the socket-loss failure mode (bragi-assistant
-        // #081): the unit and its PipeWire nodes can look fine (Enabled)
+        // Manual recovery for the socket-loss failure mode: the unit and its PipeWire nodes can look fine (Enabled)
         // while the Roc UDP sockets underneath are silently gone and audio
         // has stopped. Always available (not gated on the current state)
         // since the whole point is "audio's dead, I don't trust the status
@@ -47,6 +49,9 @@ public sealed class TrayIconManager : IDisposable
         // even if the link was already healthy.
         _restartItem = new NativeMenuItem { Header = "Restart Link", IsEnabled = false };
         _restartItem.Click += async (_, _) => await _statusService.RestartAsync();
+
+        var setupItem = new NativeMenuItem { Header = "Connect to Bragi..." };
+        setupItem.Click += (_, _) => SetupRequested?.Invoke();
 
         var checkForUpdatesItem = new NativeMenuItem { Header = "Check for Updates" };
         checkForUpdatesItem.Click += (_, _) => UpdateService.CheckForUpdatesInteractive();
@@ -82,6 +87,7 @@ public sealed class TrayIconManager : IDisposable
             _volumeMenu.Item,
             _volumeMenu.WebUiItem,
             new NativeMenuItemSeparator(),
+            setupItem,
             checkForUpdatesItem,
             _autostartItem,
             new NativeMenuItemSeparator(),

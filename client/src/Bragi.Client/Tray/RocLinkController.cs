@@ -69,8 +69,7 @@ public sealed class RocLinkController
     }
 
     /// <summary>
-    /// The recovery path for the socket-loss failure mode (bragi-assistant
-    /// #081): the systemd unit and its PipeWire nodes stay up and look fine,
+    /// The recovery path for the socket-loss failure mode: the systemd unit and its PipeWire nodes stay up and look fine,
     /// but the Roc UDP sockets underneath silently disappear, so audio stops
     /// with nothing in the tray's own health check to show for it (see
     /// PipewireStatusChecker - it only confirms the node names exist, not

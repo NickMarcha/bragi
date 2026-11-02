@@ -23,7 +23,7 @@ def selected() -> str:
 
 
 def options() -> list[dict]:
-    return [{'key': 'headset', 'label': 'Pi headset microphone'}] + [
+    return [{'key': 'headset', 'label': 'Headset microphone'}] + [
         {'key': p.name, 'label': f'{p.name} microphone'} for p in peers.load_peers()
         if p.client_kind == 'android' and p.capture_mode == 'microphone'
     ]
@@ -39,7 +39,7 @@ def view() -> dict:
 
 def select(source: str) -> None:
     if not any(choice['key'] == source for choice in options()):
-        raise ValueError('Choose the Pi headset or a registered phone in microphone mode')
+        raise ValueError('Choose the headset or a registered phone in microphone mode')
     peers.DATA_DIR.mkdir(parents=True, exist_ok=True)
     with _lock:
         path = peers.DATA_DIR / 'microphone.json'

@@ -1,11 +1,11 @@
 #!/bin/bash
-# Snapshot the PipeWire graph on sagepi, then restart PipeWire, WirePlumber
+# Snapshot the PipeWire graph on the Bragi host, then restart PipeWire, WirePlumber
 # and the Bragi peers. Run by bragi-audio-reset@<reason>.service, either from
 # the dashboard's "Reset audio" button (bragi-audio-reset.path, reason
 # "manual") or nightly (bragi-audio-reset-nightly.timer, reason "nightly").
 # See docs/deployment.md.
 #
-# Added after deck-assistant #108: every sender came out of the headset as
+# Added after an incident where every sender came out of the headset as
 # garbled bursts until the stack was restarted, and nothing from before the
 # restart survived to say why. So the snapshot comes first, every time.
 #
@@ -14,6 +14,17 @@ set -uo pipefail
 
 reason="${1:-manual}"
 data="${BRAGI_DATA_DIR:-$HOME/.local/share/bragi/data}"
+
+# The timer fires hourly. The dashboard's Settings stores the hour that
+# should actually reset (0-23, host local time) or "off" in nightly-reset;
+# no file means the default, 05:00.
+if [[ "$reason" == nightly ]]; then
+  hour=$(tr -d '[:space:]' 2>/dev/null < "$data/nightly-reset" || true)
+  hour="${hour:-5}"
+  [[ "$hour" == off ]] && exit 0
+  [[ "$hour" =~ ^[0-9]+$ ]] || hour=5
+  (( 10#$(date +%H) == 10#$hour )) || exit 0
+fi
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 keep=20
 tap_seconds=5
@@ -36,9 +47,9 @@ for pcm in /proc/asound/card*/pcm*/sub0; do
   echo "== $pcm"; cat "$pcm/status" "$pcm/hw_params"
 done > "$out/alsa.txt" 2>&1
 dmesg 2>&1 | tail -n 300 > "$out/dmesg.txt"
-# sagepi keeps its journal in RAM (Storage=volatile), so it survives this
-# restart but not a reboot. Copying it here is what keeps it. `sage` reads
-# it through the adm group.
+# Raspberry Pi OS keeps its journal in RAM (Storage=volatile), so it
+# survives this restart but not a reboot. Copying it here is what keeps it.
+# The user reads it through the adm group.
 journalctl --no-pager --since -2h \
   --user-unit=pipewire.service --user-unit=wireplumber.service \
   --user-unit=pipewire-pulse.service --user-unit=bragi-peers.service \

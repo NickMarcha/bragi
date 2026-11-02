@@ -15,8 +15,7 @@ namespace Bragi.Client.Tray;
 /// The distro 0.4.0 build hangs PipeWire's data-loop.0 after 2^32 samples
 /// (~24.9h of streaming at 48kHz): LatencyTuner::report_() compares uint32
 /// stream positions with a plain >=, and once report_pos_ wraps the loop can
-/// never exit. That was the "Roc link dies every couple of days" bug
-/// (deck-assistant #081).
+/// never exit: the "Roc link dies every couple of days" bug.
 ///
 /// Runs at startup, so a Velopack update is all a client needs. Restarts the
 /// link only when the library or drop-in actually changed, which is once per
@@ -35,7 +34,7 @@ public static class PatchedLibrocInstaller
 
     private const string DropInContent =
         "# Written by Bragi Client (PatchedLibrocInstaller). Loads the bundled,\n" +
-        "# patched libroc instead of the distro one. See deck-assistant #081.\n" +
+        "# patched libroc instead of the distro one (see client/roc/).\n" +
         "[Service]\n" +
         "Environment=LD_LIBRARY_PATH=%h/.local/lib/bragi/roc\n";
 

@@ -6,7 +6,7 @@ runs host/bragi-audio-reset.sh, which saves a snapshot of the graph to
 data/incidents/<stamp>-<reason>/ and then restarts PipeWire, WirePlumber and
 bragi-peers. The snapshot gets a `done` file once the restart has finished.
 
-Added after deck-assistant #108: every sender's audio came out of the headset
+Added after an incident where every sender's audio came out of the headset
 as garbled bursts until the stack was restarted, and nothing was captured
 from before that restart to say why.
 """
@@ -19,6 +19,34 @@ from . import peers
 # Snapshot plus restart takes ~15 s on the Pi. Past this, assume the host
 # units aren't installed (or failed) rather than leave the button locked.
 _STALE_AFTER = timedelta(minutes=2)
+
+
+# The nightly reset's hour, host local time. The host timer fires every hour
+# and host/bragi-audio-reset.sh only acts in this one, so changing it needs
+# no host access. The file holds an hour (0-23) or "off".
+_DEFAULT_NIGHTLY_HOUR = 5
+
+
+def _nightly_file():
+    return peers.DATA_DIR / 'nightly-reset'
+
+
+def nightly_hour() -> int | None:
+    """The hour the nightly reset runs, or None when it is off."""
+    try:
+        text = _nightly_file().read_text().strip()
+    except OSError:
+        return _DEFAULT_NIGHTLY_HOUR
+    if text == 'off':
+        return None
+    return int(text) if text.isdigit() and int(text) <= 23 else _DEFAULT_NIGHTLY_HOUR
+
+
+def set_nightly_hour(hour: int | None) -> None:
+    if hour is not None and (isinstance(hour, bool) or not isinstance(hour, int) or not 0 <= hour <= 23):
+        raise ValueError('the nightly reset hour is 0-23, or None for off')
+    peers.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    _nightly_file().write_text('off\n' if hour is None else f'{hour}\n')
 
 
 def _now() -> datetime:

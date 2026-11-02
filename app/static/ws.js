@@ -94,6 +94,7 @@
       else if (msg.type === "microphone") htmx.ajax("GET", "/audio/microphone", { target: "#microphone-routing", swap: "innerHTML" });
       else if (msg.type === "levels") applyLevels(msg);
       else if (msg.type === "viz_settings") applyVizSettings(msg);
+      else if (msg.type === "nightly_reset") applyNightlyReset(msg);
       else if (msg.type === "order") applyOrder(msg.order);
     });
     socket.addEventListener("close", () => {
@@ -159,6 +160,12 @@
     if (checkbox) {
       checkbox.addEventListener("change", () => {
         send({ action: "set_viz_enabled", value: checkbox.checked });
+      });
+    }
+    const nightly = document.getElementById("nightly-reset-select");
+    if (nightly) {
+      nightly.addEventListener("change", () => {
+        send({ action: "set_nightly_reset", value: nightly.value === "off" ? null : Number(nightly.value) });
       });
     }
   }
@@ -325,6 +332,7 @@
       ]);
     }
     if (state.viz_settings) applyVizSettings(state.viz_settings);
+    if (state.nightly_reset) applyNightlyReset(state.nightly_reset);
   }
 
   // One frame per ~50ms audio chunk from app/level_meter.py, carrying every
@@ -365,6 +373,12 @@
     document.body.classList.toggle("viz-enabled", !!msg.enabled);
     const checkbox = document.getElementById("viz-enabled-checkbox");
     if (checkbox) checkbox.checked = !!msg.enabled;
+  }
+
+  // Keeps every tab's settings dialog on the same nightly reset hour.
+  function applyNightlyReset(msg) {
+    const select = document.getElementById("nightly-reset-select");
+    if (select) select.value = msg.hour === null || msg.hour === undefined ? "off" : String(msg.hour);
   }
 
   // Targeted update for a single control (the common case - every slider
@@ -495,7 +509,7 @@
     const dot = card.querySelector(".status-dot");
     if (!dot) return;
     dot.className = `status-dot ${msg.connected ? "online" : "offline"}`;
-    dot.title = msg.connected ? "Client connected" : "Client not connected to sagepi";
+    dot.title = msg.connected ? "Client connected" : "Client not connected to Bragi";
     card.dataset.clientConnected = String(!!msg.connected);
     placeDevice(card);
     if (!msg.connected) {

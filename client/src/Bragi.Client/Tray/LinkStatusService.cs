@@ -70,15 +70,14 @@ public sealed class LinkStatusService : IDisposable
     {
         if (!RocLinkConfig.IsInstalled())
         {
-            return new StatusSnapshot(TrayState.NotInstalled,
-                "Not installed - see client/systemd/install.sh in the bragi repo");
+            return new StatusSnapshot(TrayState.NotInstalled, "Not set up - choose Connect to Bragi...");
         }
 
         var config = RocLinkConfig.TryLoad();
         if (config is null)
         {
             return new StatusSnapshot(TrayState.NotInstalled,
-                $"{RocLinkConfig.EnvFilePath} is missing required values");
+                $"{RocLinkConfig.EnvFilePath} is missing values - choose Connect to Bragi...");
         }
 
         var unitState = await _controller.GetStateAsync();
@@ -103,7 +102,7 @@ public sealed class LinkStatusService : IDisposable
         var sourceUp = nodeNames.Contains(config.LocalSourceName);
         if (sinkUp && sourceUp)
         {
-            return new StatusSnapshot(TrayState.Enabled, $"Enabled - linked to sagepi @ {config.SagepiTailscaleIp}");
+            return new StatusSnapshot(TrayState.Enabled, $"Enabled - linked to Bragi @ {config.BragiHostIp}");
         }
         return new StatusSnapshot(TrayState.Degraded,
             $"Unit active but node(s) missing (sink={sinkUp}, source={sourceUp})");

@@ -8,7 +8,7 @@
 # with plain < and >=. After 2^32 samples (~24.9h of streaming at 48kHz)
 # report_pos_ wraps and the while loop in report_() can never exit, pinning
 # PipeWire's data-loop.0 at 100% and killing the link. Upstream master still
-# has the bug as of 2026-10-11. See deck-assistant issue #081.
+# has the bug as of 2026-10-11.
 #
 # libuv, openfec and speexdsp are built from source and linked in statically
 # (--build-3rdparty), so the result only needs libc/libstdc++ at runtime and

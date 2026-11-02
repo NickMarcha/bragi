@@ -1,10 +1,10 @@
 """Bragi on a fake PipeWire, for driving the Android app from an emulator.
 
-Nothing here talks to a real audio graph: `pipewire._run` is the fake sagepi
+Nothing here talks to a real audio graph: `pipewire._run` is the fake Pi
 host from the tests, and the background tasks that shell out to pw-mon,
 pw-cat, or /dev/input sit idle. Registration, the dashboard, and the peer
 control socket are the real code. Audio is checked separately with the Roc
-CLI tools (dev/android-audio.sh), standing in for sagepi's Roc modules.
+CLI tools (dev/android-audio.sh), standing in for the Pi's Roc modules.
 
 Run through dev/compose.yml, which sets BRAGI_LOCAL_DEV, BRAGI_DATA_DIR,
 and BRAGI_ROC_PORT_BASE before this imports the app.
@@ -19,7 +19,7 @@ import uvicorn
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import knob_watcher, level_meter, pipewire, watcher  # noqa: E402
+from app import knob_watcher, level_meter, peers, pipewire, watcher  # noqa: E402
 from tests import fake_pipewire  # noqa: E402
 
 
@@ -27,7 +27,9 @@ async def _idle(*_args) -> None:
     await asyncio.Event().wait()
 
 
-pipewire._run = fake_pipewire.sagepi_session().run
+pipewire._run = fake_pipewire.demo_session().run
+if not peers.PEERS_FILE.exists():
+    peers.save_peers(fake_pipewire.demo_peers())
 watcher.watch = knob_watcher.watch = level_meter.supervise = _idle
 
 if __name__ == "__main__":

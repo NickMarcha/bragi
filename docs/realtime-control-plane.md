@@ -9,7 +9,7 @@ with a real browser drag, not by reasoning about the code.
 
 **Status: believed correct, still under observation.** Every fix below was
 verified with 8-15 consecutive real-browser drag reproductions against live
-hardware on `sagepi`, with zero regressions in the final round. That's a
+hardware on the Pi, with zero regressions in the final round. That's a
 good sign, not a guarantee - several earlier "this looks fixed" rounds in
 this same session turned out not to be, each time because the *next* round
 of testing (not more code review) surfaced a further, subtler bug. Treat

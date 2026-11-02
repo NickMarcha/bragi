@@ -19,9 +19,9 @@ if [[ -f "$env_file" ]]; then
 else
   cp "$SCRIPT_DIR/roc-link.env.example" "$env_file"
   echo "Wrote $env_file from the example template."
-  echo "EDIT IT NOW - it has sage-dev's captured values, which are almost"
-  echo "certainly wrong for this machine unless this IS sage-dev. Verify"
-  echo "against this machine's own PipeWire Roc config before enabling."
+  echo "EDIT IT NOW - it holds placeholder values. Set BRAGI_HOST_IP, the"
+  echo "ports and PEER_NAME to match the peer as Bragi lists it, and"
+  echo "ROC_MODULE_DIR to this machine's Roc module build."
 fi
 
 systemctl --user daemon-reload

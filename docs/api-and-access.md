@@ -14,7 +14,7 @@ groups:
 | Group | Paths | Needs |
 |---|---|---|
 | public | `/static/*`, `/login`, `/auth/login`, `/api/v1/help` | nothing |
-| peer | `/ws/peer/{name}`, `/api/peers/register`, `/api/peers/{name}/streams` | nothing |
+| peer | `/ws/peer/{name}`, `/api/peers/register`, `/api/peers/register-desktop`, `/api/peers/{name}/streams` | nothing |
 | api | `/api/v1`, `/api/v1/*` | an API key, always |
 | web | everything else, including `/ws` | a session cookie, but only once a password is set |
 
@@ -84,7 +84,7 @@ comparable strength takes about a second there. Minimum length is 4
 characters; the user asked for a simple password.
 
 If it is forgotten, stop Bragi, set `password: null` in
-`~/.local/share/bragi/data/auth.yaml` on sagepi, and start it again. That
+`~/.local/share/bragi/data/auth.yaml` on the host, and start it again. That
 reopens the web UI and keeps the API keys.
 
 ## `data/auth.yaml`

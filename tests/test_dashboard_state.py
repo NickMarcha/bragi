@@ -16,14 +16,14 @@ from .fake_pipewire import HEADSET_CARD_ID, SECOND_CARD_ID
 from .helpers import settle
 
 HEADSET_PLAYBACK_NODE = 233
-SAGEDECK_INCOMING_NODE = 53
+DECK_INCOMING_NODE = 53
 
 
 def test_build_state_lists_both_headsets_and_every_peer(session):
     state = views.build_state()
 
     assert [h["key"] for h in state["headsets"]] == [HEADSET_CARD_ID, SECOND_CARD_ID]
-    assert [p["name"] for p in state["peers"]] == ["sagedeck", "sage-dev", "sage"]
+    assert [p["name"] for p in state["peers"]] == ["deck", "studio", "desktop"]
 
 
 def test_build_state_still_shows_a_disabled_headset(session):
@@ -48,7 +48,7 @@ def test_build_state_dumps_the_graph_once(session):
 
 def test_build_state_reads_volumes_concurrently(session, monkeypatch):
     """Run back to back, the per-direction wpctl calls were most of the
-    ~0.65s a page load and a WebSocket connect each took on sagepi (one
+    ~0.65s a page load and a WebSocket connect each took on the Pi (one
     headset and three peers is eight of them), and every added peer made it
     two calls slower. They are independent reads, so the snapshot should
     cost about one of them, not the sum."""
@@ -69,8 +69,8 @@ def test_build_state_reads_volumes_concurrently(session, monkeypatch):
     reads = session.count("wpctl", "get-volume")
     assert reads == 8
     assert elapsed < 3 * delay, f"{reads} volume reads took {elapsed:.2f}s - still sequential"
-    sagedeck = next(p for p in state["peers"] if p["name"] == "sagedeck")
-    assert sagedeck["incoming"]["connected"] is True
+    deck = next(p for p in state["peers"] if p["name"] == "deck")
+    assert deck["incoming"]["connected"] is True
 
 
 async def test_setting_a_headset_volume_reaches_the_hardware(session, broadcasts):
@@ -114,27 +114,27 @@ async def test_a_stale_drag_tick_never_overwrites_a_newer_one(session, broadcast
 async def test_muting_a_peer_direction_toggles_it(session, broadcasts):
     action = {
         "target": "peer",
-        "key": "sagedeck",
+        "key": "deck",
         "direction": "incoming",
         "action": "toggle_mute",
     }
     await ws.apply_action(action)
-    assert session.node(SAGEDECK_INCOMING_NODE).muted is True
+    assert session.node(DECK_INCOMING_NODE).muted is True
 
     await ws.apply_action(action)
-    assert session.node(SAGEDECK_INCOMING_NODE).muted is False
+    assert session.node(DECK_INCOMING_NODE).muted is False
 
 
 async def test_peer_balance_is_applied_as_channel_volumes(session, broadcasts):
     """PipeWire has no pan control, so balance is a raw stereo
     channelVolumes write - and it has to carry the stored volume with it or
     the two controls overwrite each other."""
-    audio_state.set_state("sagedeck-audio", 1.0, 0.0)
+    audio_state.set_state("deck-audio", 1.0, 0.0)
 
     await ws.apply_action(
         {
             "target": "peer",
-            "key": "sagedeck",
+            "key": "deck",
             "direction": "incoming",
             "action": "set_balance",
             "value": -1.0,
@@ -143,7 +143,7 @@ async def test_peer_balance_is_applied_as_channel_volumes(session, broadcasts):
     )
     await settle()
 
-    left, right = session.node(SAGEDECK_INCOMING_NODE).channel_volumes
+    left, right = session.node(DECK_INCOMING_NODE).channel_volumes
     assert left > 0.0
     assert right == 0.0
-    assert audio_state.get_state("sagedeck-audio") == (1.0, -1.0)
+    assert audio_state.get_state("deck-audio") == (1.0, -1.0)

@@ -138,3 +138,12 @@ Playback health lines in Diagnostics now show how much data arrived
 normal amount with no sound means the audio itself is silent. Report on GitHub
 shortens long runs of health lines, so the startup events, such as the address
 the phone listens on, stay in the issue. Nothing about audio changed since 0.1.12.
+
+## 0.1.14 your own server
+
+A fresh install no longer comes with a server address filled in. Enter your
+own Bragi URL, e.g. `https://bragi.your-tailnet.ts.net/`; an empty field now
+says so instead of failing on an invalid URL. Update checks and Report on
+GitHub use the repository the APK was built from, so a fork's builds point at
+the fork. Phones that already have a saved address keep it. Nothing about
+audio changed since 0.1.13.

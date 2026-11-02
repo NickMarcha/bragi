@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -6,12 +6,25 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Bumped + tagged as client-vX.Y.Z to cut a release - see
          .github/workflows/client-release.yml and client/README.md. -->
-    <Version>0.1.6</Version>
+    <Version>0.1.7</Version>
     <AssemblyName>Bragi.Client</AssemblyName>
+    <!-- The GitHub repo whose releases the app updates from. The release
+         workflow passes its own repo, so a fork's builds update from the fork. -->
+    <BragiRepoUrl Condition="'$(BragiRepoUrl)' == ''">https://github.com/NickMarcha/bragi</BragiRepoUrl>
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyMetadata Include="BragiRepoUrl" Value="$(BragiRepoUrl)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- "Connect to Bragi..." installs the link unit itself (Tray/LinkInstaller.cs). -->
+    <EmbeddedResource Include="../../systemd/bragi-roc-link-run.sh" LogicalName="bragi-roc-link-run.sh" />
+    <EmbeddedResource Include="../../systemd/bragi-roc-link.service" LogicalName="bragi-roc-link.service" />
   </ItemGroup>
 
   <ItemGroup>

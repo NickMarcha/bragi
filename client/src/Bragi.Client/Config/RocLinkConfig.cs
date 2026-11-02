@@ -12,13 +12,15 @@ namespace Bragi.Client.Config;
 /// </summary>
 public sealed class RocLinkConfig
 {
-    public required string SagepiTailscaleIp { get; init; }
+    /// <summary>The Bragi host's address. Read from BRAGI_HOST_IP, or from
+    /// SAGEPI_TAILSCALE_IP, its name before 0.1.7.</summary>
+    public required string BragiHostIp { get; init; }
     public required string LocalSinkName { get; init; }
     public required string LocalSourceName { get; init; }
 
     /// <summary>
     /// This machine's peer name as known to the Bragi server (peers.yaml's
-    /// Peer.name - e.g. "sage-dev", "sagedeck"), and the base wss:// URL for
+    /// Peer.name - e.g. "laptop"), and the base wss:// URL for
     /// its presence heartbeat (app/main.py's /ws/peer/{name}). Both
     /// optional - an env file predating this feature (or without Bragi
     /// Serve/DNS set up) just means PeerPresenceClient never starts; every
@@ -50,13 +52,13 @@ public sealed class RocLinkConfig
     /// <summary>
     /// True if the systemd unit, the wrapper script, and the env file all
     /// exist - i.e. `client/systemd/install.sh` has been run on this
-    /// machine. The app never installs these itself (see plan: no
-    /// self-installing systemd units from a GUI app).
+    /// machine, or "Connect to Bragi..." has set it up (Tray/LinkInstaller.cs).
     /// </summary>
     public static bool IsInstalled() =>
         File.Exists(UnitFilePath) && File.Exists(RunScriptPath) && File.Exists(EnvFilePath);
 
-    public static RocLinkConfig? TryLoad()
+    /// <summary>Every KEY=VALUE pair in the env file, or null if it doesn't exist.</summary>
+    public static Dictionary<string, string>? ReadValues()
     {
         if (!File.Exists(EnvFilePath))
         {
@@ -78,8 +80,18 @@ public sealed class RocLinkConfig
             }
             values[line[..eq].Trim()] = line[(eq + 1)..].Trim();
         }
+        return values;
+    }
 
-        if (!values.TryGetValue("SAGEPI_TAILSCALE_IP", out var ip) ||
+    public static RocLinkConfig? TryLoad()
+    {
+        var values = ReadValues();
+        if (values is null)
+        {
+            return null;
+        }
+
+        if (!(values.TryGetValue("BRAGI_HOST_IP", out var ip) || values.TryGetValue("SAGEPI_TAILSCALE_IP", out ip)) ||
             !values.TryGetValue("LOCAL_SINK_NAME", out var sink) ||
             !values.TryGetValue("LOCAL_SOURCE_NAME", out var source))
         {
@@ -92,7 +104,7 @@ public sealed class RocLinkConfig
 
         return new RocLinkConfig
         {
-            SagepiTailscaleIp = ip,
+            BragiHostIp = ip,
             LocalSinkName = sink,
             LocalSourceName = source,
             PeerName = string.IsNullOrWhiteSpace(peerName) ? null : peerName,

@@ -1,6 +1,6 @@
 """Test fixtures: an isolated data/ directory and a fake PipeWire host.
 
-Every test runs against `fake_pipewire.sagepi_session()` unless it builds
+Every test runs against `fake_pipewire.demo_session()` unless it builds
 its own, and against a tmp_path data dir, so peers.yaml / balance.yaml /
 viz_settings.yaml never touch the real ones.
 """
@@ -22,9 +22,8 @@ from . import fake_pipewire  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def data_dir(tmp_path, monkeypatch):
-    """peers.yaml is seeded on first read (peers._seed_peers), so pointing
-    DATA_DIR at a fresh tmp_path gives every test the three real sagepi
-    peers without checking a fixture file in."""
+    """Points DATA_DIR at a fresh tmp_path holding fake_pipewire.demo_peers(),
+    the peers.yaml that matches the fake graph."""
     monkeypatch.setattr(peers_module, "DATA_DIR", tmp_path)
     monkeypatch.setattr(peers_module, "PEERS_FILE", tmp_path / "peers.yaml")
     monkeypatch.setattr(peers_module, "MANAGED_CONF_FILE", tmp_path / "peers.conf")
@@ -32,6 +31,7 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(viz_settings, "SETTINGS_FILE", tmp_path / "viz_settings.yaml")
     monkeypatch.setattr(layout, "LAYOUT_FILE", tmp_path / "layout.yaml")
     monkeypatch.setattr(auth, "AUTH_FILE", tmp_path / "auth.yaml")
+    peers_module.save_peers(fake_pipewire.demo_peers())
     return tmp_path
 
 
@@ -53,7 +53,7 @@ def reset_ws_state():
 
 @pytest.fixture
 def session(monkeypatch):
-    fake = fake_pipewire.sagepi_session()
+    fake = fake_pipewire.demo_session()
     monkeypatch.setattr(pipewire, "_run", fake.run)
     return fake
 

@@ -40,6 +40,7 @@ enum class CaptureMode(val wireName: String) {
 private val LOCAL_DEV_HOSTS = setOf("10.0.2.2", "127.0.0.1", "localhost")
 
 fun serverUrl(value: String, localDev: Boolean = BuildConfig.DEBUG): HttpUrl {
+    require(value.isNotBlank()) { "Enter your Bragi server's address, e.g. https://bragi.your-tailnet.ts.net/." }
     val url = value.trim().trimEnd('/').toHttpUrl()
     if (localDev) require(url.host in LOCAL_DEV_HOSTS) { "Debug builds only connect to the local dev server, e.g. http://10.0.2.2:20080/." }
     else require(url.isHttps) { "Use the HTTPS Bragi URL supplied by Tailscale." }

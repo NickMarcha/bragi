@@ -1,11 +1,13 @@
 [Unit]
-Description=Nightly snapshot and restart of the PipeWire stack
+Description=Hourly check for the nightly snapshot and restart of the PipeWire stack
 
 [Timer]
-# deck-assistant #108 broke after 9 days of uptime. A nightly restart costs a
+# The garbled-audio incident the reset exists for came after 9 days of uptime. A nightly restart costs a
 # few seconds of silence at an hour nobody listens, and its snapshot gives a
 # healthy baseline to compare the next bad one against.
-OnCalendar=*-*-* 05:00:00 Europe/Oslo
+# Fires every hour; the dashboard's Settings picks which hour actually resets
+# (data/nightly-reset, read by bragi-audio-reset.sh). Host local time.
+OnCalendar=hourly
 Unit=bragi-audio-reset@nightly.service
 
 [Install]

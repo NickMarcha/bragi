@@ -11,11 +11,11 @@ class RoutingHost:
         self.calls = []
         self.links = {(301, 101), (302, 102), (301, 201), (302, 202), (301, 501), (302, 502), (301, 601)}
         self.nodes = [
-            (1, 'sagedeck-test-sink', 'Audio/Sink'),
-            (2, 'sagedev-test-sink', 'Audio/Sink'),
+            (1, 'deck-test-sink', 'Audio/Sink'),
+            (2, 'studio-test-sink', 'Audio/Sink'),
             (3, 'old-loopback', 'Stream/Output/Audio'),
             (4, 'alsa_input.usb-headset.mono', 'Audio/Source'),
-            (5, 'sage-outgoing-sink', 'Audio/Sink'),
+            (5, 'desktop-outgoing-sink', 'Audio/Sink'),
             (6, 'fairphone-outgoing-sink', 'Audio/Sink'),
             (7, 'fairphone-incoming-source', 'Audio/Source'),
         ]
@@ -47,7 +47,7 @@ class RoutingHost:
 
 
 def test_phone_microphone_feeds_desktops_and_vban_peers_but_not_phone_playback(session, monkeypatch):
-    peers.register_android_peer('fairphone', '100.98.253.67', 'microphone')
+    peers.register_android_peer('fairphone', '100.64.0.20', 'microphone')
     host = RoutingHost()
     monkeypatch.setattr(pipewire, '_run', host.run)
     client = TestClient(app)
@@ -66,7 +66,7 @@ def test_phone_microphone_feeds_desktops_and_vban_peers_but_not_phone_playback(s
 
 
 def test_missing_selected_phone_mic_stays_silent_and_device_audio_is_not_a_mic(session, monkeypatch):
-    peers.register_android_peer('fairphone', '100.98.253.67', 'microphone')
+    peers.register_android_peer('fairphone', '100.64.0.20', 'microphone')
     host = RoutingHost()
     monkeypatch.setattr(pipewire, '_run', host.run)
     microphone.select('fairphone')

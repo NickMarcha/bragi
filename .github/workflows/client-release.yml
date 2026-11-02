@@ -38,11 +38,12 @@ jobs:
           dotnet publish client/src/Bragi.Client/Bragi.Client.csproj \
             -c Release -r linux-x64 --self-contained true \
             -p:Version=${{ steps.version.outputs.version }} \
+            -p:BragiRepoUrl=${{ github.server_url }}/${{ github.repository }} \
             -o publish
 
       - name: Install packaging dependencies
         # mksquashfs is required by `vpk pack` to build the Linux AppImage -
-        # confirmed missing by default (tested locally on sage-dev, an Arch
+        # confirmed missing by default (tested locally on an Arch
         # derivative where it's also not preinstalled; not verified against
         # ubuntu-latest specifically, so keep this explicit rather than
         # assuming the runner image already has it).
@@ -62,7 +63,7 @@ jobs:
       - name: Download previous release (for delta packages)
         run: |
           export PATH="$PATH:$HOME/.dotnet/tools"
-          vpk download github --repoUrl https://github.com/NickMarcha/bragi --channel linux || true
+          vpk download github --repoUrl ${{ github.server_url }}/${{ github.repository }} --channel linux || true
 
       - name: Pack
         run: |
@@ -72,7 +73,7 @@ jobs:
             --packVersion ${{ steps.version.outputs.version }} \
             --packDir publish \
             --packTitle "Bragi Client" \
-            --packAuthors NickMarcha \
+            --packAuthors ${{ github.repository_owner }} \
             --mainExe Bragi.Client \
             --icon client/src/Bragi.Client/Assets/tray-enabled.png \
             --channel linux
@@ -81,7 +82,7 @@ jobs:
         run: |
           export PATH="$PATH:$HOME/.dotnet/tools"
           vpk upload github \
-            --repoUrl https://github.com/NickMarcha/bragi \
+            --repoUrl ${{ github.server_url }}/${{ github.repository }} \
             --channel linux \
             --publish \
             --releaseName "Bragi Client ${{ steps.version.outputs.version }}" \

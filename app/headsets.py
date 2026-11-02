@@ -1,4 +1,4 @@
-"""Detects sagepi's own USB headset(s) - the physical devices, not network
+"""Detects the host's own USB headset(s) - the physical devices, not network
 peers - and pairs each one's playback (Audio/Sink) and capture
 (Audio/Source) PipeWire nodes by ALSA card id, so the UI can show one card
 per physical headset instead of two unrelated-looking rows.
@@ -27,7 +27,7 @@ class Headset:
 def _card_id(node_name: str, prefix: str) -> str | None:
     """'alsa_output.usb-...-00.analog-stereo' -> 'usb-...-00' (drops the
     profile suffix so the same physical card's sink and source pair up).
-    Only matches USB ALSA cards ('usb-' after the prefix) - sagepi also has
+    Only matches USB ALSA cards ('usb-' after the prefix) - a Pi also has
     a 'Built-in Audio' analog jack (node name 'alsa_output.platform-...')
     that isn't a headset and shouldn't show up here."""
     if not node_name.startswith(prefix):

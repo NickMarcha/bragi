@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.13 is what the Dockerfile ships, so it is what sagepi actually
+        # 3.13 is what the Dockerfile ships, so it is what a deployment actually
         # runs; 3.14 is what docs/development.md says you develop against.
         # Both, until those two agree.
         python-version: ["3.13", "3.14"]

@@ -41,7 +41,7 @@ public static class AutostartService
         return "[Desktop Entry]\n" +
                "Type=Application\n" +
                "Name=Bragi Client\n" +
-               "Comment=Tray control for the Roc audio link to sagepi\n" +
+               "Comment=Tray control for the Roc audio link to Bragi\n" +
                $"Exec={exec}\n" +
                "Terminal=false\n" +
                "X-GNOME-Autostart-enabled=true\n";

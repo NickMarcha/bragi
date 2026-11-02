@@ -39,7 +39,7 @@ class PeerConfigTest {
         assertFalse(validPeerName("fairphone\""))
         assertFalse(validPeerName("../phone"))
         assertFalse(validPeerName("5phone"))
-        assertTrue(validTailnetIp("100.98.253.67"))
+        assertTrue(validTailnetIp("100.64.0.20"))
         assertFalse(validTailnetIp("100.1.2.3"))
         assertFalse(validTailnetIp("100.98.256.1"))
         assertFalse(validTailnetIp("127.0.0.1"))
@@ -49,16 +49,17 @@ class PeerConfigTest {
         assertEquals("https://example.org/bragi/api/peers/register", serverUrl("https://example.org/bragi/", false).endpoint("api/peers/register").toString())
         assertEquals("https://example.org/ws/peer/fairphone", serverUrl("https://example.org/", false).endpoint("ws/peer/fairphone").toString())
         assertThrows(IllegalArgumentException::class.java) { serverUrl("http://example.org", false) }
+        assertThrows(IllegalArgumentException::class.java) { serverUrl("  ", false) }
         assertThrows(IllegalArgumentException::class.java) { serverUrl("http://10.0.2.2:20080/", false) }
     }
 
     @Test fun debug_builds_reach_only_the_local_dev_server() {
         assertEquals("http://10.0.2.2:20080/api/peers/register", serverUrl("http://10.0.2.2:20080/", true).endpoint("api/peers/register").toString())
-        assertThrows(IllegalArgumentException::class.java) { serverUrl("https://sagepi.tail08dfa.ts.net/", true) }
+        assertThrows(IllegalArgumentException::class.java) { serverUrl("https://bragi.example.ts.net/", true) }
         assertTrue(validPeerIp("127.0.0.1", true))
-        assertFalse(validPeerIp("100.98.253.67", true))
+        assertFalse(validPeerIp("100.64.0.20", true))
         assertFalse(validPeerIp("127.0.0.1", false))
-        assertTrue(validPeerIp("100.98.253.67", false))
+        assertTrue(validPeerIp("100.64.0.20", false))
     }
 
     @Test fun microphone_samples_preserve_level_in_both_stereo_channels() {
@@ -68,7 +69,7 @@ class PeerConfigTest {
 
     @Test fun a_detected_tailscale_address_replaces_a_stale_saved_one() {
         // Issue #1: the phone's address changed and the saved one silently broke listening.
-        assertEquals("100.98.253.67", phoneTailnetIp(entered = "100.64.0.9", detected = "100.98.253.67"))
+        assertEquals("100.64.0.20", phoneTailnetIp(entered = "100.64.0.9", detected = "100.64.0.20"))
         // Without a detected address the entered one stands.
         assertEquals("100.64.0.9", phoneTailnetIp(entered = "100.64.0.9", detected = ""))
         assertEquals("100.64.0.9", phoneTailnetIp(entered = "100.64.0.9", detected = "192.168.1.4"))
@@ -76,9 +77,9 @@ class PeerConfigTest {
 
     @Test fun only_the_tailscale_interface_supplies_the_address() {
         // Issue #2: mobile carriers hand out 100.64.0.0/10 too, and that address replaced the real one.
-        val interfaces = listOf("rmnet_data1" to "100.83.223.246", "tun0" to "100.98.253.67")
-        assertEquals("100.98.253.67", detectedTailnetIp(interfaces))
-        assertEquals("", detectedTailnetIp(listOf("rmnet_data1" to "100.83.223.246", "wlan0" to "192.168.1.8")))
+        val interfaces = listOf("rmnet_data1" to "100.64.0.21", "tun0" to "100.64.0.20")
+        assertEquals("100.64.0.20", detectedTailnetIp(interfaces))
+        assertEquals("", detectedTailnetIp(listOf("rmnet_data1" to "100.64.0.21", "wlan0" to "192.168.1.8")))
     }
 
     @Test fun peer_status_carries_the_delays_the_dashboard_shows() {

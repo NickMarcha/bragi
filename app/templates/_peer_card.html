@@ -5,7 +5,7 @@
      reachability (a live WebSocket from that machine), which a loaded
      PipeWire module can't prove on its own since Roc runs over UDP. #}
   {% set peer_status = "online" if view.client_connected else "offline" %}
-  {% set peer_status_title = "Client connected" if view.client_connected else "Client not connected to sagepi" %}
+  {% set peer_status_title = "Client connected" if view.client_connected else "Client not connected to Bragi" %}
 {% elif view.outgoing.connected and view.incoming.connected %}
   {% set peer_status = "online" %}
   {% set peer_status_title = "Both directions connected" %}

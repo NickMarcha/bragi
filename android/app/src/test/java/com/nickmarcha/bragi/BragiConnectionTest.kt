@@ -39,7 +39,7 @@ class BragiConnectionTest {
                 "send_enabled":true,"receive_enabled":false
             }"""))
             val connection = BragiConnection(server.url("/"), "fairphone", http)
-            connection.register("100.98.253.67", CaptureMode.MICROPHONE)
+            connection.register("100.64.0.20", CaptureMode.MICROPHONE)
             assertEquals(1, http.connectionPool.connectionCount())
             // Service teardown starts on the lifecycle thread, with a live pooled connection.
             connection.close()
