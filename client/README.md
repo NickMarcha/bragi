@@ -42,9 +42,10 @@ you can reach.
 
 3. Turn on "Start at Login" in the tray menu.
 
-"Connect to Bragi..." stays in the tray menu. Run it again to change server
-or name; connecting again keeps the same ports, and a peer you already
-added from the dashboard under the same name is reused.
+Once the link is set up, the tray item reads "Change Bragi connection...".
+Use it to change server, name or address; keeping the same name keeps the
+same ports, and a peer you already added from the dashboard under the same
+name is reused.
 
 If this machine already loads Roc modules from a static `pipewire.conf.d`
 file, the window says so. Disable that file first, see
