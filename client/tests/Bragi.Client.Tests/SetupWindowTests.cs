@@ -69,6 +69,18 @@ public class SetupWindowTests
         Assert.Contains(window.GetLogicalDescendants().OfType<TextBlock>(), t => t.Text == "99-roc.conf already loads Roc modules");
     }
 
+    [AvaloniaFact]
+    public void A_machine_already_set_up_is_offered_a_change_not_a_first_connect()
+    {
+        var window = new SetupWindow(Defaults with { AlreadySetUp = true }, (_, _, _, _) => Task.CompletedTask);
+        window.Show();
+
+        Assert.Equal("Change Bragi connection", window.Title);
+        FindButton(window, "Save and reconnect");
+        Assert.Equal("Change Bragi connection...", TrayIconManager.SetupMenuLabel(alreadySetUp: true));
+        Assert.Equal("Connect to Bragi...", TrayIconManager.SetupMenuLabel(alreadySetUp: false));
+    }
+
     private static TextBox Box(Window window, int index) => window.GetLogicalDescendants().OfType<TextBox>().ElementAt(index);
 
     private static Button FindButton(Window window, string label) =>

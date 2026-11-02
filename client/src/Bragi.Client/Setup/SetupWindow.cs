@@ -10,7 +10,9 @@ using Bragi.Client.Config;
 namespace Bragi.Client.Setup;
 
 /// <summary>What the window starts filled in with.</summary>
-public sealed record SetupDefaults(string Server, string PeerName, string PeerIp, string ApiKey, IReadOnlyList<string> Warnings);
+/// <remarks><c>AlreadySetUp</c> words the window as changing a working link rather than making one.</remarks>
+public sealed record SetupDefaults(
+    string Server, string PeerName, string PeerIp, string ApiKey, IReadOnlyList<string> Warnings, bool AlreadySetUp = false);
 
 /// <summary>
 /// "Connect to Bragi...": the four things only the user knows or can confirm.
@@ -23,7 +25,7 @@ public sealed class SetupWindow : Window
     private readonly TextBox _name = new();
     private readonly TextBox _ip = new() { PlaceholderText = "100.x.x.x" };
     private readonly TextBox _apiKey = new() { PasswordChar = '•', PlaceholderText = "Only if the dashboard has a password" };
-    private readonly Button _connect = new() { Content = "Connect", IsDefault = true };
+    private readonly Button _connect = new() { IsDefault = true };
     private readonly Button _cancel = new() { Content = "Cancel", IsCancel = true };
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap };
     private readonly Func<string, string, string, string?, Task> _connectAction;
@@ -34,7 +36,9 @@ public sealed class SetupWindow : Window
     public SetupWindow(SetupDefaults defaults, Func<string, string, string, string?, Task> connect)
     {
         _connectAction = connect;
-        Title = "Connect to Bragi";
+        var heading = defaults.AlreadySetUp ? "Change Bragi connection" : "Connect to Bragi";
+        Title = heading;
+        _connect.Content = defaults.AlreadySetUp ? "Save and reconnect" : "Connect";
         Width = 480;
         SizeToContent = SizeToContent.Height;
         CanResize = false;
@@ -46,10 +50,12 @@ public sealed class SetupWindow : Window
         _apiKey.Text = defaults.ApiKey;
 
         var form = new StackPanel { Margin = new Thickness(20), Spacing = 6 };
-        form.Children.Add(new TextBlock { Text = "Connect to Bragi", FontSize = 22, FontWeight = FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = heading, FontSize = 22, FontWeight = FontWeight.SemiBold });
         form.Children.Add(new TextBlock
         {
-            Text = "Registers this computer as a peer, then sets up and starts its audio link. Connecting again keeps the same ports.",
+            Text = defaults.AlreadySetUp
+                ? "This computer is already linked to Bragi. Change the server, name or address here; the audio link restarts with the new settings. Keeping the same name keeps the same ports."
+                : "Registers this computer as a peer, then sets up and starts its audio link.",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         });

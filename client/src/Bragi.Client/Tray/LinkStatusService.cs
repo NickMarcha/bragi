@@ -77,7 +77,7 @@ public sealed class LinkStatusService : IDisposable
         if (config is null)
         {
             return new StatusSnapshot(TrayState.NotInstalled,
-                $"{RocLinkConfig.EnvFilePath} is missing values - choose Connect to Bragi...");
+                $"{RocLinkConfig.EnvFilePath} is missing values - choose Change Bragi connection...");
         }
 
         var unitState = await _controller.GetStateAsync();

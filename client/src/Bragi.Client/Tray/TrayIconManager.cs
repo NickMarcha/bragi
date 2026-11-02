@@ -25,7 +25,7 @@ public sealed class TrayIconManager : IDisposable
     private readonly NativeMenuItem _autostartItem;
     private readonly VolumeMenu _volumeMenu;
 
-    /// <summary>"Connect to Bragi..." was chosen; App opens the setup window.</summary>
+    /// <summary>"Connect to Bragi..." / "Change Bragi connection..." was chosen; App opens the setup window.</summary>
     public event Action? SetupRequested;
 
     private readonly WindowIcon _disabledIcon = LoadIcon("tray-disabled.png");
@@ -50,7 +50,8 @@ public sealed class TrayIconManager : IDisposable
         _restartItem = new NativeMenuItem { Header = "Restart Link", IsEnabled = false };
         _restartItem.Click += async (_, _) => await _statusService.RestartAsync();
 
-        var setupItem = new NativeMenuItem { Header = "Connect to Bragi..." };
+        // App rebuilds this manager after a successful connect, so the label is right from then on.
+        var setupItem = new NativeMenuItem { Header = SetupMenuLabel(RocLinkConfig.IsInstalled()) };
         setupItem.Click += (_, _) => SetupRequested?.Invoke();
 
         var checkForUpdatesItem = new NativeMenuItem { Header = "Check for Updates" };
@@ -106,6 +107,9 @@ public sealed class TrayIconManager : IDisposable
         // Render whatever the service's initial (pre-first-poll) state is immediately.
         Render(_statusService.Current);
     }
+
+    public static string SetupMenuLabel(bool alreadySetUp) =>
+        alreadySetUp ? "Change Bragi connection..." : "Connect to Bragi...";
 
     private void OnStatusChanged(StatusSnapshot snapshot) => Dispatcher.UIThread.Post(() => Render(snapshot));
 

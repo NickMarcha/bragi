@@ -10,7 +10,7 @@ using Bragi.Client.Tray;
 
 namespace Bragi.Client.Setup;
 
-/// <summary>Opens "Connect to Bragi..." filled in from this machine and its current config.</summary>
+/// <summary>Opens "Connect to Bragi..." (or "Change Bragi connection...") filled in from this machine and its current config.</summary>
 public static class SetupLauncher
 {
     private static SetupWindow? _open;
@@ -33,7 +33,8 @@ public static class SetupLauncher
             Warnings: LinkInstaller.ConflictingDropIns(LinkInstaller.PipewireConfDir)
                 .Select(file => $"{file} already loads Roc modules and would clash with the link. " +
                                 "Rename it to end in .disabled and restart pipewire.service once.")
-                .ToList());
+                .ToList(),
+            AlreadySetUp: RocLinkConfig.IsInstalled());
 
         var window = new SetupWindow(defaults, async (server, name, ip, apiKey) =>
         {
