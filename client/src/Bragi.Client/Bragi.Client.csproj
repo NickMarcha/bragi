@@ -6,7 +6,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Bumped + tagged as client-vX.Y.Z to cut a release - see
          .github/workflows/client-release.yml and client/README.md. -->
-    <Version>0.1.8</Version>
+    <Version>0.1.9</Version>
     <AssemblyName>Bragi.Client</AssemblyName>
     <!-- The GitHub repo whose releases the app updates from. The release
          workflow passes its own repo, so a fork's builds update from the fork. -->
