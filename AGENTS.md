@@ -1,5 +1,13 @@
 # AGENTS.md
 
+## Start of a session
+
+Work happens on more than one machine, so a local `main` can be well behind GitHub.
+Before reading code or changing anything, run `git fetch` and bring `main` up to date
+with `git pull --ff-only`. If local changes block the pull, don't discard them: stash
+them or ask the user. Do the same before committing, and take version numbers (such as
+`client-v*` and `android-v*` tags) from what's on GitHub, not from the local checkout.
+
 ## Agent skills
 
 This repo carries its own agent skills in `.claude/skills/`, committed so they travel with
