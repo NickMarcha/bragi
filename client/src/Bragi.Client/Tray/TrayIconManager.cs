@@ -103,6 +103,10 @@ public sealed class TrayIconManager : IDisposable
             IsVisible = true,
         };
 
+        // A left click opens the volume window, like the menu's Volume item. The
+        // menu stays on right click. Does nothing without a configured server.
+        _trayIcon.Clicked += (_, _) => _volumeMenu.Open();
+
         _statusService.StatusChanged += OnStatusChanged;
         // Render whatever the service's initial (pre-first-poll) state is immediately.
         Render(_statusService.Current);

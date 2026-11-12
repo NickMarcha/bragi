@@ -1,0 +1,228 @@
+<!-- The volume window's look, after the dashboard's app/static/style.css:
+     the logo's near-black and teals, compact strips, and the readout riding
+     on the fader thumb. Keep the colours in step with that file's :root. -->
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Bragi.Client.Volume.VolumeStyles">
+  <Styles.Resources>
+    <SolidColorBrush x:Key="BragiBg" Color="#111317" />
+    <SolidColorBrush x:Key="BragiPanel" Color="#181b20" />
+    <SolidColorBrush x:Key="BragiRaised" Color="#22262c" />
+    <SolidColorBrush x:Key="BragiHover" Color="#2a2f36" />
+    <SolidColorBrush x:Key="BragiBorder" Color="#2d3239" />
+    <SolidColorBrush x:Key="BragiText" Color="#e4e6e8" />
+    <SolidColorBrush x:Key="BragiMuted" Color="#9a9fa6" />
+    <SolidColorBrush x:Key="BragiAccent" Color="#00c0b0" />
+    <SolidColorBrush x:Key="BragiDanger" Color="#d0525a" />
+    <SolidColorBrush x:Key="BragiWarn" Color="#c9a352" />
+    <SolidColorBrush x:Key="BragiOff" Color="#555555" />
+    <SolidColorBrush x:Key="BragiThumb" Color="#d6dcd9" />
+  </Styles.Resources>
+
+  <Style Selector="Window.bragi">
+    <Setter Property="Background" Value="{StaticResource BragiBg}" />
+    <Setter Property="Foreground" Value="{StaticResource BragiText}" />
+    <Setter Property="FontSize" Value="14" />
+  </Style>
+
+  <!-- toolbar -->
+
+  <Style Selector="Border.top-bar">
+    <Setter Property="Height" Value="44" />
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="Background" Value="{StaticResource BragiPanel}" />
+    <Setter Property="BorderBrush" Value="{StaticResource BragiBorder}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+  </Style>
+  <Style Selector="TextBlock.brand">
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.connection">
+    <Setter Property="Foreground" Value="{StaticResource BragiMuted}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.empty">
+    <Setter Property="Foreground" Value="{StaticResource BragiMuted}" />
+    <Setter Property="Margin" Value="16" />
+  </Style>
+
+  <!-- status dots: the connection in the toolbar and each device -->
+
+  <Style Selector="Border.dot">
+    <Setter Property="Width" Value="8" />
+    <Setter Property="Height" Value="8" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Background" Value="{StaticResource BragiMuted}" />
+  </Style>
+  <Style Selector="Border.dot.online">
+    <Setter Property="Background" Value="{StaticResource BragiAccent}" />
+  </Style>
+  <Style Selector="Border.dot.partial">
+    <Setter Property="Background" Value="{StaticResource BragiWarn}" />
+  </Style>
+  <Style Selector="Border.dot.offline">
+    <Setter Property="Background" Value="{StaticResource BragiDanger}" />
+  </Style>
+  <Style Selector="Border.dot.disabled">
+    <Setter Property="Background" Value="{StaticResource BragiOff}" />
+  </Style>
+
+  <!-- devices -->
+
+  <Style Selector="Border.device">
+    <Setter Property="Margin" Value="4" />
+    <Setter Property="Padding" Value="8" />
+    <Setter Property="Background" Value="{StaticResource BragiPanel}" />
+    <Setter Property="BorderBrush" Value="{StaticResource BragiBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style Selector="StackPanel.parked > Border.device">
+    <Setter Property="Margin" Value="0" />
+  </Style>
+  <Style Selector="TextBlock.device-name">
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="LineHeight" Value="17.5" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="MaxLines" Value="2" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style Selector="Border.disabled TextBlock.device-name">
+    <Setter Property="Foreground" Value="{StaticResource BragiMuted}" />
+  </Style>
+  <Style Selector="TextBlock.device-meta">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{StaticResource BragiMuted}" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style Selector="TextBlock.strip-label">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{StaticResource BragiMuted}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+
+  <!-- buttons: flat, square-ish, no Fluent chrome -->
+
+  <Style Selector="Button">
+    <Setter Property="Background" Value="{StaticResource BragiRaised}" />
+    <Setter Property="BorderBrush" Value="{StaticResource BragiBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="Foreground" Value="{StaticResource BragiText}" />
+    <Setter Property="Padding" Value="10,4" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="chrome" Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="Button:pointerover">
+    <Setter Property="Background" Value="{StaticResource BragiHover}" />
+  </Style>
+  <Style Selector="Button:disabled">
+    <Setter Property="Opacity" Value="0.4" />
+    <Setter Property="Cursor" Value="No" />
+  </Style>
+  <Style Selector="Button.mute">
+    <Setter Property="Height" Value="24" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.mute.active">
+    <Setter Property="Background" Value="{StaticResource BragiDanger}" />
+    <Setter Property="BorderBrush" Value="{StaticResource BragiDanger}" />
+  </Style>
+
+  <!-- icons: the dashboard's _icons.html line icons as paths -->
+
+  <Style Selector="Path.glyph">
+    <Setter Property="Stroke" Value="{StaticResource BragiText}" />
+    <Setter Property="StrokeThickness" Value="2.25" />
+    <Setter Property="StrokeLineCap" Value="Round" />
+    <Setter Property="StrokeJoin" Value="Round" />
+  </Style>
+  <Style Selector="Path.glyph-fill">
+    <Setter Property="Fill" Value="{StaticResource BragiText}" />
+  </Style>
+  <Style Selector="Button.active Path.glyph">
+    <Setter Property="Stroke" Value="White" />
+  </Style>
+  <Style Selector="Button.active Path.glyph-fill">
+    <Setter Property="Fill" Value="White" />
+  </Style>
+
+  <!-- the fader: a vertical track, a teal fill for the setting, and the
+       readout on the thumb as on Voicemeeter -->
+
+  <Style Selector="Slider.fader">
+    <Setter Property="Orientation" Value="Vertical" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Track Name="PART_Track" Orientation="Vertical"
+               Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+               Value="{TemplateBinding Value, Mode=TwoWay}"
+               IsDirectionReversed="{TemplateBinding IsDirectionReversed}">
+          <Track.DecreaseButton>
+            <RepeatButton Name="PART_DecreaseButton" Classes="fill" Focusable="False" />
+          </Track.DecreaseButton>
+          <Track.IncreaseButton>
+            <RepeatButton Name="PART_IncreaseButton" Classes="rest" Focusable="False" />
+          </Track.IncreaseButton>
+          <Thumb Name="thumb" Height="22">
+            <Thumb.Template>
+              <ControlTemplate>
+                <Border Background="{StaticResource BragiThumb}" CornerRadius="4">
+                  <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                             FontSize="11" FontWeight="SemiBold" Foreground="#141414"
+                             FontFeatures="+tnum"
+                             Text="{Binding $parent[Slider].Value, StringFormat='{}{0:0}%'}" />
+                </Border>
+              </ControlTemplate>
+            </Thumb.Template>
+          </Thumb>
+        </Track>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <!-- Set here rather than in the template: Fluent's own Slider styles
+       outrank values set inside a template. -->
+  <Style Selector="Slider.fader /template/ RepeatButton">
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="VerticalAlignment" Value="Stretch" />
+    <Setter Property="Height" Value="NaN" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Margin" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Width="12" HorizontalAlignment="Center" Background="{TemplateBinding Background}"
+                CornerRadius="{TemplateBinding CornerRadius}" />
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="Slider.fader /template/ RepeatButton.fill">
+    <Setter Property="Background" Value="{StaticResource BragiAccent}" />
+    <Setter Property="CornerRadius" Value="0,0,3,3" />
+  </Style>
+  <Style Selector="Slider.fader /template/ RepeatButton.rest">
+    <Setter Property="Background" Value="{StaticResource BragiBorder}" />
+    <Setter Property="CornerRadius" Value="3,3,0,0" />
+  </Style>
+  <Style Selector="Slider.fader:disabled">
+    <Setter Property="Opacity" Value="0.4" />
+    <Setter Property="Cursor" Value="No" />
+  </Style>
+</Styles>

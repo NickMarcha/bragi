@@ -73,16 +73,23 @@ each value) and run `systemctl --user enable --now bragi-roc-link.service`.
 
 The tray has two direct actions: `Volume` and `Open web UI`.
 
-`Volume` opens one resizable window containing every peer and headset.
-This device appears first. Each device has Output and Input sliders and
-mute buttons, with volumes from 0% to 150%, matching the dashboard. Cards
-wrap as the window resizes, and the device list scrolls. Clicking Volume
-again brings the same window forward.
+`Volume` opens one resizable window containing every peer and headset,
+laid out like the dashboard's console: the same colours, a status dot and
+name per device, and two vertical faders with the volume on the thumb and
+a mute button under each. Volumes run from 0% to 150%. This device comes
+first, then the dashboard's device order. Devices with nothing to mix
+(a switched-off headset, a peer whose client is away or whose link is
+down) fold to their header in a stack at the end. Devices wrap as the
+window resizes, and the faders share the window's height between rows.
+Left-clicking the tray icon opens the same window, and clicking either
+again brings it forward. The look is in
+`src/Bragi.Client/Volume/VolumeStyles.axaml`; keep its colours in step
+with `app/static/style.css`.
 
-For peers, Output controls audio sent from that computer to the headset.
-Input controls the headset microphone received by that computer. These are
-Bragi link volumes. For headsets, Output controls the speakers and Input
-controls the microphone.
+Strips use the dashboard's names. A peer has Mic (the headset microphone
+received by that computer) and Audio (sound sent from that computer to the
+headset); a phone shows Headset and Audio, or Mic in microphone mode. A
+headset has Speakers and Mic. These are Bragi link volumes.
 
 The window identifies this device with `PEER_NAME` and derives the web UI
 and control URLs from `BRAGI_WS_URL`, such as
@@ -118,7 +125,8 @@ slider and mute actions, stale updates, reconnects, offline controls,
 the shared device window, and configured-server URLs. They do not require PipeWire
 or a desktop session. Run them before releasing client changes.
 
-Desktop-shell tray rendering and opening the user's browser still need a
+Desktop-shell tray rendering, the left click on the tray icon and opening
+the user's browser still need a
 manual check on the installed client.
 
 ## Why the systemd unit isn't a `oneshot`

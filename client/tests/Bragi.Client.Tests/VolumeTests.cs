@@ -88,6 +88,44 @@ public class VolumeTests
         Assert.Equal(0.9, headset.Input.Volume);
     }
 
+    [Fact]
+    public void State_follows_dashboard_order_presence_and_parking()
+    {
+        var state = new VolumeState();
+        state.Apply(JsonSerializer.Deserialize<JsonElement>("""
+            {"type":"state","order_of":{"peer:fp5":0,"headset:hs":1,"peer:laptop":2},
+             "peers":[
+              {"name":"laptop","protocol":"roc","tailscale_ip":"100.64.0.2","client_connected":true,
+               "incoming":{"volume":1,"muted":false,"connected":true},
+               "outgoing":{"volume":1,"muted":false,"connected":true}},
+              {"name":"fp5","protocol":"roc","client_kind":"android","capture_mode":"microphone",
+               "incoming":{"volume":1,"muted":false,"connected":true},
+               "outgoing":{"volume":1,"muted":false,"connected":false}}],
+             "headsets":[{"key":"hs","label":"HyperX","enabled":false,
+               "playback":{"volume":1,"muted":false,"connected":true},
+               "capture":{"volume":1,"muted":false,"connected":true}}]}
+            """));
+        Assert.Equal(new[] { "fp5", "hs", "laptop" }, state.Devices.Select(d => d.Key));
+        var laptop = state.Find("peer", "laptop")!;
+        Assert.Equal("Roc · 100.64.0.2", laptop.Meta);
+        Assert.Equal(("Audio", "Mic"), (laptop.OutputLabel, laptop.InputLabel));
+        Assert.Equal(DeviceStatus.Online, laptop.Status);
+        var phone = state.Find("peer", "fp5")!;
+        Assert.Equal(("Mic", "Headset"), (phone.OutputLabel, phone.InputLabel));
+        Assert.Equal(DeviceStatus.Partial, phone.Status);
+        Assert.False(phone.Parked);
+        var headset = state.Find("headset", "hs")!;
+        Assert.Equal(("Speakers", "Mic"), (headset.OutputLabel, headset.InputLabel));
+        Assert.True(headset.Parked);
+        Assert.Equal(DeviceStatus.Disabled, headset.Status);
+
+        state.Apply(JsonSerializer.Deserialize<JsonElement>("""{"type":"peer_presence","name":"laptop","connected":false}"""));
+        Assert.True(state.Find("peer", "laptop")!.Parked);
+        Assert.Equal(DeviceStatus.Offline, state.Find("peer", "laptop")!.Status);
+        state.Apply(JsonSerializer.Deserialize<JsonElement>("""{"type":"order","order":["peer:laptop","peer:fp5","headset:hs"]}"""));
+        Assert.Equal(new[] { "laptop", "fp5", "hs" }, state.Devices.Select(d => d.Key));
+    }
+
     [AvaloniaFact]
     public async Task Volume_window_receives_state_sends_controls_and_disables_on_disconnect()
     {
@@ -98,12 +136,14 @@ public class VolumeTests
         {
             await Until(() => Cards(window).Any());
             var panel = Card(window, "laptop");
-            var sliders = panel.Children.OfType<Slider>().ToArray();
-            var mute = panel.Children.OfType<StackPanel>().SelectMany(p => p.Children).OfType<Button>().ToArray();
+            // [0] is the computer's output (incoming at the Bragi host), [1] its input.
+            var sliders = new[] { Fader(panel, "incoming"), Fader(panel, "outgoing") };
+            var mute = new[] { Mute(panel, "incoming"), Mute(panel, "outgoing") };
             await Until(() => sliders[0].IsEnabled);
             Assert.Equal(65, sliders[0].Value);
             Assert.Equal(30, sliders[1].Value);
-            Assert.Equal("Unmute", mute[1].Content);
+            Assert.Contains("active", mute[1].Classes);
+            Assert.DoesNotContain("active", mute[0].Classes);
             Assert.False(server.Actions.Reader.TryRead(out _)); // rendering isn't an action
 
             sliders[0].Value = 55;
@@ -133,7 +173,7 @@ public class VolumeTests
             await server.Send(new { type = "control", target = "peer", key = "laptop", direction = "outgoing",
                 volume = 0.4, muted = false, connected = true });
             await Until(() => sliders[1].Value == 40);
-            Assert.Equal("Mute", mute[1].Content);
+            Assert.DoesNotContain("active", mute[1].Classes);
             Assert.False(server.Actions.Reader.TryRead(out _));
 
             await server.DropConnection();
@@ -164,10 +204,12 @@ public class VolumeTests
         try
         {
             await Until(() => Cards(window).Count() == 3);
-            Assert.Equal(new[] { "laptop", "desktop", "USB headset" },
-                Cards(window).Select(p => p.Children.OfType<TextBlock>().First().Text));
-            Assert.Contains(Card(window, "laptop").Children.OfType<TextBlock>(), t => t.Text == "This device");
-            var headset = Card(window, "USB headset").Children.OfType<Slider>().First();
+            // desktop has neither direction connected, so it is parked after the row.
+            Assert.Equal(new[] { "laptop", "USB headset", "desktop" }, Cards(window).Select(Name));
+            Assert.Contains(Card(window, "laptop").GetLogicalDescendants().OfType<TextBlock>(), t => t.Text == "This device");
+            Assert.True(Card(window, "laptop").GetLogicalDescendants().OfType<Grid>().Last().IsVisible);
+            Assert.False(Card(window, "desktop").GetLogicalDescendants().OfType<Grid>().Last().IsVisible);
+            var headset = Fader(Card(window, "USB headset"), "playback");
             await Until(() => headset.IsEnabled);
             headset.Value = 60;
             var action = await server.NextAction();
@@ -175,7 +217,7 @@ public class VolumeTests
             Assert.Equal("usb-headset", action.GetProperty("key").GetString());
             Assert.Equal("playback", action.GetProperty("direction").GetString());
             Assert.Equal(0.6, action.GetProperty("value").GetDouble());
-            Assert.Equal(65, Card(window, "laptop").Children.OfType<Slider>().First().Value);
+            Assert.Equal(65, Fader(Card(window, "laptop"), "incoming").Value);
         }
         finally { window.Close(); }
     }
@@ -199,19 +241,25 @@ public class VolumeTests
         {
             await Until(() => window.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == "Connected"));
             var panel = Card(window, "desktop");
-            Assert.All(panel.Children.OfType<Slider>(), slider => Assert.False(slider.IsEnabled));
-            Assert.All(panel.Children.OfType<StackPanel>().SelectMany(p => p.Children).OfType<Button>(), button => Assert.False(button.IsEnabled));
+            Assert.All(panel.GetLogicalDescendants().OfType<Slider>(), slider => Assert.False(slider.IsEnabled));
+            Assert.All(panel.GetLogicalDescendants().OfType<Button>(), button => Assert.False(button.IsEnabled));
             Assert.False(server.Actions.Reader.TryRead(out _));
         }
         finally { window.Close(); }
     }
 
-    private static IEnumerable<StackPanel> Cards(Window window) =>
-        window.GetLogicalDescendants().OfType<WrapPanel>().Single().Children.OfType<Border>()
-            .Select(b => (StackPanel)b.Child!);
+    private static IEnumerable<Border> Cards(Window window) =>
+        window.GetLogicalDescendants().OfType<Border>().Where(b => b.Classes.Contains("device"));
 
-    private static StackPanel Card(Window window, string label) =>
-        Cards(window).Single(p => p.Children.OfType<TextBlock>().First().Text == label);
+    private static string? Name(Border card) => card.GetLogicalDescendants().OfType<TextBlock>().First().Text;
+
+    private static Border Card(Window window, string label) => Cards(window).Single(c => Name(c) == label);
+
+    private static Slider Fader(Border card, string direction) => card.GetLogicalDescendants().OfType<Slider>()
+        .Single(s => Avalonia.Automation.AutomationProperties.GetAutomationId(s) == $"{direction}-volume");
+
+    private static Button Mute(Border card, string direction) => card.GetLogicalDescendants().OfType<Button>()
+        .Single(b => Avalonia.Automation.AutomationProperties.GetAutomationId(b) == $"{direction}-mute");
 
     private static async Task Until(Func<bool> condition)
     {
