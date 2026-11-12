@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
@@ -56,6 +57,15 @@ public sealed class TrayIconManager : IDisposable
 
         var checkForUpdatesItem = new NativeMenuItem { Header = "Check for Updates" };
         checkForUpdatesItem.Click += (_, _) => UpdateService.CheckForUpdatesInteractive();
+
+        try
+        {
+            AutostartService.RepairIfStale();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // A read-only or odd autostart dir shouldn't stop the tray from starting.
+        }
 
         _autostartItem = new NativeMenuItem
         {
