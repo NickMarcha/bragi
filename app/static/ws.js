@@ -94,6 +94,7 @@
       }
       else if (msg.type === "microphone") htmx.ajax("GET", "/audio/microphone", { target: "#microphone-routing", swap: "innerHTML" });
       else if (msg.type === "bluetooth" || msg.type === "gamepads") refreshBluetooth();
+      else if (msg.type === "kvm") htmx.ajax("GET", "/kvm", { target: "#kvm-bar", swap: "innerHTML" });
       else if (msg.type === "levels") applyLevels(msg);
       else if (msg.type === "viz_settings") applyVizSettings(msg);
       else if (msg.type === "nightly_reset") applyNightlyReset(msg);

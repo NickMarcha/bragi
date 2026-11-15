@@ -1,0 +1,15 @@
+{# The KVM bar in the top bar (app/kvm.py): the computers that share the
+   desk's keyboard and mouse, the active one highlighted. Click to switch.
+   Reloaded on "kvm" broadcasts. #}
+{% if kvm.available and kvm.computers %}
+<div class="kvm-computers" role="group" aria-label="Keyboard and mouse go to">
+  {% for name in kvm.computers %}
+  <button type="button" class="kvm-computer{{ ' active' if kvm.active == name }}"
+          {% if kvm.active == name %}aria-pressed="true" title="{{ name }} has the keyboard and mouse"{% else %}aria-pressed="false" title="Give {{ name }} the keyboard and mouse"{% endif %}
+          hx-post="/kvm/switch" hx-vals='{"computer": "{{ name }}"}' hx-target="#kvm-bar" hx-swap="innerHTML">{{ name }}</button>
+  {% endfor %}
+</div>
+{% if kvm_error %}<span class="form-error kvm-error">{{ kvm_error }}</span>{% endif %}
+{% elif kvm.available %}
+<span class="form-note" title="No computer is connected to the KVM">No computers</span>
+{% endif %}

@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, model_validator
 
-from . import views, ws
+from . import kvm, views, ws
 
 router = APIRouter(prefix="/api/v1")
 
@@ -85,7 +85,27 @@ def explainer(request: Request):
 
 @router.get("")
 def root():
-    return {"help": "/api/v1/help", "devices": "/api/v1/devices", "websocket": "/ws"}
+    return {"help": "/api/v1/help", "devices": "/api/v1/devices", "kvm": "/api/v1/kvm", "websocket": "/ws"}
+
+
+class KvmSwitch(BaseModel):
+    computer: str = Field(min_length=1, max_length=64)
+
+
+@router.get("/kvm")
+async def get_kvm():
+    """The computers sharing the desk's keyboard and mouse, and the active one."""
+    return await asyncio.to_thread(kvm.read_view)
+
+
+@router.post("/kvm/active")
+async def set_kvm_active(body: KvmSwitch):
+    """Gives a connected computer the keyboard and mouse."""
+    try:
+        await asyncio.to_thread(kvm.switch, body.computer)
+    except kvm.KvmError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return await asyncio.to_thread(kvm.read_view)
 
 
 @router.get("/devices")
@@ -268,6 +288,23 @@ or nothing to change.
 
 Switch a headset on or off: `{"enabled": false}`. Off releases the USB
 device entirely (no audio nodes), not just mute. Returns the device.
+
+### GET /api/v1/kvm
+
+The computers that share the desk's keyboard and mouse, and the one that
+has them now:
+
+```json
+{"available": true, "active": "sage", "computers": ["sage", "sage-dev", "sagedeck"]}
+```
+
+`available` is false when the KVM isn't running on this host.
+
+### POST /api/v1/kvm/active
+
+Give a connected computer the keyboard and mouse: `{"computer": "sage-dev"}`.
+Returns the same as GET. `409` if that computer isn't connected or the KVM
+can't be reached.
 
 ## Live updates: the WebSocket
 
