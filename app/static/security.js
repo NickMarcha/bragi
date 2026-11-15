@@ -51,7 +51,7 @@
     dialog.querySelector("[data-password-state]").textContent = passwordSet
       ? "A password is set. Browsers stay logged in until they log out."
       : tailscaleOnly
-        ? "No password: only the trusted Tailscale accounts below get in."
+        ? "No password: only passkeys and trusted Tailscale accounts get in. A password is an optional last resort."
         : "No password: anyone who can reach this page can use it.";
     passwordForm.querySelector('button[type="submit"]').textContent = passwordSet ? "Change password" : "Set password";
   }
@@ -137,11 +137,66 @@
     } catch (err) { showError(tailscaleError, err.message); }
   });
 
+  // Passkeys (static/passkeys.js does the WebAuthn part).
+  const passkeyList = document.getElementById("passkey-list");
+  const passkeyAdd = document.getElementById("passkey-add");
+  const passkeyError = dialog.querySelector("[data-passkey-error]");
+
+  function renderPasskeys(list) {
+    passkeyList.replaceChildren();
+    if (!list.length) {
+      const empty = document.createElement("li");
+      empty.className = "form-note";
+      empty.textContent = "No passkeys yet.";
+      passkeyList.append(empty);
+    }
+    for (const passkey of list) {
+      const item = document.createElement("li");
+      const text = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = passkey.name;
+      const meta = document.createElement("span");
+      meta.className = "form-note";
+      meta.textContent = `${passkey.rp_id} · added ${when(passkey.created)} · last used ${when(passkey.last_used)}`;
+      text.append(name, meta);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", async () => {
+        if (!confirm(`Remove the passkey "${passkey.name}"? It can't sign in here any more.`)) return;
+        try {
+          await call("DELETE", `/auth/passkeys/${encodeURIComponent(passkey.id)}`);
+          await refresh();
+        } catch (err) { showError(passkeyError, err.message); }
+      });
+      item.append(text, remove);
+      passkeyList.append(item);
+    }
+    if (!window.BragiPasskeys || !BragiPasskeys.supported()) {
+      passkeyAdd.disabled = true;
+      showError(passkeyError, "This browser can't create passkeys.");
+    }
+  }
+
+  passkeyAdd.addEventListener("click", async () => {
+    showError(passkeyError, "");
+    const name = prompt("Name this passkey, e.g. Bitwarden", "Bitwarden");
+    if (name === null) return;
+    try {
+      await BragiPasskeys.add(name);
+      await refresh();
+    } catch (err) {
+      if (!BragiPasskeys.cancelled(err)) showError(passkeyError, err.message);
+    }
+  });
+
   async function refresh() {
     const settings = await call("GET", "/auth/settings");
-    renderPasswordState(settings.password_set, (settings.tailscale_logins || []).length > 0);
+    renderPasswordState(settings.password_set,
+      (settings.tailscale_logins || []).length > 0 || (settings.passkeys || []).length > 0);
     renderKeys(settings.api_keys);
     renderTailscale(settings.tailscale_login, settings.tailscale_logins || []);
+    renderPasskeys(settings.passkeys || []);
   }
 
   openBtn.addEventListener("click", async () => {

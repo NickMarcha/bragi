@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/static/style.css" />
   <script src="/static/htmx.min.js"></script>
   <script src="/static/ws.js" defer></script>
+  <script src="/static/passkeys.js" defer></script>
   <script src="/static/security.js" defer></script>
 </head>
 <body class="{{ 'viz-enabled' if viz_settings.enabled }}">
@@ -75,6 +76,16 @@
         <button type="button" id="sessions-revoke">Log out other browsers</button>
         <form method="post" action="/auth/logout"><button type="submit">Log out</button></form>
       </div>
+    </section>
+
+    <section class="security-section">
+      <h3>Passkeys</h3>
+      <p class="form-note">Sign in without a password, with a passkey kept in your password manager (Bitwarden and the like) or on the device. A passkey works on the address it was added on.</p>
+      <ul id="passkey-list" class="api-keys"></ul>
+      <div class="dialog-actions">
+        <button type="button" id="passkey-add">Add a passkey</button>
+      </div>
+      <p class="form-error" data-passkey-error hidden></p>
     </section>
 
     <section class="security-section">
