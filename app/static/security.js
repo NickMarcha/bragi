@@ -46,11 +46,13 @@
     return new Date(seconds * 1000).toLocaleString();
   }
 
-  function renderPasswordState(passwordSet) {
+  function renderPasswordState(passwordSet, tailscaleOnly = false) {
     dialog.querySelectorAll("[data-needs-password]").forEach((el) => { el.hidden = !passwordSet; });
     dialog.querySelector("[data-password-state]").textContent = passwordSet
       ? "A password is set. Browsers stay logged in until they log out."
-      : "No password: anyone who can reach this page can use it.";
+      : tailscaleOnly
+        ? "No password: only the trusted Tailscale accounts below get in."
+        : "No password: anyone who can reach this page can use it.";
     passwordForm.querySelector('button[type="submit"]').textContent = passwordSet ? "Change password" : "Set password";
   }
 
@@ -87,10 +89,59 @@
     }
   }
 
+  // Tailscale sign-in: trusted accounts get in without a password when
+  // Bragi is opened through its Tailscale address (app/auth.py).
+  const tailscaleList = document.getElementById("tailscale-logins");
+  const tailscaleTrust = document.getElementById("tailscale-trust");
+  const tailscaleState = dialog.querySelector("[data-tailscale-state]");
+  const tailscaleError = dialog.querySelector("[data-tailscale-error]");
+
+  function renderTailscale(current, trusted) {
+    tailscaleList.replaceChildren();
+    for (const login of trusted) {
+      const item = document.createElement("li");
+      const text = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = login;
+      const meta = document.createElement("span");
+      meta.className = "form-note";
+      meta.textContent = login === current ? "this browser's account" : "trusted";
+      text.append(name, meta);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", async () => {
+        if (!confirm(`Stop letting ${login} in without a password?`)) return;
+        try {
+          await call("POST", "/auth/tailscale/untrust", { login });
+          await refresh();
+        } catch (err) { showError(tailscaleError, err.message); }
+      });
+      item.append(text, remove);
+      tailscaleList.append(item);
+    }
+    tailscaleTrust.hidden = !current || trusted.includes(current);
+    if (current) tailscaleTrust.textContent = `Let ${current} in without a password`;
+    tailscaleState.textContent = !current
+      ? "This browser didn't come through Tailscale, so it can't be added from here."
+      : trusted.length
+        ? "These accounts get in without a password when they open Bragi through Tailscale. Everyone else needs the password."
+        : `You're signed in to Tailscale as ${current}. Add it and only trusted accounts (or the password, if set) get in.`;
+  }
+
+  tailscaleTrust.addEventListener("click", async () => {
+    showError(tailscaleError, "");
+    try {
+      await call("POST", "/auth/tailscale/trust");
+      await refresh();
+    } catch (err) { showError(tailscaleError, err.message); }
+  });
+
   async function refresh() {
     const settings = await call("GET", "/auth/settings");
-    renderPasswordState(settings.password_set);
+    renderPasswordState(settings.password_set, (settings.tailscale_logins || []).length > 0);
     renderKeys(settings.api_keys);
+    renderTailscale(settings.tailscale_login, settings.tailscale_logins || []);
   }
 
   openBtn.addEventListener("click", async () => {

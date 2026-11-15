@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body class="login-page">
+  {% if password_set %}
   <form class="login-card" method="post" action="/auth/login">
     <span class="brand"><img src="/static/logo.png" alt="" />Bragi</span>
     <label>Password
@@ -19,5 +20,16 @@
     <button type="submit" class="primary">Log in</button>
     <p class="form-note">You stay logged in on this browser until you log out.</p>
   </form>
+  {% else %}
+  <div class="login-card">
+    <span class="brand"><img src="/static/logo.png" alt="" />Bragi</span>
+    <p>This Bragi only lets in trusted Tailscale accounts.</p>
+    {% if tailscale_login %}
+    <p class="form-note">You're signed in to Tailscale as {{ tailscale_login }}, which isn't one of them.</p>
+    {% else %}
+    <p class="form-note">Open it through its Tailscale address, signed in with a trusted account.</p>
+    {% endif %}
+  </div>
+  {% endif %}
 </body>
 </html>

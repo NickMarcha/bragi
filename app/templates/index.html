@@ -78,6 +78,16 @@
     </section>
 
     <section class="security-section">
+      <h3>Tailscale sign-in</h3>
+      <p class="form-note" data-tailscale-state>Checking…</p>
+      <ul id="tailscale-logins" class="api-keys"></ul>
+      <div class="dialog-actions">
+        <button type="button" id="tailscale-trust" hidden>Let my Tailscale account in without a password</button>
+      </div>
+      <p class="form-error" data-tailscale-error hidden></p>
+    </section>
+
+    <section class="security-section">
       <h3>API connections</h3>
       <p class="form-note">Keys for other apps to list devices and change volume. How it works: <a href="/api/v1/help" target="_blank" rel="noopener">/api/v1/help</a></p>
       <ul id="api-keys" class="api-keys"></ul>
