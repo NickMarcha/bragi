@@ -504,6 +504,16 @@
     monitor.indeterminate = c.mic_monitor == null;
     monitor.checked = !!c.mic_monitor;
 
+    // Bragi's loopback (app/mic_monitor.py): not tied to the headset
+    // being on, so never disabled with it.
+    const m = c.monitor || { enabled: false, volume: 1 };
+    dialog.querySelector('[data-monitor="enabled"]').checked = m.enabled;
+    const monitorVolume = dialog.querySelector('[data-monitor="volume"]');
+    if (monitorVolume.dataset.dragging !== "1") {
+      monitorVolume.value = Math.round(m.volume * 100);
+      dialog.querySelector('[data-monitor="readout"]').textContent = `${Math.round(m.volume * 100)}%`;
+    }
+
     const autoOff = dialog.querySelector('[data-hid-action="set_auto_off"]');
     autoOff.disabled = off;
     let wanted = "";
@@ -542,6 +552,34 @@
       const monitor = dialog.querySelector('[data-hid-action="set_mic_monitor"]');
       monitor.addEventListener("change", () => {
         send({ action: "set_mic_monitor", target: "headset", key, value: monitor.checked });
+      });
+
+      const monitorOn = dialog.querySelector('[data-monitor="enabled"]');
+      monitorOn.addEventListener("change", () => {
+        send({ action: "set_monitor", target: "headset", key, value: monitorOn.checked });
+      });
+      const monitorVolume = dialog.querySelector('[data-monitor="volume"]');
+      const monitorReadout = dialog.querySelector('[data-monitor="readout"]');
+      const sendMonitorVolume = () =>
+        send({ action: "set_monitor_volume", target: "headset", key, value: Number(monitorVolume.value) / 100 });
+      // Sent while dragging, so you hear the change as you go: the server
+      // puts each step straight on the running loopback.
+      const sendMonitorVolumeThrottled = throttle(sendMonitorVolume, 100);
+      monitorVolume.addEventListener("input", () => {
+        monitorVolume.dataset.dragging = "1";
+        monitorReadout.textContent = `${monitorVolume.value}%`;
+        sendMonitorVolumeThrottled();
+      });
+      monitorVolume.addEventListener("change", () => {
+        monitorVolume.dataset.dragging = "0";
+        sendMonitorVolume();
+      });
+      // Right-click back to 100%, like the faders.
+      monitorVolume.addEventListener("contextmenu", (evt) => {
+        evt.preventDefault();
+        monitorVolume.value = 100;
+        monitorReadout.textContent = "100%";
+        sendMonitorVolume();
       });
 
       const autoOff = dialog.querySelector('[data-hid-action="set_auto_off"]');

@@ -36,6 +36,8 @@ class FakeNode:
     volume: float = 1.0
     muted: bool = False
     channel_volumes: list[float] | None = None
+    # Anything else pw-dump carries for it, such as client.id.
+    props: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -115,6 +117,7 @@ class FakeSession:
                             "node.name": node.name,
                             "node.description": node.description,
                             "media.class": node.media_class,
+                            **node.props,
                         },
                         "params": {},
                     },

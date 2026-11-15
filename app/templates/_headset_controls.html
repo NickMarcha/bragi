@@ -48,7 +48,7 @@
 
 {% macro button(view) -%}
 <button class="icon-btn hid-settings-btn" type="button" data-hid-open="{{ view.key }}"
-        title="Mic monitor, auto-off and EQ" {% if view.controls is none %}hidden{% endif %}>
+        title="Mic monitoring, auto-off and EQ" {% if view.controls is none %}hidden{% endif %}>
   {{ icons.settings() }}
 </button>
 {%- endmacro %}
@@ -60,9 +60,24 @@
   <h2>{{ view.label }}</h2>
   <p class="form-note" data-hid="status">{{ battery_text(view.controls) or 'Waiting for the headset' }}</p>
 
+  {#- Bragi's own loopback (app/mic_monitor.py). Works with the headset
+      off too, since it only needs the dongle's ALSA nodes. -#}
+  {%- set m = c.monitor or {'enabled': false, 'volume': 1.0} %}
+  <label class="viz-settings-row">
+    <input type="checkbox" data-monitor="enabled" {% if m.enabled %}checked{% endif %} />
+    Mic monitoring (hear your own voice)
+  </label>
+  <label class="viz-settings-row">
+    Monitor volume
+    <input type="range" data-monitor="volume" min="0" max="150" step="1" value="{{ (m.volume * 100) | round | int }}"
+           aria-label="Monitor volume" title="How loud you hear yourself. The computers get the same mic level either way." />
+    <output data-monitor="readout">{{ (m.volume * 100) | round | int }}%</output>
+  </label>
+  <p class="form-note">Bragi plays your mic back into the headset. It doesn't change what the computers hear.</p>
+
   <label class="viz-settings-row">
     <input type="checkbox" data-hid-action="set_mic_monitor" {% if c.mic_monitor %}checked{% endif %} {% if off %}disabled{% endif %} />
-    Mic monitor (hear your own voice)
+    Headset's built-in monitoring (may be noisy)
   </label>
 
   <label class="viz-settings-row">
