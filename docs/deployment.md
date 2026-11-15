@@ -201,6 +201,14 @@ Bluetooth HID device's hidraw node to the `input` group. Install it the
 same way. Without it a controller still works, but only as an Xbox 360
 pad, and the log says "no passthrough".
 
+Pairing controllers from the dashboard (Controllers in the top bar) goes
+through the host's BlueZ over the system D-Bus, which `docker-compose.yml`
+mounts read-only (`/run/dbus`). BlueZ's default D-Bus policy lets any local
+user use it, so nothing else is needed, unless Bluetooth is soft-blocked:
+Raspberry Pi OS blocks wireless until it's configured, and the dialog then
+says so. Unblock it once with `sudo rfkill unblock bluetooth`; it stays
+unblocked across reboots.
+
 **3. The compose settings.** `docker-compose.yml` mounts the host's `/dev`
 read-only at `/host/dev` and allows the hidraw device major through
 `device_cgroup_rules`. It doesn't list the node under `devices:`, because

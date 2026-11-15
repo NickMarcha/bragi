@@ -43,6 +43,10 @@ services:
       # PipeWire's user socket + WirePlumber state - lets pw-dump/pw-cli/wpctl
       # inside the container talk to the host's real (bare-metal) PipeWire.
       - /run/user/${BRAGI_UID:-1000}:/run/user/${BRAGI_UID:-1000}
+      # The host's system D-Bus, for BlueZ: the Controllers dialog pairs game
+      # controllers through it (app/bluetooth.py). Read-only still lets the
+      # container connect to the socket.
+      - /run/dbus:/run/dbus:ro
       # Peer registry (peers.yaml), balance state (balance.yaml), and
       # peers.conf - the Bragi-managed peers' PipeWire config, which the
       # host's bragi-peers.service runs (host/systemd/). Survives container

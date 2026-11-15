@@ -21,6 +21,7 @@
     <div class="top-bar-actions">
       {% include "_audio_reset.html" %}
       <button id="add-peer-toggle" type="button">Add peer</button>
+      <button id="controllers-toggle" type="button" title="Game controllers: pair them and choose the computer they play on">Controllers</button>
       <button id="settings-toggle" type="button" title="Settings">{{ icons.settings() }}</button>
       <button id="security-toggle" type="button" title="Security: password and API connections">{{ icons.lock() }}</button>
       <button id="unit-toggle" type="button" title="Toggle volume readout between % and dB">%</button>
@@ -90,6 +91,14 @@
 
     <div class="dialog-actions">
       <button id="security-close" type="button">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="controllers-dialog">
+    <h2>Controllers</h2>
+    <div id="controllers-body"><p class="form-note">Loading…</p></div>
+    <div class="dialog-actions">
+      <button id="controllers-close" type="button">Close</button>
     </div>
   </dialog>
 

@@ -19,6 +19,7 @@ from . import access
 from . import api
 from . import audio_reset
 from . import auth
+from . import bluetooth
 from . import microphone
 from . import mic_monitor
 from . import eq_presets
@@ -50,12 +51,32 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(mic_monitor.supervise()),
         asyncio.create_task(gamepad.supervise(peer_control.send, peer_control.broadcast_desktop)),
     ]
+    bluetooth.start(_bluetooth_changed)
     yield
     for task in tasks:
         task.cancel()
     for task in tasks:
         with contextlib.suppress(asyncio.CancelledError):
             await task
+
+
+_bluetooth_pending = False
+
+
+def _bluetooth_changed() -> None:
+    """BlueZ reports every signal-strength change while scanning; tell the
+    dashboard at most twice a second."""
+    global _bluetooth_pending
+    if _bluetooth_pending:
+        return
+    _bluetooth_pending = True
+
+    def fire() -> None:
+        global _bluetooth_pending
+        _bluetooth_pending = False
+        ws.manager.broadcast_nowait({'type': 'bluetooth'})
+
+    asyncio.get_running_loop().call_later(0.5, fire)
 
 
 app = FastAPI(title="Bragi", lifespan=lifespan)
@@ -181,6 +202,72 @@ def select_microphone(request: Request, source: str = Form(...)):
         raise HTTPException(502, str(exc)) from exc
     ws.manager.broadcast_nowait({'type': 'microphone'})
     return microphone_controls(request)
+
+
+async def _controllers_view(request: Request):
+    """The Controllers dialog: paired controllers, which computer plays them,
+    and pairing new ones (app/bluetooth.py, app/gamepad.py)."""
+    if bluetooth.manager is None:
+        view = {"powered": False, "scanning": False, "paired": [], "found": [], "pairing": None,
+                "error": "Bluetooth isn't running in this Bragi."}
+    else:
+        view = await bluetooth.manager.refresh()
+    computers = [p.name for p in peers_module.load_peers() if p.client_kind != 'android']
+    status = gamepad.hub.status() if gamepad.hub is not None else {"target": gamepad.target(), "controllers": []}
+    return templates.TemplateResponse(request, "_controllers.html", {
+        "bt": view, "computers": computers, "target": status["target"],
+        "playing": {c["id"] for c in status["controllers"]}})
+
+
+def _bluetooth() -> bluetooth.Manager:
+    if bluetooth.manager is None:
+        raise HTTPException(503, "Bluetooth isn't running in this Bragi.")
+    return bluetooth.manager
+
+
+_ADDRESS = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
+
+
+@app.get("/controllers", response_class=HTMLResponse)
+async def controllers(request: Request):
+    return await _controllers_view(request)
+
+
+@app.post("/controllers/scan", response_class=HTMLResponse)
+async def controllers_scan(request: Request):
+    await _bluetooth().scan()
+    return await _controllers_view(request)
+
+
+@app.post("/controllers/stop", response_class=HTMLResponse)
+async def controllers_stop(request: Request):
+    await _bluetooth().stop_scan()
+    return await _controllers_view(request)
+
+
+@app.post("/controllers/pair", response_class=HTMLResponse)
+async def controllers_pair(request: Request, address: str = Form(..., pattern=_ADDRESS)):
+    # Pairing takes several seconds; the dialog follows it through broadcasts.
+    asyncio.create_task(_bluetooth().pair(address))
+    await asyncio.sleep(0)
+    return await _controllers_view(request)
+
+
+@app.post("/controllers/forget", response_class=HTMLResponse)
+async def controllers_forget(request: Request, address: str = Form(..., pattern=_ADDRESS)):
+    await _bluetooth().forget(address)
+    return await _controllers_view(request)
+
+
+@app.post("/controllers/target", response_class=HTMLResponse)
+async def controllers_target(request: Request, target: str = Form("")):
+    computers = {p.name for p in peers_module.load_peers() if p.client_kind != 'android'}
+    if target and target not in computers:
+        raise HTTPException(422, f"No computer named {target!r}")
+    if gamepad.hub is None:
+        raise HTTPException(503, "Controllers aren't running in this Bragi.")
+    gamepad.hub.set_target(target or None)
+    return await _controllers_view(request)
 
 
 @app.get("/audio/reset", response_class=HTMLResponse)

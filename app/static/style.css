@@ -1008,3 +1008,41 @@ dialog h2 {
 .hid-macro .macro-failed {
   color: var(--danger);
 }
+
+/* --- controllers dialog --- */
+
+#controllers-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.controller-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.controller-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.controller-list .controller-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.controller-list .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--muted);
+}
+
+.controller-list .dot.online { background: var(--accent); }
