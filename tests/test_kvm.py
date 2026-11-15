@@ -144,3 +144,24 @@ def test_the_setup_page_is_served_under_bragi_and_behind_its_login(engine, monke
     auth.set_password("hunter22")
     locked = TestClient(app).get("/kvm/setup/", follow_redirects=False)
     assert locked.status_code != 200
+
+
+def test_a_tray_app_gets_the_kvm_on_connect_and_can_switch(engine, monkeypatch, session):
+    switched = []
+
+    def fake_switch(computer):
+        if computer == "ghost":
+            raise kvm.KvmError("ghost isn't connected.")
+        switched.append(computer)
+
+    monkeypatch.setattr(kvm, "switch", fake_switch)
+    with TestClient(app).websocket_connect("/ws/peer/deck") as socket:
+        assert socket.receive_json() == {"type": "kvm", "available": True, "active": "sagedeck",
+                                         "computers": ["sage", "sage-dev", "sagedeck"]}
+        socket.send_json({"type": "kvm_switch", "computer": "ghost"})
+        assert socket.receive_json() == {"type": "kvm_error", "error": "ghost isn't connected."}
+        socket.send_json({"type": "kvm_switch", "computer": "sage"})
+        socket.send_json({"type": "kvm_switch", "computer": "ghost"})
+        socket.receive_json()  # the second error shows the first switch has run
+    assert switched == ["sage"]
+

@@ -17,6 +17,7 @@ public partial class App : Application
     private TrayIconManager? _trayIconManager;
     private PeerPresenceClient? _presenceClient;
     private GamepadService? _gamepads;
+    private KvmService? _kvm;
 
     public override void Initialize()
     {
@@ -71,7 +72,11 @@ public partial class App : Application
         _presenceClient.MessageReceived += _gamepads.OnMessage;
         _presenceClient.Disconnected += _gamepads.OnDisconnected;
         _gamepads.Send = _presenceClient.SendAsync;
-        _trayIconManager = new TrayIconManager(_statusService!, _gamepads);
+        // The KVM's computers, switchable from the tray.
+        _kvm = new KvmService { Send = _presenceClient.SendAsync };
+        _presenceClient.MessageReceived += _kvm.OnMessage;
+        _presenceClient.Disconnected += _kvm.OnDisconnected;
+        _trayIconManager = new TrayIconManager(_statusService!, _gamepads, _kvm);
         _trayIconManager.SetupRequested += ShowSetup;
         _presenceClient.SetEnabled(_statusService!.Current.State == TrayState.Enabled);
     }
@@ -84,6 +89,7 @@ public partial class App : Application
         _trayIconManager = null;
         _presenceClient = null;
         _gamepads = null;
+        _kvm = null;
     }
 
     private void ShowSetup() => SetupLauncher.Show(async () =>

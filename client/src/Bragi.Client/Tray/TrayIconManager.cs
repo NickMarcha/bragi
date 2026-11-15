@@ -27,6 +27,8 @@ public sealed class TrayIconManager : IDisposable
     private readonly VolumeMenu _volumeMenu;
     private readonly GamepadService? _gamepads;
     private readonly NativeMenuItem _gamepadItem;
+    private readonly KvmService? _kvm;
+    private readonly NativeMenuItem _kvmItem;
 
     /// <summary>"Connect to Bragi..." / "Change Bragi connection..." was chosen; App opens the setup window.</summary>
     public event Action? SetupRequested;
@@ -35,10 +37,14 @@ public sealed class TrayIconManager : IDisposable
     private readonly WindowIcon _enabledIcon = LoadIcon("tray-enabled.png");
     private readonly WindowIcon _errorIcon = LoadIcon("tray-error.png");
 
-    public TrayIconManager(LinkStatusService statusService, GamepadService? gamepads = null)
+    public TrayIconManager(LinkStatusService statusService, GamepadService? gamepads = null, KvmService? kvm = null)
     {
         _statusService = statusService;
         _gamepads = gamepads;
+        _kvm = kvm;
+        // "Keyboard & mouse": one entry per computer, the active one ticked.
+        // Hidden until the host reports its KVM.
+        _kvmItem = new NativeMenuItem { Header = "Keyboard & mouse", IsVisible = false, Menu = new NativeMenu() };
         // "Use controller here": takes the Bragi host's controllers for this
         // computer, or gives them back. Hidden until the host has one.
         _gamepadItem = new NativeMenuItem { ToggleType = MenuItemToggleType.CheckBox, IsVisible = false };
@@ -109,6 +115,7 @@ public sealed class TrayIconManager : IDisposable
         foreach (var item in new NativeMenuItemBase[]
         {
             new NativeMenuItemSeparator(),
+            _kvmItem,
             _gamepadItem,
             _volumeMenu.Item,
             _volumeMenu.WebUiItem,
@@ -140,6 +147,10 @@ public sealed class TrayIconManager : IDisposable
         {
             _gamepads.StatusChanged += OnGamepadsChanged;
         }
+        if (_kvm is not null)
+        {
+            _kvm.Changed += OnKvmChanged;
+        }
         // Render whatever the service's initial (pre-first-poll) state is immediately.
         Render(_statusService.Current);
     }
@@ -152,6 +163,27 @@ public sealed class TrayIconManager : IDisposable
                 $"VBAN in: {config.VbanStreamSend} from {config.BragiHostIp}:{config.VbanPort}",
                 $"VBAN out: {config.VbanStreamReceive} to {config.BragiHostIp}:{config.VbanPort}",
             ];
+
+    private void OnKvmChanged() => Dispatcher.UIThread.Post(() =>
+    {
+        var rows = KvmService.MenuRows(_kvm!.State);
+        _kvmItem.IsVisible = rows.Count > 0;
+        var submenu = _kvmItem.Menu!;
+        submenu.Items.Clear();
+        foreach (var (computer, active) in rows)
+        {
+            var item = new NativeMenuItem { Header = computer, ToggleType = MenuItemToggleType.Radio, IsChecked = active };
+            item.Click += async (_, _) =>
+            {
+                if (!await _kvm.SwitchAsync(computer))
+                {
+                    Dispatcher.UIThread.Post(() => _kvmItem.Header = "Keyboard & mouse (Bragi isn't connected)");
+                }
+            };
+            submenu.Items.Add(item);
+        }
+        _kvmItem.Header = _kvm.Error is { } error ? $"Keyboard & mouse ({error})" : "Keyboard & mouse";
+    });
 
     private void OnGamepadsChanged(GamepadStatus status) => Dispatcher.UIThread.Post(() =>
     {
@@ -244,6 +276,10 @@ public sealed class TrayIconManager : IDisposable
         if (_gamepads is not null)
         {
             _gamepads.StatusChanged -= OnGamepadsChanged;
+        }
+        if (_kvm is not null)
+        {
+            _kvm.Changed -= OnKvmChanged;
         }
         _volumeMenu.Dispose();
         _statusService.StatusChanged -= OnStatusChanged;
