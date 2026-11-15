@@ -204,9 +204,9 @@ def select_microphone(request: Request, source: str = Form(...)):
     return microphone_controls(request)
 
 
-async def _controllers_view(request: Request):
-    """The Controllers dialog: paired controllers, which computer plays them,
-    and pairing new ones (app/bluetooth.py, app/gamepad.py)."""
+async def _bluetooth_view(request: Request):
+    """The Bluetooth dialog: paired devices, pairing new ones, and which
+    computer the controllers play on (app/bluetooth.py, app/gamepad.py)."""
     if bluetooth.manager is None:
         view = {"powered": False, "scanning": False, "paired": [], "found": [], "pairing": None,
                 "error": "Bluetooth isn't running in this Bragi."}
@@ -214,7 +214,7 @@ async def _controllers_view(request: Request):
         view = await bluetooth.manager.refresh()
     computers = [p.name for p in peers_module.load_peers() if p.client_kind != 'android']
     status = gamepad.hub.status() if gamepad.hub is not None else {"target": gamepad.target(), "controllers": []}
-    return templates.TemplateResponse(request, "_controllers.html", {
+    return templates.TemplateResponse(request, "_bluetooth.html", {
         "bt": view, "computers": computers, "target": status["target"],
         "playing": {c["id"] for c in status["controllers"]}})
 
@@ -228,46 +228,46 @@ def _bluetooth() -> bluetooth.Manager:
 _ADDRESS = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
 
 
-@app.get("/controllers", response_class=HTMLResponse)
-async def controllers(request: Request):
-    return await _controllers_view(request)
+@app.get("/bluetooth", response_class=HTMLResponse)
+async def bluetooth_page(request: Request):
+    return await _bluetooth_view(request)
 
 
-@app.post("/controllers/scan", response_class=HTMLResponse)
-async def controllers_scan(request: Request):
+@app.post("/bluetooth/scan", response_class=HTMLResponse)
+async def bluetooth_scan(request: Request):
     await _bluetooth().scan()
-    return await _controllers_view(request)
+    return await _bluetooth_view(request)
 
 
-@app.post("/controllers/stop", response_class=HTMLResponse)
-async def controllers_stop(request: Request):
+@app.post("/bluetooth/stop", response_class=HTMLResponse)
+async def bluetooth_stop(request: Request):
     await _bluetooth().stop_scan()
-    return await _controllers_view(request)
+    return await _bluetooth_view(request)
 
 
-@app.post("/controllers/pair", response_class=HTMLResponse)
-async def controllers_pair(request: Request, address: str = Form(..., pattern=_ADDRESS)):
+@app.post("/bluetooth/pair", response_class=HTMLResponse)
+async def bluetooth_pair(request: Request, address: str = Form(..., pattern=_ADDRESS)):
     # Pairing takes several seconds; the dialog follows it through broadcasts.
     asyncio.create_task(_bluetooth().pair(address))
     await asyncio.sleep(0)
-    return await _controllers_view(request)
+    return await _bluetooth_view(request)
 
 
-@app.post("/controllers/forget", response_class=HTMLResponse)
-async def controllers_forget(request: Request, address: str = Form(..., pattern=_ADDRESS)):
+@app.post("/bluetooth/forget", response_class=HTMLResponse)
+async def bluetooth_forget(request: Request, address: str = Form(..., pattern=_ADDRESS)):
     await _bluetooth().forget(address)
-    return await _controllers_view(request)
+    return await _bluetooth_view(request)
 
 
-@app.post("/controllers/target", response_class=HTMLResponse)
-async def controllers_target(request: Request, target: str = Form("")):
+@app.post("/bluetooth/target", response_class=HTMLResponse)
+async def bluetooth_target(request: Request, target: str = Form("")):
     computers = {p.name for p in peers_module.load_peers() if p.client_kind != 'android'}
     if target and target not in computers:
         raise HTTPException(422, f"No computer named {target!r}")
     if gamepad.hub is None:
         raise HTTPException(503, "Controllers aren't running in this Bragi.")
     gamepad.hub.set_target(target or None)
-    return await _controllers_view(request)
+    return await _bluetooth_view(request)
 
 
 @app.get("/audio/reset", response_class=HTMLResponse)

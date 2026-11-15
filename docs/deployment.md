@@ -201,7 +201,7 @@ Bluetooth HID device's hidraw node to the `input` group. Install it the
 same way. Without it a controller still works, but only as an Xbox 360
 pad, and the log says "no passthrough".
 
-Pairing controllers from the dashboard (Controllers in the top bar) goes
+Pairing devices from the dashboard (Bluetooth in the top bar) goes
 through the host's BlueZ over the system D-Bus, which `docker-compose.yml`
 mounts read-only (`/run/dbus`). BlueZ's default D-Bus policy lets any local
 user use it, so nothing else is needed, unless Bluetooth is soft-blocked:

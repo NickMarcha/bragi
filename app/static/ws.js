@@ -93,7 +93,7 @@
         htmx.ajax("GET", "/audio/microphone", { target: "#microphone-routing", swap: "innerHTML" });
       }
       else if (msg.type === "microphone") htmx.ajax("GET", "/audio/microphone", { target: "#microphone-routing", swap: "innerHTML" });
-      else if (msg.type === "bluetooth" || msg.type === "gamepads") refreshControllers();
+      else if (msg.type === "bluetooth" || msg.type === "gamepads") refreshBluetooth();
       else if (msg.type === "levels") applyLevels(msg);
       else if (msg.type === "viz_settings") applyVizSettings(msg);
       else if (msg.type === "nightly_reset") applyNightlyReset(msg);
@@ -175,23 +175,23 @@
 
   // Closes on success; shows the server's reason on failure (htmx does not
   // swap error responses, so without this a rejected add looked like nothing).
-  // The Controllers dialog (app/templates/_controllers.html): its body is
+  // The Bluetooth dialog (app/templates/_bluetooth.html): its body is
   // server-rendered and reloaded on "bluetooth"/"gamepads" broadcasts, but
   // only while the dialog is open.
-  function refreshControllers() {
-    const dialog = document.getElementById("controllers-dialog");
-    if (dialog && dialog.open) htmx.ajax("GET", "/controllers", { target: "#controllers-body", swap: "innerHTML" });
+  function refreshBluetooth() {
+    const dialog = document.getElementById("bluetooth-dialog");
+    if (dialog && dialog.open) htmx.ajax("GET", "/bluetooth", { target: "#bluetooth-body", swap: "innerHTML" });
   }
 
-  function wireControllersDialog() {
-    const dialog = document.getElementById("controllers-dialog");
-    const openBtn = document.getElementById("controllers-toggle");
+  function wireBluetoothDialog() {
+    const dialog = document.getElementById("bluetooth-dialog");
+    const openBtn = document.getElementById("bluetooth-toggle");
     if (!dialog || !openBtn) return;
     openBtn.addEventListener("click", () => {
       dialog.showModal();
-      refreshControllers();
+      refreshBluetooth();
     });
-    document.getElementById("controllers-close").addEventListener("click", () => dialog.close());
+    document.getElementById("bluetooth-close").addEventListener("click", () => dialog.close());
   }
 
   function wireAddPeerDialog() {
@@ -1117,7 +1117,7 @@
     wireUnitToggle();
     wireSettingsDialog();
     wireAddPeerDialog();
-    wireControllersDialog();
+    wireBluetoothDialog();
     wireReorder();
     scheduleRowCount();
     window.addEventListener("resize", scheduleRowCount);

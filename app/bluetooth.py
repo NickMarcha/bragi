@@ -1,14 +1,17 @@
-"""Bluetooth on the Bragi host: pairing game controllers from the dashboard.
+"""Bluetooth on the Bragi host: pairing devices from the dashboard.
 
 Talks to the host's BlueZ over the system D-Bus (the container mounts
 /run/dbus; BlueZ's default policy lets any local user call it). The
-dashboard's Controllers dialog lists the paired controllers, scans for new
-ones and pairs, trusts and connects them, so a controller reconnects to the
-host on its own from then on. app/gamepad.py takes it from there.
+dashboard's Bluetooth dialog lists the paired devices, scans for new ones
+and pairs, trusts and connects them, so a device reconnects to the host on
+its own from then on. What happens next depends on the kind of device:
+app/gamepad.py takes controllers; keyboards and mice are ordinary input
+devices the Deskflow server picks up.
 
-Pairing uses a "NoInputNoOutput" agent, which game controllers need. It is
-registered only while a Pair call runs, and refuses anything outside one,
-so nothing can pair with the host unasked in between.
+Pairing uses a "DisplayOnly" agent: controllers pair without a code
+(Just Works), and a keyboard gets a code that the dialog shows for typing
+on it. The agent is registered only while a Pair call runs and refuses
+anything outside one, so nothing can pair with the host unasked.
 
 BluezBackend is the D-Bus part; Manager holds the logic and is what the
 tests drive with a fake backend.
@@ -20,6 +23,7 @@ tests drive with a fake backend.
 import asyncio
 import contextlib
 import logging
+import secrets
 from dataclasses import dataclass
 
 logger = logging.getLogger("bragi.bluetooth")
@@ -33,6 +37,14 @@ class BluetoothError(Exception):
     """Something the dashboard can show as it is."""
 
 
+# BlueZ's Icon property, from the device class or appearance.
+_KINDS = {"input-gaming": "controller", "input-keyboard": "keyboard", "input-mouse": "mouse",
+          "input-tablet": "mouse", "audio-card": "audio", "audio-headset": "audio",
+          "audio-headphones": "audio", "phone": "phone"}
+# Order in the dialog's "found" list.
+_KIND_ORDER = ["controller", "keyboard", "mouse", "audio", "other", "phone"]
+
+
 @dataclass(frozen=True)
 class Device:
     address: str
@@ -44,8 +56,17 @@ class Device:
     rssi: int | None = None
 
     @property
+    def kind(self) -> str:
+        return _KINDS.get(self.icon, "other")
+
+    @property
     def is_controller(self) -> bool:
-        return self.icon == "input-gaming"
+        return self.kind == "controller"
+
+    @property
+    def named(self) -> bool:
+        """Devices that only advertise their address are mostly beacons."""
+        return bool(self.name) and self.name.replace("-", ":").upper() != self.address.upper()
 
 
 class BluezBackend:
@@ -56,6 +77,7 @@ class BluezBackend:
         self._agent = None
         self._on_change = None
         self._pairing = False
+        self._on_code = None
 
     async def _connect(self):
         if self._bus is not None and self._bus.connected:
@@ -145,17 +167,20 @@ class BluezBackend:
         with contextlib.suppress(Exception):
             await adapter.call_stop_discovery()
 
-    async def pair(self, address: str) -> None:
+    async def pair(self, address: str, on_code=None) -> None:
+        """Pairs, trusts and connects. on_code(code) is called if the device
+        needs a code typed on it (keyboards)."""
         from dbus_fast import Variant
         path = _device_path(address)
         bus = await self._connect()
         agent_manager = await self._interface("/org/bluez", "org.bluez.AgentManager1")
         if self._agent is None:
-            self._agent = _make_agent(lambda: self._pairing)
+            self._agent = _make_agent(lambda: self._pairing, lambda code: self._on_code and self._on_code(code))
             bus.export(AGENT_PATH, self._agent)
         self._pairing = True
+        self._on_code = on_code
         try:
-            await agent_manager.call_register_agent(AGENT_PATH, "NoInputNoOutput")
+            await agent_manager.call_register_agent(AGENT_PATH, "DisplayOnly")
             with contextlib.suppress(Exception):
                 await agent_manager.call_request_default_agent(AGENT_PATH)
             device = await self._interface(path, "org.bluez.Device1")
@@ -170,6 +195,7 @@ class BluezBackend:
                 await device.call_connect()
         finally:
             self._pairing = False
+            self._on_code = None
             with contextlib.suppress(Exception):
                 await agent_manager.call_unregister_agent(AGENT_PATH)
 
@@ -198,9 +224,10 @@ def _message(exc: Exception) -> str:
     return text
 
 
-def _make_agent(pairing):
-    """BlueZ's Agent1 for "Just Works" pairing, accepting only while a
-    Pair call from the dashboard runs."""
+def _make_agent(pairing, show_code):
+    """BlueZ's Agent1 with a display: Just Works for controllers, a code to
+    type for keyboards. Accepts only while a Pair call from the dashboard
+    runs."""
     from dbus_fast import DBusError
     from dbus_fast.service import ServiceInterface, method
 
@@ -218,21 +245,28 @@ def _make_agent(pairing):
 
         @method()
         def RequestPinCode(self, device: "o") -> "s":
+            # Older keyboards: the host picks the PIN and the user types it.
             allow()
-            return "0000"
+            code = f"{secrets.randbelow(10**6):06d}"
+            show_code(code)
+            return code
 
         @method()
         def RequestPasskey(self, device: "o") -> "u":
             allow()
-            return 0
+            passkey = secrets.randbelow(10**6)
+            show_code(f"{passkey:06d}")
+            return passkey
 
         @method()
         def DisplayPinCode(self, device: "o", pincode: "s"):
             allow()
+            show_code(pincode)
 
         @method()
         def DisplayPasskey(self, device: "o", passkey: "u", entered: "q"):
             allow()
+            show_code(f"{passkey:06d}")
 
         @method()
         def RequestConfirmation(self, device: "o", passkey: "u"):
@@ -262,6 +296,8 @@ class Manager:
         self._on_change = on_change
         self._scan_task: asyncio.Task | None = None
         self.pairing: str | None = None
+        # A code to type on the device being paired (keyboards).
+        self.code: str | None = None
         self.error: str | None = None
         self.last: tuple[bool, bool, list[Device]] = (False, False, [])
         backend.subscribe(self._changed)
@@ -279,14 +315,15 @@ class Manager:
     def view(self) -> dict:
         powered, discovering, devices = self.last
         paired = sorted((d for d in devices if d.paired), key=lambda d: (not d.connected, d.name.lower()))
-        # While scanning: controllers not paired yet, strongest signal first.
-        found = sorted((d for d in devices if not d.paired and d.is_controller),
-                       key=lambda d: -(d.rssi if d.rssi is not None else -999))
+        # While scanning: named devices not paired yet, by kind, then strongest signal.
+        found = sorted((d for d in devices if not d.paired and d.named),
+                       key=lambda d: (_KIND_ORDER.index(d.kind), -(d.rssi if d.rssi is not None else -999)))
         return {"powered": powered, "scanning": discovering or self._scan_task is not None,
-                "paired": paired, "found": found, "pairing": self.pairing, "error": self.error}
+                "paired": paired, "found": found, "pairing": self.pairing, "code": self.code,
+                "error": self.error}
 
     async def scan(self) -> None:
-        """Looks for controllers for SCAN_SECONDS, then stops by itself."""
+        """Looks for devices for SCAN_SECONDS, then stops by itself."""
         self.error = None
         try:
             powered, _, _ = await self._backend.devices()
@@ -319,15 +356,22 @@ class Manager:
     async def pair(self, address: str) -> None:
         self.error = None
         self.pairing = address
+        self.code = None
         self._changed()
+
+        def show_code(code: str) -> None:
+            self.code = code
+            self._changed()
+
         try:
             # Discovery slows pairing down and isn't needed once the device is known.
             await self.stop_scan()
-            await self._backend.pair(address)
+            await self._backend.pair(address, show_code)
         except BluetoothError as exc:
             self.error = str(exc)
         finally:
             self.pairing = None
+            self.code = None
             self._changed()
 
     async def forget(self, address: str) -> None:

@@ -1009,9 +1009,9 @@ dialog h2 {
   color: var(--danger);
 }
 
-/* --- controllers dialog --- */
+/* --- bluetooth dialog --- */
 
-#controllers-dialog {
+#bluetooth-dialog {
   width: min(460px, calc(100vw - 32px));
 }
 
@@ -1046,3 +1046,15 @@ dialog h2 {
 }
 
 .controller-list .dot.online { background: var(--accent); }
+
+.pairing-code {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+
+.pairing-code strong {
+  font-size: 18px;
+  letter-spacing: 2px;
+}

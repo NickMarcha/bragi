@@ -1,0 +1,79 @@
+{# The Bluetooth dialog's body (app/main.py, /bluetooth). Refreshed on
+   "bluetooth" and "gamepads" broadcasts while the dialog is open. #}
+{% set kinds = {
+  "controller": ("Controller", "Plays on the computer chosen above."),
+  "keyboard": ("Keyboard", "Types on the active computer, like the USB keyboard."),
+  "mouse": ("Mouse", "Moves the pointer on the active computer, like the USB mouse."),
+  "audio": ("Audio", "Not used by Bragi yet."),
+  "phone": ("Phone", "Not used over Bluetooth; the Bragi app connects phones."),
+  "other": ("Device", "Not used by Bragi yet."),
+} %}
+{% if bt.error %}<p class="form-error">{{ bt.error }}</p>{% endif %}
+
+<section class="security-section">
+  <h3>Controllers play on</h3>
+  <form hx-post="/bluetooth/target" hx-target="#bluetooth-body" hx-swap="innerHTML" hx-trigger="change">
+    <select name="target" aria-label="Computer the controllers play on">
+      <option value="" {% if not target %}selected{% endif %}>No computer</option>
+      {% for name in computers %}
+      <option value="{{ name }}" {% if target == name %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  <p class="form-note">Or choose "Use … here" in that computer's Bragi Client tray.</p>
+</section>
+
+<section class="security-section">
+  <h3>Paired</h3>
+  {% if bt.paired %}
+  <ul class="controller-list">
+    {% for d in bt.paired %}
+    <li>
+      <span class="dot {{ 'online' if d.connected else 'offline' }}"></span>
+      <span class="controller-name">{{ d.name }}</span>
+      <span class="form-note" title="{{ kinds[d.kind][1] }}">
+        {{- kinds[d.kind][0] }}, {% if d.address|lower in playing %}connected, playing{% elif d.connected %}connected{% else %}off or out of range{% endif -%}
+      </span>
+      <button type="button" class="controller-forget"
+              hx-post="/bluetooth/forget" hx-vals='{"address": "{{ d.address }}"}'
+              hx-target="#bluetooth-body" hx-swap="innerHTML"
+              hx-confirm="Forget {{ d.name }}? It has to be paired again to use it here.">Forget</button>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="form-note">Nothing paired yet.</p>
+  {% endif %}
+</section>
+
+<section class="security-section">
+  <h3>Pair a device</h3>
+  <p class="form-note">Put the device in Bluetooth pairing mode first (on most controllers, hold the pairing button until the light blinks fast). It can take half a minute to show up.</p>
+  {% if bt.scanning %}
+  <button type="button" hx-post="/bluetooth/stop" hx-target="#bluetooth-body" hx-swap="innerHTML">Stop looking</button>
+  <span class="form-note">Looking for devices…</span>
+  {% else %}
+  <button type="button" hx-post="/bluetooth/scan" hx-target="#bluetooth-body" hx-swap="innerHTML">Look for devices</button>
+  {% endif %}
+  {% if bt.code %}
+  <p class="pairing-code">Type <strong>{{ bt.code }}</strong> on the keyboard, then press Enter.</p>
+  {% endif %}
+  {% if bt.found %}
+  <ul class="controller-list">
+    {% for d in bt.found %}
+    <li>
+      <span class="controller-name" title="{{ kinds[d.kind][1] }}">{{ d.name }}</span>
+      <span class="form-note">{{ kinds[d.kind][0] }}</span>
+      {% if bt.pairing == d.address %}
+      <span class="form-note">Pairing…</span>
+      {% else %}
+      <button type="button" hx-post="/bluetooth/pair" hx-vals='{"address": "{{ d.address }}"}'
+              hx-target="#bluetooth-body" hx-swap="innerHTML" {% if bt.pairing %}disabled{% endif %}>Pair</button>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% elif bt.scanning %}
+  <p class="form-note">Nothing found yet.</p>
+  {% endif %}
+</section>
