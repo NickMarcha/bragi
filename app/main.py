@@ -10,7 +10,7 @@ from typing import Literal
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request, WebSocket
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
@@ -252,6 +252,22 @@ async def kvm_switch(request: Request, computer: str = Form(..., max_length=64))
     except kvm.KvmError as exc:
         return _kvm_bar(request, str(exc))
     return _kvm_bar(request)
+
+
+@app.get("/kvm/setup")
+def kvm_setup_root():
+    # The page fetches relative paths, so it needs the trailing slash.
+    return RedirectResponse("/kvm/setup/", status_code=308)
+
+
+@app.api_route("/kvm/setup/{path:path}", methods=["GET", "POST"])
+async def kvm_setup(request: Request, path: str):
+    """The KVM engine's setup page, behind Bragi's login (app/kvm.py)."""
+    body = await request.body()
+    status, content_type, content = await asyncio.to_thread(
+        kvm.setup_request, request.method, "/" + path, body, request.headers.get("x-deskflow-webui"))
+    return Response(content, status_code=status, media_type=content_type,
+                    headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/bluetooth", response_class=HTMLResponse)

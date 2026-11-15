@@ -112,3 +112,35 @@ def test_the_api_reads_and_switches(engine, monkeypatch, session):
     assert client.post("/api/v1/kvm/active", json={"computer": "sage"}).status_code == 200
     assert client.post("/api/v1/kvm/active", json={"computer": "ghost"}).status_code == 409
     assert TestClient(app).get("/api/v1/kvm").status_code == 401
+
+
+def test_the_setup_page_only_passes_on_its_own_requests(engine):
+    assert kvm.setup_request("GET", "/api/bindings", b"", None)[0] == 404
+    assert kvm.setup_request("GET", "/../etc/passwd", b"", None)[0] == 404
+    assert kvm.setup_request("POST", "/api/layout", b"{}", None)[0] == 403      # no page header
+    assert kvm.setup_request("POST", "/index.html", b"{}", "1")[0] == 403      # not an API path
+    assert kvm.setup_request("POST", "/api/layout", b"x" * (kvm.SETUP_MAX_BODY + 1), "1")[0] == 400
+    # Nothing listening: a clear 502, not an exception.
+    status, _, body = kvm.setup_request("GET", "/api/state", b"", None)
+    assert status == 502 and b"isn't reachable" in body
+
+
+def test_the_setup_page_is_served_under_bragi_and_behind_its_login(engine, monkeypatch, session):
+    assert 'href="/kvm/setup/"' in TestClient(app).get("/").text  # linked from Settings
+    seen = []
+
+    def fake(method, path, body, guard):
+        seen.append((method, path, body, guard))
+        return 200, "text/html; charset=utf-8", b"<html>setup</html>"
+
+    monkeypatch.setattr(kvm, "setup_request", fake)
+    client = TestClient(app)
+
+    assert client.get("/kvm/setup", follow_redirects=False).headers["location"] == "/kvm/setup/"
+    assert client.get("/kvm/setup/").text == "<html>setup</html>"
+    client.post("/kvm/setup/api/layout", content=b'{"cells": []}', headers={"X-Deskflow-Webui": "1"})
+    assert seen == [("GET", "/", b"", None), ("POST", "/api/layout", b'{"cells": []}', "1")]
+
+    auth.set_password("hunter22")
+    locked = TestClient(app).get("/kvm/setup/", follow_redirects=False)
+    assert locked.status_code != 200
