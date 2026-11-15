@@ -30,6 +30,7 @@ import copy
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import threading
 import time
@@ -65,7 +66,7 @@ class PasswordError(ValueError):
 
 
 def _empty() -> dict:
-    return {"password": None, "secret": None, "sessions": {}, "api_keys": []}
+    return {"password": None, "secret": None, "sessions": {}, "api_keys": [], "tailscale_logins": []}
 
 
 def _load() -> dict:
@@ -136,6 +137,54 @@ def _verify_password(password: str, stored: str) -> bool:
 
 def password_set() -> bool:
     return bool(_load().get("password"))
+
+
+# --- Tailscale sign-in ---
+# Through `tailscale serve`, every request carries the caller's Tailscale
+# login (Tailscale-User-Login), set by Tailscale itself: a client-sent
+# header of that name is overwritten (checked on sagepi). A trusted login
+# is signed in without a password.
+
+_TAILSCALE_LOGIN = re.compile(r"^[^\s,;]{1,200}$")
+
+
+def trusted_logins() -> list[str]:
+    return list(_load().get("tailscale_logins") or [])
+
+
+def trust_login(login: str) -> None:
+    if not _TAILSCALE_LOGIN.match(login):
+        raise PasswordError("That doesn't look like a Tailscale login")
+    with _lock:
+        data = _load()
+        logins = list(data.get("tailscale_logins") or [])
+        if login not in logins:
+            logins.append(login)
+        data["tailscale_logins"] = logins
+        _save(data)
+
+
+def untrust_login(login: str) -> bool:
+    with _lock:
+        data = _load()
+        logins = list(data.get("tailscale_logins") or [])
+        if login not in logins:
+            return False
+        logins.remove(login)
+        data["tailscale_logins"] = logins
+        _save(data)
+        return True
+
+
+def is_trusted_login(login: str | None) -> bool:
+    return bool(login) and login in (_load().get("tailscale_logins") or [])
+
+
+def locked() -> bool:
+    """Whether the web UI needs signing in: a password, or a trusted
+    Tailscale login (then only that account gets in)."""
+    data = _load()
+    return bool(data.get("password")) or bool(data.get("tailscale_logins"))
 
 
 def check_password(password: str) -> bool:

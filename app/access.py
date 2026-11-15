@@ -125,7 +125,17 @@ class AccessMiddleware:
                 await self.app(scope, receive, send)
                 return
 
-        if not auth.password_set():
+        if not auth.locked():
+            await self.app(scope, receive, send)
+            return
+
+        # A trusted Tailscale account is signed in by who it is.
+        if auth.is_trusted_login(headers.get("tailscale-user-login")):
+            if not websocket and scope["method"] not in ("GET", "HEAD", "OPTIONS") and not _same_origin(headers):
+                await JSONResponse({"detail": "Cross-site request refused"}, 403)(scope, receive, send)
+                return
+            state["session"] = None
+            state["tailscale_login"] = headers.get("tailscale-user-login")
             await self.app(scope, receive, send)
             return
 
@@ -205,21 +215,26 @@ def _secure(request: Request) -> bool:
     return _is_https(request.scope, request.headers)
 
 
+def _login_context(request: Request, next: str, error: str | None) -> dict:
+    return {"next": _safe_next(next), "error": error, "password_set": auth.password_set(),
+            "tailscale_login": request.headers.get("tailscale-user-login")}
+
+
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, next: str = "/"):
-    if not auth.password_set():
+    if not auth.locked() or auth.is_trusted_login(request.headers.get("tailscale-user-login")):
         return RedirectResponse(_safe_next(next), 303)
-    return templates.TemplateResponse(request, "login.html", {"next": _safe_next(next), "error": None})
+    return templates.TemplateResponse(request, "login.html", _login_context(request, next, None))
 
 
 @router.post("/auth/login")
 def login(request: Request, password: str = Form(...), next: str = Form("/")):
     target = _safe_next(next)
-    if not auth.password_set():
+    if not auth.locked():
         return RedirectResponse(target, 303)
     if not auth.check_password(password):
         return templates.TemplateResponse(
-            request, "login.html", {"next": target, "error": "Wrong password"}, status_code=401
+            request, "login.html", _login_context(request, target, "Wrong password"), status_code=401
         )
     access, refresh = auth.start_session(request.headers.get("user-agent", ""))
     response = RedirectResponse(target, 303)
@@ -251,7 +266,35 @@ def security_settings(request: Request):
         "password_set": auth.password_set(),
         "sessions": auth.session_count(),
         "api_keys": auth.list_api_keys(),
+        # Who this browser is on the tailnet (None when not opened through Tailscale).
+        "tailscale_login": request.headers.get("tailscale-user-login"),
+        "tailscale_logins": auth.trusted_logins(),
     }
+
+
+@router.post("/auth/tailscale/trust")
+def trust_tailscale_login(request: Request):
+    """Trusts the Tailscale account this request comes from. Only your own
+    current account can be added, so this can't lock you out."""
+    login = request.headers.get("tailscale-user-login")
+    if not login:
+        raise HTTPException(400, "Open Bragi through its Tailscale address to add your account")
+    try:
+        auth.trust_login(login)
+    except auth.PasswordError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"tailscale_logins": auth.trusted_logins()}
+
+
+class TailscaleLogin(BaseModel):
+    login: str = Field(max_length=200)
+
+
+@router.post("/auth/tailscale/untrust")
+def untrust_tailscale_login(body: TailscaleLogin):
+    if not auth.untrust_login(body.login):
+        raise HTTPException(404, "That account isn't trusted")
+    return {"tailscale_logins": auth.trusted_logins()}
 
 
 class PasswordChange(BaseModel):
