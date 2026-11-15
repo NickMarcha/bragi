@@ -12,7 +12,8 @@ namespace Bragi.Client.Setup;
 /// <summary>What the window starts filled in with.</summary>
 /// <remarks><c>AlreadySetUp</c> words the window as changing a working link rather than making one.</remarks>
 public sealed record SetupDefaults(
-    string Server, string PeerName, string PeerIp, string ApiKey, IReadOnlyList<string> Warnings, bool AlreadySetUp = false);
+    string Server, string PeerName, string PeerIp, string ApiKey, IReadOnlyList<string> Warnings, bool AlreadySetUp = false,
+    bool VbanLink = false);
 
 /// <summary>
 /// "Connect to Bragi...": the four things only the user knows or can confirm.
@@ -53,9 +54,13 @@ public sealed class SetupWindow : Window
         form.Children.Add(new TextBlock { Text = heading, FontSize = 22, FontWeight = FontWeight.SemiBold });
         form.Children.Add(new TextBlock
         {
-            Text = defaults.AlreadySetUp
-                ? "This computer is already linked to Bragi. Change the server, name or address here; the audio link restarts with the new settings. Keeping the same name keeps the same ports."
-                : "Registers this computer as a peer, then sets up and starts its audio link.",
+            Text = (defaults.AlreadySetUp, defaults.VbanLink) switch
+            {
+                (true, false) => "This computer is already linked to Bragi. Change the server, name or address here; the audio link restarts with the new settings. Keeping the same name keeps the same ports.",
+                (false, false) => "Registers this computer as a peer, then sets up and starts its audio link.",
+                (true, true) => "This computer is already linked to Bragi. Change the server, name or address here. Keeping the same name keeps the same VBAN stream names.",
+                (false, true) => "Registers this computer as a VBAN peer. Voicemeeter carries the audio: the tray menu shows the stream names to set it to.",
+            },
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         });

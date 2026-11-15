@@ -1,3 +1,4 @@
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -31,7 +32,10 @@ public partial class App : Application
             _statusService.StatusChanged += snapshot => _presenceClient?.SetEnabled(snapshot.State == TrayState.Enabled);
             StartConfigured();
             _ = UpdateService.CheckSilentlyAsync();
-            _ = PatchedLibrocInstaller.EnsureInstalledAsync(new RocLinkController());
+            if (!OperatingSystem.IsWindows())
+            {
+                _ = PatchedLibrocInstaller.EnsureInstalledAsync(new RocLinkController());
+            }
 
             // First run: nothing to link to yet, so ask.
             if (!RocLinkConfig.IsInstalled())

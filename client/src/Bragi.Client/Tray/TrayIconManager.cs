@@ -78,12 +78,23 @@ public sealed class TrayIconManager : IDisposable
             }
         };
 
-        var menu = new NativeMenu
+        var menu = new NativeMenu { _statusItem, new NativeMenuItemSeparator() };
+        if (OperatingSystem.IsWindows())
         {
-            _statusItem,
-            new NativeMenuItemSeparator(),
-            _toggleItem,
-            _restartItem,
+            // No link of our own to switch: Voicemeeter carries the audio.
+            // Show what to set it to instead.
+            foreach (var line in VbanMenuLines(RocLinkConfig.TryLoad()))
+            {
+                menu.Add(new NativeMenuItem { Header = line, IsEnabled = false });
+            }
+        }
+        else
+        {
+            menu.Add(_toggleItem);
+            menu.Add(_restartItem);
+        }
+        foreach (var item in new NativeMenuItemBase[]
+        {
             new NativeMenuItemSeparator(),
             _volumeMenu.Item,
             _volumeMenu.WebUiItem,
@@ -93,7 +104,10 @@ public sealed class TrayIconManager : IDisposable
             _autostartItem,
             new NativeMenuItemSeparator(),
             quitItem,
-        };
+        })
+        {
+            menu.Add(item);
+        }
 
         _trayIcon = new TrayIcon
         {
@@ -111,6 +125,15 @@ public sealed class TrayIconManager : IDisposable
         // Render whatever the service's initial (pre-first-poll) state is immediately.
         Render(_statusService.Current);
     }
+
+    /// <summary>The Voicemeeter VBAN settings this peer needs, for the Windows menu.</summary>
+    public static string[] VbanMenuLines(RocLinkConfig? config) =>
+        config?.VbanStreamSend is null || config.VbanStreamReceive is null
+            ? []
+            : [
+                $"VBAN in: {config.VbanStreamSend} from {config.BragiHostIp}:{config.VbanPort}",
+                $"VBAN out: {config.VbanStreamReceive} to {config.BragiHostIp}:{config.VbanPort}",
+            ];
 
     public static string SetupMenuLabel(bool alreadySetUp) =>
         alreadySetUp ? "Change Bragi connection..." : "Connect to Bragi...";

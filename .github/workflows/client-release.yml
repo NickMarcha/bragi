@@ -88,3 +88,62 @@ jobs:
             --releaseName "Bragi Client ${{ steps.version.outputs.version }}" \
             --tag ${{ github.ref_name }} \
             --token ${{ secrets.GITHUB_TOKEN }}
+
+  # The Windows build joins the release the Linux job just published, on
+  # its own Velopack channel ("win", see Tray/UpdateService.cs).
+  windows:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#client-v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish
+        shell: bash
+        run: |
+          dotnet publish client/src/Bragi.Client/Bragi.Client.csproj \
+            -c Release -r win-x64 --self-contained true \
+            -p:Version=${{ steps.version.outputs.version }} \
+            -p:BragiRepoUrl=${{ github.server_url }}/${{ github.repository }} \
+            -o publish
+
+      - name: Install vpk
+        run: dotnet tool install -g vpk
+
+      - name: Download previous release (for delta packages)
+        shell: bash
+        run: vpk download github --repoUrl ${{ github.server_url }}/${{ github.repository }} --channel win || true
+
+      - name: Pack
+        shell: bash
+        run: |
+          vpk pack \
+            --packId BragiClient \
+            --packVersion ${{ steps.version.outputs.version }} \
+            --packDir publish \
+            --packTitle "Bragi Client" \
+            --packAuthors ${{ github.repository_owner }} \
+            --mainExe Bragi.Client.exe \
+            --icon client/src/Bragi.Client/Assets/bragi.ico \
+            --shortcuts StartMenuRoot \
+            --channel win
+
+      - name: Upload to the release
+        shell: bash
+        run: |
+          vpk upload github \
+            --repoUrl ${{ github.server_url }}/${{ github.repository }} \
+            --channel win \
+            --merge \
+            --publish \
+            --releaseName "Bragi Client ${{ steps.version.outputs.version }}" \
+            --tag ${{ github.ref_name }} \
+            --token ${{ secrets.GITHUB_TOKEN }}

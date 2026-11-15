@@ -1,11 +1,12 @@
 using System;
 using System.IO;
 using System.Reflection;
+using Microsoft.Win32;
 
 namespace Bragi.Client.Tray;
 
 /// <summary>
-/// Manages the ~/.config/autostart/bragi-client.desktop entry (freedesktop
+/// On Windows, a value under HKCU\...\CurrentVersion\Run. On Linux, manages the ~/.config/autostart/bragi-client.desktop entry (freedesktop
 /// XDG autostart spec) so "Start at Login" can be a plain checkable tray
 /// menu item instead of something the user has to set up by hand per
 /// machine. Resolves the Exec= line from the running process itself so it
@@ -20,10 +21,36 @@ public static class AutostartService
 
     private static readonly string DesktopFilePath = Path.Combine(AutostartDir, "bragi-client.desktop");
 
-    public static bool IsEnabled() => File.Exists(DesktopFilePath);
+    // Windows: the per-user Run key, no admin rights needed.
+    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string RunValueName = "BragiClient";
+
+    public static bool IsEnabled()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath);
+            return key?.GetValue(RunValueName) is string;
+        }
+        return File.Exists(DesktopFilePath);
+    }
 
     public static void SetEnabled(bool enabled)
     {
+        if (OperatingSystem.IsWindows())
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
+            if (enabled)
+            {
+                key.SetValue(RunValueName, $"\"{WindowsLaunchPath(Environment.ProcessPath!)}\"");
+            }
+            else
+            {
+                key.DeleteValue(RunValueName, throwOnMissingValue: false);
+            }
+            return;
+        }
+
         if (enabled)
         {
             Directory.CreateDirectory(AutostartDir);
@@ -33,6 +60,26 @@ public static class AutostartService
         {
             File.Delete(DesktopFilePath);
         }
+    }
+
+    /// <summary>
+    /// A Velopack install runs from &lt;root&gt;\current\, which an update
+    /// replaces. The stub in &lt;root&gt; always starts the current version, so
+    /// the Run entry points there when it exists.
+    /// </summary>
+    public static string WindowsLaunchPath(string processPath, Func<string, bool>? fileExists = null)
+    {
+        fileExists ??= File.Exists;
+        var dir = Path.GetDirectoryName(processPath);
+        if (dir is not null && string.Equals(Path.GetFileName(dir), "current", StringComparison.OrdinalIgnoreCase))
+        {
+            var stub = Path.Combine(Path.GetDirectoryName(dir)!, Path.GetFileName(processPath));
+            if (fileExists(stub))
+            {
+                return stub;
+            }
+        }
+        return processPath;
     }
 
     private static string BuildDesktopFileContent()

@@ -75,3 +75,35 @@ def test_it_stays_reachable_once_the_dashboard_has_a_password(session):
     auth.set_password("hunter22")
 
     assert register().status_code == 200
+
+
+def register_vban(name="desktop", ip="100.64.0.40", client=None):
+    return (client or TestClient(app)).post("/api/peers/register-desktop",
+                                            json={"name": name, "tailscale_ip": ip, "protocol": "vban"})
+
+
+def test_the_windows_client_claims_a_vban_peer_and_keeps_its_streams(session):
+    response = register_vban()
+
+    assert response.status_code == 200
+    assert response.json() == {"name": "desktop", "vban": {
+        "port": 6980, "stream_send": "BragiMic", "stream_receive": "DesktopAudio"}}
+    desktop = peer("desktop")
+    assert (desktop.protocol, desktop.client_kind, desktop.tailscale_ip) == ("vban", "desktop", "100.64.0.40")
+    assert 'vban.ip = "100.64.0.40"' in peers_module.MANAGED_CONF_FILE.read_text()
+
+
+def test_a_new_windows_client_gets_a_vban_peer_with_the_dashboard_defaults(session):
+    response = register_vban("sage", "100.64.0.41")
+
+    assert response.status_code == 200
+    assert response.json()["vban"] == {"port": 6980, "stream_send": "BragiMic", "stream_receive": "SageAudio"}
+    assert peer("sage").protocol == "vban"
+
+
+def test_a_windows_client_cannot_take_a_roc_or_phone_name(session):
+    peers_module.register_android_peer("fairphone", "100.64.0.20", "microphone")
+    register("laptop")
+
+    assert register_vban("fairphone").status_code == 409
+    assert register_vban("laptop").status_code == 409

@@ -466,6 +466,34 @@ def register_desktop_peer(name: str, tailscale_ip: str) -> Peer:
         return peer
 
 
+def register_vban_desktop_peer(name: str, tailscale_ip: str) -> Peer:
+    """"Connect to Bragi" from the Windows client, whose audio goes over VBAN
+    (Voicemeeter's protocol). Same rules as register_desktop_peer: repeatable,
+    claims a VBAN peer added from the dashboard under that name (keeping its
+    stream names, which Voicemeeter is already set to), and returns a peer
+    configured by hand untouched."""
+    with _lock:
+        peers = load_peers()
+        peer = next((p for p in peers if p.name == name), None)
+        if peer is not None and (peer.protocol != "vban" or peer.client_kind not in (None, "desktop")):
+            raise ValueError(f"'{name}' already belongs to another client")
+        if peer is not None and not peer.managed:
+            return peer
+        if peer is None:
+            # The dashboard's defaults: the Pi's mic goes out as BragiMic and
+            # this computer's audio comes back as <Name>Audio.
+            stream_receive = f"{name.replace('-', '').capitalize()[:11]}Audio"
+            if any(p.protocol == "vban" and p.stream_receive == stream_receive for p in peers):
+                raise ValueError(f"another VBAN peer already sends a stream named '{stream_receive}'")
+            peer = _vban_peer(name, tailscale_ip, "BragiMic", stream_receive)
+            peers.append(peer)
+        peer.client_kind = "desktop"
+        peer.tailscale_ip = tailscale_ip
+        save_peers(peers)
+        _regenerate_managed_conf(peers)
+        return peer
+
+
 def set_android_streams(name: str, send_enabled: bool, receive_enabled: bool) -> Peer:
     with _lock:
         peers = load_peers()
