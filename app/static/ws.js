@@ -84,6 +84,7 @@
       if (msg.type === "state") applyState(msg);
       else if (msg.type === "control") applyControl(msg);
       else if (msg.type === "headset") applyHeadset(msg);
+      else if (msg.type === "headset_controls") applyHeadsetControls(msg.key, msg.controls);
       else if (msg.type === "peer_presence") applyPeerPresence(msg);
       else if (msg.type === "peer_streams") applyPeerStreams(msg);
       else if (msg.type === "peer_status") applyPeerStatus(msg);
@@ -404,6 +405,126 @@
     if (toggleBtn) toggleBtn.title = msg.enabled ? "Disable headset" : "Enable headset";
     if (msg.playback) applyDirection(card, "playback", msg.playback);
     if (msg.capture) applyDirection(card, "capture", msg.capture);
+    if ("controls" in msg) applyHeadsetControls(msg.key, msg.controls);
+  }
+
+  // --- HyperX controls (app/headset_hid.py, _headset_controls.html) ---
+  // Battery in the card's meta line, the rest in the card's own dialog.
+  // controls is null for a headset without one of these dongles, which
+  // hides all of it.
+
+  // Same wording as _headset_controls.html's battery_text and battery_short.
+  function batteryText(c) {
+    if (!c) return "";
+    if (c.headset_on === false) return "Headset off";
+    if (c.battery == null) return "";
+    const suffix = { charging: ", charging", full: ", charged" }[c.charging] || "";
+    return `Battery ${c.battery}%${suffix}`;
+  }
+
+  function batteryShort(c) {
+    if (!c) return "";
+    if (c.headset_on === false) return "Off";
+    return c.battery == null ? "" : `${c.battery}%`;
+  }
+
+  function formatGain(gain) {
+    return gain > 0 ? `+${gain}` : String(gain);
+  }
+
+  function applyHeadsetControls(key, c) {
+    const card = document.querySelector(`[data-headset="${cssEscape(key)}"]`);
+    if (!card) return;
+    const text = batteryText(c);
+    const short = batteryShort(c);
+    const battery = card.querySelector('[data-hid="battery"]');
+    if (battery) {
+      battery.hidden = !short;
+      battery.textContent = short;
+      battery.classList.toggle("charging", !!c && c.charging === "charging");
+      card.querySelector('[data-hid="meta-default"]').hidden = !!short;
+      battery.closest(".device-meta").title = text || "USB headset";
+    }
+    const openBtn = card.querySelector("[data-hid-open]");
+    if (openBtn) openBtn.hidden = !c;
+
+    const dialog = card.querySelector("[data-hid-dialog]");
+    if (!dialog || !c) {
+      if (dialog && dialog.open) dialog.close();
+      return;
+    }
+    const off = c.headset_on === false;
+    dialog.querySelector('[data-hid="status"]').textContent = text || "Waiting for the headset";
+
+    const monitor = dialog.querySelector('[data-hid-action="set_mic_monitor"]');
+    monitor.disabled = off;
+    monitor.indeterminate = c.mic_monitor == null;
+    monitor.checked = !!c.mic_monitor;
+
+    const autoOff = dialog.querySelector('[data-hid-action="set_auto_off"]');
+    autoOff.disabled = off;
+    let wanted = "";
+    if (c.auto_off_known) wanted = c.auto_off_minutes == null ? "never" : String(c.auto_off_minutes);
+    if (wanted && !autoOff.querySelector(`option[value="${wanted}"]`)) {
+      // A value set elsewhere that isn't one of Bragi's choices.
+      autoOff.add(new Option(`${wanted} min idle`, wanted));
+    }
+    autoOff.value = wanted;
+
+    dialog.querySelector(".hid-eq").disabled = off;
+    dialog.querySelector("[data-hid-flat]").disabled = off;
+    dialog.querySelectorAll("[data-eq-band]").forEach((input) => {
+      if (input.dataset.dragging === "1") return;
+      const gain = c.eq ? c.eq[Number(input.dataset.eqBand)] : 0;
+      input.value = gain;
+      input.closest(".hid-eq-band").querySelector("[data-eq-readout]").textContent = formatGain(gain);
+    });
+    dialog.querySelector('[data-hid="eq-note"]').textContent = c.eq
+      ? "The headset can't report its EQ. This is what Bragi last set."
+      : "The headset can't report its EQ, and Bragi hasn't set one yet, so these sliders don't show what it's using now.";
+  }
+
+  function wireHeadsetControls(root) {
+    root.querySelectorAll("[data-hid-dialog]").forEach((dialog) => {
+      const key = dialog.dataset.hidDialog;
+      const card = dialog.closest(".device");
+      const openBtn = card && card.querySelector("[data-hid-open]");
+      if (openBtn) openBtn.addEventListener("click", () => dialog.showModal());
+      dialog.querySelector("[data-hid-close]").addEventListener("click", () => dialog.close());
+
+      const monitor = dialog.querySelector('[data-hid-action="set_mic_monitor"]');
+      monitor.addEventListener("change", () => {
+        send({ action: "set_mic_monitor", target: "headset", key, value: monitor.checked });
+      });
+
+      const autoOff = dialog.querySelector('[data-hid-action="set_auto_off"]');
+      autoOff.addEventListener("change", () => {
+        if (!autoOff.value) return;
+        send({ action: "set_auto_off", target: "headset", key,
+          value: autoOff.value === "never" ? null : Number(autoOff.value) });
+      });
+
+      const bands = Array.from(dialog.querySelectorAll("[data-eq-band]"));
+      // The whole EQ goes out once a slider is let go: every change is ten
+      // reports to the dongle, so not on every step of a drag.
+      const sendEq = () => send({ action: "set_eq", target: "headset", key,
+        value: bands.map((input) => Number(input.value)) });
+      bands.forEach((input) => {
+        const readout = input.closest(".hid-eq-band").querySelector("[data-eq-readout]");
+        input.addEventListener("input", () => {
+          input.dataset.dragging = "1";
+          readout.textContent = formatGain(Number(input.value));
+        });
+        input.addEventListener("change", () => {
+          input.dataset.dragging = "0";
+          sendEq();
+        });
+      });
+      dialog.querySelector("[data-hid-flat]").addEventListener("click", () => {
+        bands.forEach((input) => { input.value = 0; });
+        sendEq();
+      });
+    });
   }
 
   function applyCard(target, key, directions) {
@@ -705,6 +826,7 @@
   function wireControls(root) {
     wireFaders(root);
     wirePads(root);
+    wireHeadsetControls(root);
 
     root.querySelectorAll('button[data-action="toggle-stream"]').forEach((el) => {
       el.addEventListener("click", () => {

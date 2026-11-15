@@ -1,5 +1,6 @@
 {% import "_fader.html" as f %}
 {% import "_icons.html" as icons %}
+{% import "_headset_controls.html" as hidc with context %}
 {% if not view.enabled %}
   {% set hs_status = "disabled" %}
 {% elif view.playback.connected and view.capture.connected %}
@@ -17,7 +18,8 @@
   </div>
   <div class="device-bar">
     <button class="icon-btn grip" type="button" title="Drag to reorder">{{ icons.grip() }}</button>
-    <p class="device-meta">USB headset</p>
+    {{ hidc.meta(view) }}
+    {{ hidc.button(view) }}
     <button class="icon-btn enable-toggle-btn"
             data-target="headset" data-key="{{ view.key }}" data-action="toggle_enabled"
             title="{{ 'Enable headset' if not view.enabled else 'Disable headset' }}">
@@ -52,4 +54,5 @@
       </button>
     </div>
   </div>
+  {{ hidc.dialog(view) }}
 </article>

@@ -1,0 +1,6 @@
+# HyperX Cloud III S Wireless dongle: let the input group open its hidraw
+# node, so Bragi (in that group through docker-compose.yml's group_add) can
+# read the battery and set mic monitor, auto-off and EQ. 06be and 02cc are
+# the two hardware revisions. See docs/deployment.md.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="03f0", ATTRS{idProduct}=="06be", MODE="0660", GROUP="input"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="03f0", ATTRS{idProduct}=="02cc", MODE="0660", GROUP="input"

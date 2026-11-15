@@ -20,6 +20,7 @@ from . import api
 from . import audio_reset
 from . import auth
 from . import microphone
+from . import headset_hid
 from . import knob_watcher
 from . import level_meter
 from . import peer_control
@@ -40,6 +41,7 @@ async def lifespan(app: FastAPI):
     tasks = [
         asyncio.create_task(watcher.watch(ws.on_node_changed)),
         asyncio.create_task(knob_watcher.watch(ws.broadcast_headset_volume_change)),
+        asyncio.create_task(headset_hid.supervise(ws.broadcast_headset_controls)),
         asyncio.create_task(level_meter.supervise()),
         asyncio.create_task(microphone.supervise()),
     ]
@@ -59,6 +61,8 @@ app.include_router(api.router)
 _app_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=str(_app_dir / "static")), name="static")
 templates = Jinja2Templates(directory=str(_app_dir / "templates"))
+# The EQ bands and auto-off choices, for _headset_controls.html.
+templates.env.globals["hid"] = headset_hid
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -19,9 +19,23 @@ services:
     # permission mismatch would give).
     devices:
       - "/dev/input:/dev/input"
+    # The HyperX Cloud III S Wireless controls (app/headset_hid.py) open the
+    # dongle's hidraw node. Its number follows plug order, and `devices:`
+    # copies only the nodes present when the container starts, so a replug
+    # (or starting without the dongle) would leave it unreachable until a
+    # recreate. Instead the host's /dev is mounted read-only below and this
+    # rule lets the container open any hidraw node (major from
+    # `grep hidraw /proc/devices`; host/systemd/install.sh writes it to
+    # .env). The node's own mode still applies: only nodes the input group
+    # can open (host/udev/) are reachable, and the read-only mount still
+    # allows writing to a device node.
+    device_cgroup_rules:
+      - "c ${HIDRAW_MAJOR:-241}:* rwm"
     environment:
       XDG_RUNTIME_DIR: /run/user/${BRAGI_UID:-1000}
+      BRAGI_HOST_DEV: /host/dev
     volumes:
+      - /dev:/host/dev:ro
       # PipeWire's user socket + WirePlumber state - lets pw-dump/pw-cli/wpctl
       # inside the container talk to the host's real (bare-metal) PipeWire.
       - /run/user/${BRAGI_UID:-1000}:/run/user/${BRAGI_UID:-1000}
