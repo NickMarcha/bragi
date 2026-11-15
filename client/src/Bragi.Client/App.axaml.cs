@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -60,10 +61,13 @@ public partial class App : Application
     {
         var config = RocLinkConfig.TryLoad();
         _presenceClient = new PeerPresenceClient(config?.PeerName, config?.BragiWsBaseUrl);
-        // Controllers on the Bragi host, played here through a virtual one.
-        // Linux only for now; Windows needs ViGEm.
-        _gamepads = new GamepadService(config?.PeerName,
-            OperatingSystem.IsLinux() ? () => new UinputGamepad() : null);
+        // Controllers on the Bragi host, played here. Linux recreates them
+        // exactly with uhid, or falls back to a uinput Xbox 360 pad; Windows
+        // can't play them yet.
+        _gamepads = OperatingSystem.IsLinux()
+            ? new GamepadService(config?.PeerName, () => new UinputGamepad(),
+                File.Exists("/dev/uhid") ? d => new UhidDevice(d) : null)
+            : new GamepadService(config?.PeerName, null);
         _presenceClient.MessageReceived += _gamepads.OnMessage;
         _presenceClient.Disconnected += _gamepads.OnDisconnected;
         _gamepads.Send = _presenceClient.SendAsync;

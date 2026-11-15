@@ -101,10 +101,15 @@ def _desktop_message(name: str, raw: str) -> None:
         return
     if not isinstance(message, dict) or gamepad.hub is None:
         return
-    if message.get('type') == 'gamepad_claim':
+    kind = message.get('type')
+    if kind == 'gamepad_hello' and isinstance(message.get('modes'), list):
+        gamepad.hub.hello(name, message['modes'])
+    elif kind == 'gamepad_claim':
         gamepad.hub.set_target(name)
-    elif message.get('type') == 'gamepad_release':
+    elif kind == 'gamepad_release':
         gamepad.hub.release(name)
+    elif kind in ('hid_output', 'hid_get_report', 'hid_set_report'):
+        gamepad.hub.hid_request(name, message)
 
 
 def remove(name: str) -> None:
@@ -180,6 +185,8 @@ async def endpoint(socket: WebSocket, name: str) -> None:
             statuses.pop(name, None)
             seen_addresses.pop(name, None)
             peer_presence.connected_peers.discard(name)
+            if gamepad.hub is not None:
+                gamepad.hub.forget(name)
             ws.manager.broadcast_nowait({'type': 'peer_presence', 'name': name, 'connected': False})
         for task in (receive_task, queue_task):
             if task is not None:

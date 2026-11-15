@@ -129,22 +129,36 @@ window closes that connection. An idle tray has no volume connection.
 
 A controller paired with the Bragi host (over Bluetooth, see
 `app/gamepad.py`) can be played on any computer running this app. "Use
-<controller> here" in the tray menu claims it for this computer; on Linux
-the app then creates a virtual Xbox 360 controller with `/dev/uinput`
-(`Gamepad/UinputGamepad.cs`) and feeds it what the host sends. Choosing
+<controller> here" in the tray menu claims it for this computer. Choosing
 it again gives it back; claiming it on another computer moves it there.
 The item only shows once the host has a controller.
 
-The virtual controller needs write access to `/dev/uinput`. Steam's udev
-rules (`60-steam-input.rules`, in the `steam` package) give it to the
-logged-in user; without them the menu item says it can't open uinput.
-Windows shows the item but can't play the controller yet (that needs
-ViGEm).
+**Linux: the controller itself.** The host sends the controller's own HID
+report descriptor, ids and name, and the app recreates it with `/dev/uhid`
+(`Gamepad/UhidDevice.cs`). The kernel binds the same driver as on the host,
+so every button arrives, back paddles and Share included, and so would a
+DualSense's motion sensors or touchpad. Raw input reports follow; output
+reports (rumble, LEDs) and the driver's GET/SET_REPORT requests go back
+to the host, which carries them out on the real controller.
+
+**Fallback: an Xbox 360 controller.** Where `/dev/uhid` isn't there, the
+app creates a virtual Xbox 360 pad with `/dev/uinput`
+(`Gamepad/UinputGamepad.cs`) and the host sends its state in the Xbox
+layout. Buttons an Xbox 360 pad doesn't have are lost.
+
+Both need write access to the device node. Steam's udev rules
+(`60-steam-input.rules`) give `/dev/uinput` to the logged-in user;
+`/dev/uhid` comes with Sunshine's or Apollo's rules, or a rule of your own
+(`KERNEL=="uhid", TAG+="uaccess"`). Without access the menu item says so.
+Windows shows the item but can't play the controller yet.
 
 Everything goes over the same `/ws/peer/{PEER_NAME}` socket as the
-presence heartbeat below: the host sends `gamepads` (which controllers,
-which computer has them), `gamepad` (one controller's state, Xbox layout)
-and `gamepad_detach`; the app sends `gamepad_claim` and `gamepad_release`.
+presence heartbeat below. The app sends `gamepad_hello` with the modes it
+can play (`hid`, `xbox`) after each connect, then `gamepad_claim` /
+`gamepad_release`, and in `hid` mode `hid_output`, `hid_get_report` and
+`hid_set_report`. The host sends `gamepads` (which controllers, which
+computer has them), `hid_create` / `hid_input` or `gamepad` (the Xbox
+layout), `hid_report_reply` and `gamepad_detach`.
 
 ## Dashboard presence heartbeat
 

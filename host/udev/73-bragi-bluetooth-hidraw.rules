@@ -1,0 +1,7 @@
+# Bluetooth HID devices (bus 0005): let the input group open their hidraw
+# node, so Bragi can pass a paired game controller through to a computer
+# exactly as it is (app/gamepad.py, HID passthrough): its own report
+# descriptor, raw input reports, and rumble/LED output back. The input group
+# can already read these devices' evdev nodes, so this widens nothing new.
+# See docs/deployment.md.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", KERNELS=="0005:*", MODE="0660", GROUP="input"

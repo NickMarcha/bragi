@@ -97,6 +97,96 @@ public class GamepadTests
             TrayIconManager.GamepadMenu(new GamepadStatus(["a", "b"], "deck", true), true, "no uinput"));
     }
 
+    private sealed class FakeHid : IHidDevice
+    {
+        public HidDescription? Description { get; init; }
+        public List<byte[]> Inputs { get; } = [];
+        public List<(uint, ushort, byte[]?)> Replies { get; } = [];
+        public bool Disposed { get; private set; }
+        public event Action<byte[], byte>? Output;
+        public event Action<uint, byte, byte>? GetReport;
+        public event Action<uint, byte, byte[]>? SetReport;
+        public void Input(byte[] report) => Inputs.Add(report);
+        public void ReplyGetReport(uint request, ushort error, byte[] data) => Replies.Add((request, error, data));
+        public void ReplySetReport(uint request, ushort error) => Replies.Add((request, error, null));
+        public void RaiseOutput(byte[] data) => Output?.Invoke(data, 1);
+        public void RaiseGet(uint request) => GetReport?.Invoke(request, 5, 0);
+        public void RaiseSet(uint request) => SetReport?.Invoke(request, 0, [5, 1]);
+        public void Dispose() => Disposed = true;
+    }
+
+    [Fact]
+    public async Task A_controller_is_recreated_from_its_description_and_its_requests_go_back_to_the_host()
+    {
+        FakeHid? made = null;
+        var sent = new List<string>();
+        var service = new GamepadService("deck", () => new FakePad(), d => made = new FakeHid { Description = d })
+        {
+            Send = m => { sent.Add(JsonSerializer.Serialize(m)); return Task.FromResult(true); },
+        };
+        service.OnMessage(Json("""{"type":"gamepads","target":"deck","controllers":[{"id":"p1","name":"8BitDo"}]}"""));
+        service.OnMessage(Json("""{"type":"hid_create","id":"p1","name":"8BitDo Ultimate 3mode Xbox","uniq":"e4:17","bus":5,"vendor":11720,"product":36891,"version":1,"country":0,"descriptor":"BQEJBQ=="}"""));
+        service.OnMessage(Json("""{"type":"hid_input","id":"p1","data":"AwgB"}"""));
+        made!.RaiseOutput([3, 0xff]);
+        made.RaiseGet(7);
+        made.RaiseSet(8);
+        service.OnMessage(Json("""{"type":"hid_report_reply","id":"p1","kind":"hid_get_report","req":7,"err":0,"data":"BQE="}"""));
+        service.OnMessage(Json("""{"type":"hid_report_reply","id":"p1","kind":"hid_set_report","req":8,"err":5,"data":""}"""));
+        service.OnMessage(Json("""{"type":"gamepad_detach","id":"p1"}"""));
+
+        // Records compare arrays by reference, so the descriptor is checked on its own.
+        Assert.Equal(new HidDescription("8BitDo Ultimate 3mode Xbox", "e4:17", 5, 0x2DC8, 0x901B, 1, 0, made.Description!.Descriptor),
+            made.Description);
+        Assert.Equal([5, 1, 9, 5], made.Description.Descriptor);
+        Assert.Equal([3, 8, 1], Assert.Single(made.Inputs));
+        Assert.Equal([
+            """{"type":"gamepad_hello","modes":["hid","xbox"]}""",
+            """{"type":"hid_output","id":"p1","rtype":1,"data":"A/8="}""",
+            """{"type":"hid_get_report","id":"p1","req":7,"rnum":5,"rtype":0}""",
+            """{"type":"hid_set_report","id":"p1","req":8,"rtype":0,"data":"BQE="}""",
+        ], sent);
+        Assert.Equal((7u, (ushort)0), (made.Replies[0].Item1, made.Replies[0].Item2));
+        Assert.Equal([5, 1], made.Replies[0].Item3);
+        Assert.Equal((8u, (ushort)5, (byte[]?)null), made.Replies[1]);
+        Assert.True(made.Disposed);
+    }
+
+    [Fact]
+    public void Uhid_events_have_the_kernels_layout()
+    {
+        var create = UhidDevice.Create2(new HidDescription("Pad", "ab", 5, 0x2DC8, 0x901B, 1, 0, [5, 1]));
+        Assert.Equal(UhidDevice.EventSize, create.Length);
+        Assert.Equal(11u, BitConverter.ToUInt32(create, 0));                  // UHID_CREATE2
+        Assert.Equal("Pad", Encoding.ASCII.GetString(create, 4, 3));
+        Assert.Equal("ab", Encoding.ASCII.GetString(create, 196, 2));        // uniq
+        Assert.Equal((ushort)2, BitConverter.ToUInt16(create, 260));         // rd_size
+        Assert.Equal((ushort)5, BitConverter.ToUInt16(create, 262));         // bus
+        Assert.Equal((0x2DC8u, 0x901Bu, 1u), (BitConverter.ToUInt32(create, 264), BitConverter.ToUInt32(create, 268), BitConverter.ToUInt32(create, 272)));
+        Assert.Equal([5, 1], create[280..282]);
+
+        Assert.Equal([12, 0, 0, 0, 2, 0, 3, 8], UhidDevice.Input2([3, 8]));
+        Assert.Equal([10, 0, 0, 0, 7, 0, 0, 0, 0, 0, 1, 0, 9], UhidDevice.GetReportReply(7, 0, [9]));
+        Assert.Equal([14, 0, 0, 0, 8, 0, 0, 0, 5, 0], UhidDevice.SetReportReply(8, 5));
+
+        var output = new byte[UhidDevice.EventSize];
+        BitConverter.GetBytes(6u).CopyTo(output, 0);                          // UHID_OUTPUT
+        output[4] = 3; output[5] = 0xff;
+        BitConverter.GetBytes((ushort)2).CopyTo(output, 4100);
+        output[4102] = 1;
+        byte[]? got = null; byte gotType = 9;
+        UhidDevice.Dispatch(output, (d, t) => { got = d; gotType = t; }, null, null);
+        Assert.Equal([3, 0xff], got);
+        Assert.Equal(1, gotType);
+
+        var get = new byte[UhidDevice.EventSize];
+        BitConverter.GetBytes(9u).CopyTo(get, 0);                             // UHID_GET_REPORT
+        BitConverter.GetBytes(42u).CopyTo(get, 4);
+        get[8] = 5; get[9] = 0;
+        (uint, byte, byte) asked = default;
+        UhidDevice.Dispatch(get, null, (r, n, t) => asked = (r, n, t), null);
+        Assert.Equal((42u, (byte)5, (byte)0), asked);
+    }
+
     [Fact]
     public async Task The_peer_socket_delivers_messages_and_sends_a_claim()
     {
@@ -114,8 +204,13 @@ public class GamepadTests
                 controllers = new[] { new { id = "p1", name = new string('x', 5000) } } });
             await socket.SendAsync(Encoding.UTF8.GetBytes(status), WebSocketMessageType.Text, true, default);
             var buffer = new byte[256];
-            var result = await socket.ReceiveAsync(buffer, default);
-            received.TrySetResult(Encoding.UTF8.GetString(buffer, 0, result.Count));
+            var messages = new List<string>();
+            for (var i = 0; i < 2; i++)
+            {
+                var result = await socket.ReceiveAsync(buffer, default);
+                messages.Add(Encoding.UTF8.GetString(buffer, 0, result.Count));
+            }
+            received.TrySetResult(string.Join("|", messages));
             await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "", default);
         });
         await app.StartAsync();
@@ -132,6 +227,8 @@ public class GamepadTests
         var seen = await status.Task.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(5000, Assert.Single(seen.Controllers).Length);
         Assert.True(await service.ClaimAsync());
-        Assert.Equal("""{"type":"gamepad_claim"}""", await received.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        // The hello comes first, on the first status after connecting.
+        Assert.Equal("""{"type":"gamepad_hello","modes":["xbox"]}|{"type":"gamepad_claim"}""",
+            await received.Task.WaitAsync(TimeSpan.FromSeconds(10)));
     }
 }
