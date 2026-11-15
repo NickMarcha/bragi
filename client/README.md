@@ -125,6 +125,15 @@ WebSocket for live changes, reconnecting after a network interruption.
 Unavailable directions and disconnected controls are disabled. Closing the
 window closes that connection. An idle tray has no volume connection.
 
+## Keyboard & mouse
+
+When the Bragi host runs the KVM (the headless Deskflow server), the tray
+menu has a "Keyboard & mouse" submenu: one entry per computer that shares
+the desk's keyboard and mouse, the active one ticked. Choosing one gives
+it the keyboard and mouse. The host sends the state (`kvm`) on the peer
+socket at connect and on every change, and the app sends `kvm_switch`; a
+refused switch shows in the menu's title until the next change.
+
 ## Game controllers
 
 A controller paired with the Bragi host (over Bluetooth, see

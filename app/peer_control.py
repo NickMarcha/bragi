@@ -17,7 +17,7 @@ from dataclasses import asdict
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from . import gamepad, peer_presence, peers, ws
+from . import gamepad, kvm, peer_presence, peers, ws
 
 _connections: dict[str, dict[WebSocket, asyncio.Queue]] = {}
 # Sockets of Android clients; every other connection is a desktop tray app.
@@ -99,7 +99,12 @@ def _desktop_message(name: str, raw: str) -> None:
         message = json.loads(raw)
     except (ValueError, TypeError):
         return
-    if not isinstance(message, dict) or gamepad.hub is None:
+    if not isinstance(message, dict):
+        return
+    if message.get('type') == 'kvm_switch':
+        _kvm_switch(name, raw)
+        return
+    if gamepad.hub is None:
         return
     kind = message.get('type')
     if kind == 'gamepad_hello' and isinstance(message.get('modes'), list):
@@ -110,6 +115,28 @@ def _desktop_message(name: str, raw: str) -> None:
         gamepad.hub.release(name)
     elif kind in ('hid_output', 'hid_get_report', 'hid_set_report'):
         gamepad.hub.hid_request(name, message)
+
+
+def _kvm_switch(name: str, raw: str) -> None:
+    """A tray app's "Keyboard & mouse" menu: switch to a computer. The
+    answer comes back as the next "kvm" broadcast (or an error message)."""
+    try:
+        message = json.loads(raw)
+    except (ValueError, TypeError):
+        return
+    if not isinstance(message, dict) or message.get('type') != 'kvm_switch':
+        return
+    computer = message.get('computer')
+    if not isinstance(computer, str) or len(computer) > 64:
+        return
+
+    async def run() -> None:
+        try:
+            await asyncio.to_thread(kvm.switch, computer)
+        except kvm.KvmError as exc:
+            send(name, {'type': 'kvm_error', 'error': str(exc)})
+
+    asyncio.get_running_loop().create_task(run())
 
 
 def remove(name: str) -> None:
@@ -129,8 +156,11 @@ async def endpoint(socket: WebSocket, name: str) -> None:
     connections[socket] = queue
     if android:
         _android.add(socket)
-    elif gamepad.hub is not None:
-        queue.put_nowait(gamepad.hub.status())
+    else:
+        if gamepad.hub is not None:
+            queue.put_nowait(gamepad.hub.status())
+        # The tray's "Keyboard & mouse" menu starts from this.
+        queue.put_nowait({'type': 'kvm', **kvm.read_view()})
     peer_presence.connected_peers.add(name)
     if android and (seen := _tailnet_source(socket)):
         seen_addresses[name] = seen

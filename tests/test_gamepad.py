@@ -137,6 +137,7 @@ def test_a_tray_app_claims_and_releases_over_its_peer_socket(session):
     with TestClient(app).websocket_connect("/ws/peer/deck") as socket:
         assert socket.receive_json() == {"type": "gamepads", "target": None,
                                          "controllers": [{"id": "pad1", "name": "8BitDo"}]}
+        assert socket.receive_json()["type"] == "kvm"  # the tray's Keyboard & mouse menu
         socket.send_json({"type": "gamepad_claim"})
         state = socket.receive_json()
         assert (state["type"], state["id"], state["buttons"]) == ("gamepad", "pad1", [])
