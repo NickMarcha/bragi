@@ -1097,3 +1097,11 @@ dialog h2 {
   font-size: 18px;
   letter-spacing: 2px;
 }
+
+/* --- login page: passkey and password side by side --- */
+
+.login-card .login-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}

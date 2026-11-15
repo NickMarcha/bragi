@@ -7,29 +7,58 @@
   <link rel="icon" type="image/png" href="/static/favicon.png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
   <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/passkeys.js"></script>
 </head>
 <body class="login-page">
-  {% if password_set %}
-  <form class="login-card" method="post" action="/auth/login">
-    <span class="brand"><img src="/static/logo.png" alt="" />Bragi</span>
-    <label>Password
-      <input type="password" name="password" autocomplete="current-password" required autofocus />
-    </label>
-    <input type="hidden" name="next" value="{{ next }}" />
-    {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
-    <button type="submit" class="primary">Log in</button>
-    <p class="form-note">You stay logged in on this browser until you log out.</p>
-  </form>
-  {% else %}
   <div class="login-card">
     <span class="brand"><img src="/static/logo.png" alt="" />Bragi</span>
+    {% if passkeys %}
+    <button type="button" id="passkey-login" class="primary">Sign in with a passkey</button>
+    <p class="form-error" id="passkey-error" hidden></p>
+    {% endif %}
+    {% if password_set %}
+    <form method="post" action="/auth/login" class="login-form">
+      <label>Password
+        <input type="password" name="password" autocomplete="current-password" required {% if not passkeys %}autofocus{% endif %} />
+      </label>
+      <input type="hidden" name="next" value="{{ next }}" />
+      {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+      <button type="submit" {% if not passkeys %}class="primary"{% endif %}>Log in with the password</button>
+    </form>
+    {% endif %}
+    {% if not passkeys and not password_set %}
     <p>This Bragi only lets in trusted Tailscale accounts.</p>
+    {% endif %}
     {% if tailscale_login %}
-    <p class="form-note">You're signed in to Tailscale as {{ tailscale_login }}, which isn't one of them.</p>
+    <p class="form-note">You're signed in to Tailscale as {{ tailscale_login }}, which isn't trusted here.</p>
     {% else %}
-    <p class="form-note">Open it through its Tailscale address, signed in with a trusted account.</p>
+    <p class="form-note">A trusted Tailscale account gets in without signing in: open Bragi through its Tailscale address.</p>
     {% endif %}
   </div>
+  {% if passkeys %}
+  <script>
+    (() => {
+      const button = document.getElementById("passkey-login");
+      const error = document.getElementById("passkey-error");
+      if (!BragiPasskeys.supported()) {
+        button.disabled = true;
+        error.textContent = "This browser can't use passkeys.";
+        error.hidden = false;
+        return;
+      }
+      button.addEventListener("click", async () => {
+        error.hidden = true;
+        try {
+          const result = await BragiPasskeys.signIn({{ next|tojson }});
+          location.href = result.next || "/";
+        } catch (err) {
+          if (BragiPasskeys.cancelled(err)) return;
+          error.textContent = err.message;
+          error.hidden = false;
+        }
+      });
+    })();
+  </script>
   {% endif %}
 </body>
 </html>

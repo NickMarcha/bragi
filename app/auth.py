@@ -66,7 +66,8 @@ class PasswordError(ValueError):
 
 
 def _empty() -> dict:
-    return {"password": None, "secret": None, "sessions": {}, "api_keys": [], "tailscale_logins": []}
+    return {"password": None, "secret": None, "sessions": {}, "api_keys": [], "tailscale_logins": [],
+            "passkeys": [], "passkey_user": None}
 
 
 def _load() -> dict:
@@ -181,10 +182,67 @@ def is_trusted_login(login: str | None) -> bool:
 
 
 def locked() -> bool:
-    """Whether the web UI needs signing in: a password, or a trusted
-    Tailscale login (then only that account gets in)."""
+    """Whether the web UI needs signing in: a password, a trusted Tailscale
+    login or a passkey. Any one of them locks it."""
     data = _load()
-    return bool(data.get("password")) or bool(data.get("tailscale_logins"))
+    return bool(data.get("password")) or bool(data.get("tailscale_logins")) or bool(data.get("passkeys"))
+
+
+# --- passkeys (the WebAuthn side is app/passkeys.py) ---
+
+def passkeys() -> list[dict]:
+    return list(_load().get("passkeys") or [])
+
+
+def passkey_user_id() -> bytes:
+    """The one WebAuthn user handle for this Bragi: there is one user."""
+    with _lock:
+        data = _load()
+        if not data.get("passkey_user"):
+            data["passkey_user"] = _b64(secrets.token_bytes(16))
+            _save(data)
+        return _unb64(data["passkey_user"])
+
+
+def add_passkey(record: dict) -> dict:
+    with _lock:
+        data = _load()
+        keys = [p for p in (data.get("passkeys") or []) if p["id"] != record["id"]]
+        record = {**record, "created": int(time.time()), "last_used": None}
+        keys.append(record)
+        data["passkeys"] = keys
+        _save(data)
+    return _public_passkey(record)
+
+
+def remove_passkey(passkey_id: str) -> bool:
+    with _lock:
+        data = _load()
+        keys = data.get("passkeys") or []
+        kept = [p for p in keys if p["id"] != passkey_id]
+        if len(kept) == len(keys):
+            return False
+        data["passkeys"] = kept
+        _save(data)
+        return True
+
+
+def passkey_used(passkey_id: str, sign_count: int) -> None:
+    with _lock:
+        data = _load()
+        for p in data.get("passkeys") or []:
+            if p["id"] == passkey_id:
+                p["sign_count"] = sign_count
+                p["last_used"] = int(time.time())
+        _save(data)
+
+
+def _public_passkey(record: dict) -> dict:
+    return {k: record.get(k) for k in ("id", "name", "rp_id", "created", "last_used")}
+
+
+def list_passkeys() -> list[dict]:
+    return [_public_passkey(p) for p in passkeys()]
 
 
 def check_password(password: str) -> bool:

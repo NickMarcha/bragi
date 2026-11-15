@@ -28,10 +28,11 @@ from pydantic import BaseModel, Field
 from starlette.datastructures import Headers, QueryParams
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from . import auth
+from . import auth, passkeys
 
 _PUBLIC_PREFIXES = ("/static/",)
-_PUBLIC_PATHS = {"/login", "/auth/login", "/api/v1/help", "/favicon.ico"}
+_PUBLIC_PATHS = {"/login", "/auth/login", "/api/v1/help", "/favicon.ico",
+                 "/auth/passkey-login/options", "/auth/passkey-login"}
 _PEER_PATTERNS = (
     re.compile(r"^/ws/peer/[^/]+$"),
     re.compile(r"^/api/peers/register$"),
@@ -217,7 +218,8 @@ def _secure(request: Request) -> bool:
 
 def _login_context(request: Request, next: str, error: str | None) -> dict:
     return {"next": _safe_next(next), "error": error, "password_set": auth.password_set(),
-            "tailscale_login": request.headers.get("tailscale-user-login")}
+            "tailscale_login": request.headers.get("tailscale-user-login"),
+            "passkeys": bool(auth.passkeys())}
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -269,7 +271,79 @@ def security_settings(request: Request):
         # Who this browser is on the tailnet (None when not opened through Tailscale).
         "tailscale_login": request.headers.get("tailscale-user-login"),
         "tailscale_logins": auth.trusted_logins(),
+        "passkeys": auth.list_passkeys(),
     }
+
+
+# --- passkeys (app/passkeys.py) ---
+
+def _passkey_site(request: Request) -> tuple[str, str]:
+    """(rp_id, origin) from the browser's own Origin header, which must be
+    this site: a passkey is bound to the address the browser used."""
+    origin = request.headers.get("origin") or ""
+    parts = urlsplit(origin)
+    if not origin or parts.netloc != request.headers.get("host"):
+        raise HTTPException(403, "Open this page at its own address to use passkeys")
+    try:
+        return passkeys.site(parts.netloc, parts.scheme)
+    except passkeys.PasskeyError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+class PasskeyRegistration(BaseModel):
+    token: str = Field(max_length=100)
+    credential: dict
+    name: str = Field(default="", max_length=60)
+
+
+class PasskeyLogin(BaseModel):
+    token: str = Field(max_length=100)
+    credential: dict
+    next: str = Field(default="/", max_length=500)
+
+
+@router.post("/auth/passkeys/options")
+def passkey_registration_options(request: Request):
+    rp_id, _ = _passkey_site(request)
+    return passkeys.registration_options(rp_id)
+
+
+@router.post("/auth/passkeys")
+def add_passkey(request: Request, body: PasskeyRegistration):
+    rp_id, origin = _passkey_site(request)
+    try:
+        return passkeys.register(rp_id, origin, body.token, body.credential, body.name)
+    except passkeys.PasskeyError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.delete("/auth/passkeys/{passkey_id}")
+def delete_passkey(passkey_id: str):
+    if not auth.remove_passkey(passkey_id):
+        raise HTTPException(404, "No such passkey")
+    return {"passkeys": auth.list_passkeys()}
+
+
+@router.post("/auth/passkey-login/options")
+def passkey_login_options(request: Request):
+    rp_id, _ = _passkey_site(request)
+    if not auth.passkeys():
+        raise HTTPException(404, "No passkeys are set up")
+    return passkeys.login_options(rp_id)
+
+
+@router.post("/auth/passkey-login")
+def passkey_login(request: Request, body: PasskeyLogin):
+    rp_id, origin = _passkey_site(request)
+    try:
+        passkeys.login(rp_id, origin, body.token, body.credential)
+    except passkeys.PasskeyError as exc:
+        raise HTTPException(401, str(exc)) from exc
+    access, refresh = auth.start_session(request.headers.get("user-agent", ""))
+    response = JSONResponse({"next": _safe_next(body.next)})
+    for cookie in session_cookies(access, refresh, _secure(request)):
+        response.headers.append("set-cookie", cookie)
+    return response
 
 
 @router.post("/auth/tailscale/trust")
