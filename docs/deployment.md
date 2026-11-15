@@ -220,7 +220,8 @@ it set (`data/headset_eq.yaml`) and says so in the dialog. Until Bragi has
 set one, the sliders sit at 0 and don't reflect what the headset is using.
 
 EQ presets saved from the dialog go to `data/headset_eq_presets.yaml`. The
-built-in presets are in `app/eq_presets_builtin.yaml`.
+built-in presets are in `app/eq_presets_builtin.yaml`, and where their
+curves come from is in [`eq-presets.md`](eq-presets.md).
 
 ## Updating
 

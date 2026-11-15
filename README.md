@@ -122,6 +122,8 @@ Then connect the peers:
 - [`docs/audio-bridge.md`](docs/audio-bridge.md): the PipeWire graph, the
   Roc and VBAN transports, and the parts that took several tries to make
   stable.
+- [`docs/eq-presets.md`](docs/eq-presets.md): where the HyperX EQ presets
+  come from, the headset measurement behind them, and safe gain limits.
 - [`docs/dashboard-ui.md`](docs/dashboard-ui.md): the templates, the data
   they render from, and where htmx stops and the WebSocket takes over.
 - [`docs/realtime-control-plane.md`](docs/realtime-control-plane.md): how

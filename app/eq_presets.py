@@ -10,7 +10,7 @@ never stored. Every tab then agrees, and moving one slider away from a
 preset makes it "Custom" without anything to keep in sync.
 
 The built-in presets are data, in eq_presets_builtin.yaml next to this
-file. Their curves are placeholders for now (that file says why).
+file. docs/eq-presets.md has the basis and sources for each curve.
 """
 
 from __future__ import annotations

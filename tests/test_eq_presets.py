@@ -12,20 +12,27 @@ def names(presets: list[dict]) -> list[str]:
     return [p["name"] for p in presets]
 
 
-def test_the_built_ins_come_first_and_flat_is_first_of_all():
+def test_the_built_ins_are_the_researched_set_in_order():
+    """docs/eq-presets.md has the basis for each."""
     presets = eq_presets.list_all()
 
-    assert presets[0]["name"] == "Flat"
-    assert presets[0]["gains"] == [0] * 10
+    assert names(presets) == ["Flat", "Balanced (measured)", "Bass boost", "Less bass", "Voice clarity",
+                              "Footsteps", "Music", "Movies", "Late night", "Smooth", "Brighter"]
     assert all(p["builtin"] for p in presets)
-    assert {"Bass boost", "Bass reducer", "Treble boost", "Vocal clarity", "Gaming footsteps",
-            "Music", "Late night"} <= set(names(presets))
+    assert presets[0]["gains"] == [0] * 10
 
 
-def test_every_built_in_is_a_valid_eq_with_a_description():
+def test_the_measured_preset_has_the_fitted_gains():
+    """From the fit to SoundGuys' Cloud III S measurement (docs/eq-presets.md)."""
+    assert eq_presets.gains_for("Balanced (measured)") == [2.7, 1.1, -0.4, 2.3, -1.0, -0.2, -0.9, 2.8, -1.6, 0.0]
+
+
+def test_every_built_in_has_ten_bands_within_six_db_and_a_description():
+    """+/-6 dB is the research's budget for presets: the dongle has no
+    preamp, and nothing above about +6 dB has been tried on it."""
     for preset in eq_presets.list_all():
         assert len(preset["gains"]) == len(headset_hid.EQ_BANDS_HZ), preset["name"]
-        assert all(abs(g) <= headset_hid.EQ_LIMIT_DB for g in preset["gains"]), preset["name"]
+        assert all(abs(g) <= 6 for g in preset["gains"]), preset["name"]
         assert preset["description"], preset["name"]
 
 
@@ -46,7 +53,7 @@ def test_saving_under_an_existing_custom_name_replaces_it():
     assert customs == [{"name": "mine", "description": "", "gains": [2] * 10, "builtin": False}]
 
 
-@pytest.mark.parametrize("name", ["", "   ", "flat", "Bass Boost", "x" * 41, None, 5])
+@pytest.mark.parametrize("name", ["", "   ", "flat", "Bass Boost", "smooth", "x" * 41, None, 5])
 def test_a_preset_name_must_be_new_and_short(name):
     with pytest.raises(ValueError):
         eq_presets.save(name, [0] * 10)

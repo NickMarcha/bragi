@@ -125,7 +125,7 @@ async def test_a_battery_notification_reaches_every_tab(session, broadcasts, att
     assert message["key"] == HEADSET_CARD_ID
 
 
-BASS_BOOST = [6, 5, 4, 2, 0, 0, 0, 0, 0, 0]
+BASS_BOOST = [5.0, 4.5, 3.0, 1.0, 0, 0, 0, 0, 0, 0]
 
 
 async def test_applying_a_preset_sends_its_eq_and_names_it(session, broadcasts, attached, dongle):
@@ -134,13 +134,14 @@ async def test_applying_a_preset_sends_its_eq_and_names_it(session, broadcasts, 
 
     message = await controls_broadcast(broadcasts, lambda m: m["controls"]["eq"] == BASS_BOOST)
     assert message["controls"]["eq_preset"] == "Bass boost"
-    assert dongle.sent(0x5F)[0][:9] == bytes.fromhex("0c 02 03 00 00 5f 00 02 58")  # +6.00 dB
+    assert dongle.sent(0x5F)[0][:9] == bytes.fromhex("0c 02 03 00 00 5f 00 01 f4")  # +5.00 dB
+    assert dongle.sent(0x5F)[1][:9] == bytes.fromhex("0c 02 03 00 00 5f 01 01 c2")  # +4.50 dB
     assert len(dongle.sent(0x5F)) == 10
 
 
 async def test_moving_a_slider_off_a_preset_makes_it_custom(session, broadcasts, attached, dongle):
     await ws.apply_action({"target": "headset", "key": HEADSET_CARD_ID, "action": "set_eq",
-                           "value": [5.5] + BASS_BOOST[1:]})
+                           "value": [4.5] + BASS_BOOST[1:]})
 
     message = await controls_broadcast(broadcasts, lambda m: m["controls"]["eq"] is not None)
     assert message["controls"]["eq_preset"] is None
@@ -188,4 +189,4 @@ def test_the_dialog_offers_the_presets(session, sync_attached):
 
     html = TestClient(app).get("/").text
     assert ">Bass boost</option>" in html
-    assert "More low end for music and films." in html
+    assert "More thump and rumble for music, explosions and engines." in html
