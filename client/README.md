@@ -1,11 +1,13 @@
 # Bragi Client
 
-A Linux tray app (Avalonia, .NET) for desktops that talk to Bragi over Roc.
-It turns the Roc link to the Bragi host on and off, shows its status, gives
-you a volume window for every peer and headset, and keeps the dashboard's
-status dot for this machine live. See
-[`../docs/audio-bridge.md`](../docs/audio-bridge.md) for the audio bridge
-this is part of.
+A tray app (Avalonia, .NET) for desktops that talk to Bragi. On Linux it
+turns the Roc link to the Bragi host on and off and shows its status. On
+Windows the audio still goes over VBAN through Voicemeeter, and the app
+registers the computer and shows the stream names to set Voicemeeter to
+(see [Windows](#windows)). On both it gives you a volume window for every
+peer and headset and keeps the dashboard's status dot for this machine
+live. See [`../docs/audio-bridge.md`](../docs/audio-bridge.md) for the audio
+bridge this is part of.
 
 ## Setup
 
@@ -58,6 +60,27 @@ without the tray app. Add the peer in the dashboard, then copy its ports
 from `data/peers.yaml` on the server into `~/.config/bragi-client/roc-link.env`
 ([`systemd/roc-link.env.example`](systemd/roc-link.env.example) explains
 each value) and run `systemctl --user enable --now bragi-roc-link.service`.
+
+## Windows
+
+1. Download `BragiClient-win-Setup.exe` from the latest `client-v*` release
+   and run it. It installs per user (no admin prompt) under
+   `%LOCALAPPDATA%\BragiClient`, adds a Start menu entry and updates itself.
+2. "Connect to Bragi" opens on first run, with the same four fields as on
+   Linux. The computer registers as a VBAN peer. A VBAN peer you already
+   added from the dashboard under the same name is reused, stream names and
+   all, so a working Voicemeeter setup stays as it is.
+3. The tray menu shows the two VBAN streams: "VBAN in" is the headset mic
+   the Bragi host sends here, "VBAN out" is what Voicemeeter should send
+   back. Set Voicemeeter's VBAN incoming and outgoing streams to match.
+4. Turn on "Start at Login" (a value under
+   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
+
+The settings live in `%APPDATA%\bragi-client\link.env`, in the same
+`KEY=VALUE` format as Linux. There's no Enable or Restart Link item:
+Voicemeeter owns the audio for now, so the status reads as linked once the
+computer is set up. Carrying the audio in the app itself (WASAPI against
+Voicemeeter's virtual devices, sent as VBAN) is the next step.
 
 ## Components
 
@@ -207,7 +230,7 @@ restart the unit.
 `Program.cs` runs `VelopackApp.Build().Run()` before anything else. The tray
 app checks for updates silently on startup and on demand from "Check for
 Updates" (`Tray/UpdateService.cs`), against the GitHub Releases of the repo
-it was built from, on the `linux` channel. The repo is baked in at build
+it was built from, on the `linux` or `win` channel. The repo is baked in at build
 time from the csproj's `BragiRepoUrl` property; the release workflow sets it
 to the repo it runs in, so a fork's builds update from the fork.
 
@@ -223,4 +246,7 @@ To cut a release:
    `.github/workflows/client-release.yml` runs on `client-v*.*.*` tags
    only, since `main` also carries server-only commits. It builds the
    patched libroc, packs with `vpk`, and publishes a GitHub Release with
-   `BragiClient.AppImage`, the `.nupkg` and `releases.linux.json`.
+   `BragiClient.AppImage`, the `.nupkg` and `releases.linux.json`. A
+   second job then builds the Windows package and adds
+   `BragiClient-win-Setup.exe`, its `.nupkg` and `releases.win.json` to the
+   same release (`vpk upload --merge`).

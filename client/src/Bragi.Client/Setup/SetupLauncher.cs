@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
+using System.Threading.Tasks;
 using Bragi.Client.Config;
 using Bragi.Client.Tray;
 
@@ -30,15 +31,23 @@ public static class SetupLauncher
             PeerName: config?.PeerName ?? LinkSetup.SuggestedPeerName(Environment.MachineName),
             PeerIp: LinkSetup.TailnetIpv4(LocalAddresses()) ?? "",
             ApiKey: config?.BragiApiKey ?? "",
-            Warnings: LinkInstaller.ConflictingDropIns(LinkInstaller.PipewireConfDir)
+            Warnings: OperatingSystem.IsWindows() ? [] : LinkInstaller.ConflictingDropIns(LinkInstaller.PipewireConfDir)
                 .Select(file => $"{file} already loads Roc modules and would clash with the link. " +
                                 "Rename it to end in .disabled and restart pipewire.service once.")
                 .ToList(),
-            AlreadySetUp: RocLinkConfig.IsInstalled());
+            AlreadySetUp: RocLinkConfig.IsInstalled(),
+            VbanLink: OperatingSystem.IsWindows());
 
         var window = new SetupWindow(defaults, async (server, name, ip, apiKey) =>
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            if (OperatingSystem.IsWindows())
+            {
+                await LinkSetup.ConnectVbanAsync(server, name, ip, apiKey, http,
+                    host => Dns.GetHostAddressesAsync(host),
+                    WriteEnvFileAsync);
+                return;
+            }
             await LinkSetup.ConnectAsync(server, name, ip, apiKey, http,
                 host => Dns.GetHostAddressesAsync(host),
                 RocModuleDir(existing),
@@ -49,6 +58,22 @@ public static class SetupLauncher
         window.Closed += (_, _) => _open = null;
         _open = window;
         window.Show();
+    }
+
+    /// <summary>Windows: the env file is the whole setup. Written beside and moved, so a half-written file never counts as set up.</summary>
+    private static async Task WriteEnvFileAsync(string env)
+    {
+        try
+        {
+            Directory.CreateDirectory(RocLinkConfig.ConfigDir);
+            var temp = RocLinkConfig.EnvFilePath + ".new";
+            await File.WriteAllTextAsync(temp, env);
+            File.Move(temp, RocLinkConfig.EnvFilePath, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new LinkSetupException($"Could not write {RocLinkConfig.EnvFilePath}: {ex.Message}");
+        }
     }
 
     private static string? RocModuleDir(IReadOnlyDictionary<string, string>? existing)

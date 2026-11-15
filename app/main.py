@@ -113,20 +113,31 @@ class StreamSettings(BaseModel):
     receive_enabled: bool = Field(strict=True)
 
 
+class DesktopLinkRegistration(DesktopRegistration):
+    # The Linux client links over Roc, the Windows one over VBAN.
+    protocol: Literal["roc", "vban"] = "roc"
+
+
 class AndroidRegistration(DesktopRegistration):
     capture_mode: Literal["microphone", "device_audio", "none"] = "microphone"
 
 
 @app.post("/api/peers/register-desktop")
-async def register_desktop_peer(settings: DesktopRegistration):
-    """The Bragi Client's setup window. Returns the ports its link unit needs."""
+async def register_desktop_peer(settings: DesktopLinkRegistration):
+    """The Bragi Client's setup window. Returns the ports its Roc link unit
+    needs, or for a VBAN client (Windows) the port and stream names."""
+    register = (peers_module.register_vban_desktop_peer if settings.protocol == "vban"
+                else peers_module.register_desktop_peer)
     try:
-        peer = await asyncio.to_thread(peers_module.register_desktop_peer, settings.name, settings.tailscale_ip)
+        peer = await asyncio.to_thread(register, settings.name, settings.tailscale_ip)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     except peers_module.ConfigWriteError as exc:
         raise HTTPException(502, str(exc)) from exc
     ws.manager.broadcast_nowait({'type': 'peer_registry'})
+    if peer.protocol == "vban":
+        return {'name': peer.name, 'vban': {'port': peer.vban_port, 'stream_send': peer.stream_send,
+                                            'stream_receive': peer.stream_receive}}
     return {'name': peer.name, 'ports': asdict(peer.ports)}
 
 

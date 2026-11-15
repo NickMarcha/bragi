@@ -12,8 +12,8 @@ namespace Bragi.Client.Tray;
 
 /// <summary>
 /// Velopack-driven self-update against this repo's GitHub Releases. Uses
-/// the "linux" channel consistently (matches the client-release.yml
-/// workflow's --channel linux on pack/upload) so this stays unambiguous if
+/// the "linux" or "win" channel (matches the client-release.yml workflow's
+/// --channel on pack/upload) so this stays unambiguous if
 /// non-client releases ever appear in the same repo's release list.
 /// </summary>
 public static class UpdateService
@@ -22,7 +22,8 @@ public static class UpdateService
     private static readonly string RepoUrl = typeof(UpdateService).Assembly
         .GetCustomAttributes<AssemblyMetadataAttribute>()
         .First(a => a.Key == "BragiRepoUrl").Value!;
-    private const string Channel = "linux";
+    // client-release.yml packs Windows builds on the "win" channel.
+    private static readonly string Channel = OperatingSystem.IsWindows() ? "win" : "linux";
 
     private static UpdateManager BuildManager() =>
         new(new GithubSource(RepoUrl, accessToken: null, prerelease: false), new UpdateOptions { ExplicitChannel = Channel });

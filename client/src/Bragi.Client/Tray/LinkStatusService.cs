@@ -80,6 +80,13 @@ public sealed class LinkStatusService : IDisposable
                 $"{RocLinkConfig.EnvFilePath} is missing values - choose Change Bragi connection...");
         }
 
+        if (OperatingSystem.IsWindows())
+        {
+            // Voicemeeter carries the audio, so there's no link of ours to
+            // check yet. Set up counts as on: it keeps the presence dot live.
+            return new StatusSnapshot(TrayState.Enabled, $"Audio over VBAN (Voicemeeter) to Bragi @ {config.BragiHostIp}");
+        }
+
         var unitState = await _controller.GetStateAsync();
         if (unitState is UnitState.Unknown)
         {
