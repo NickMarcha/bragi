@@ -47,6 +47,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from . import audio_state
 from . import eq_presets
 from . import headset_hid
+from . import mic_monitor
 from . import headsets as headsets_module
 from . import pipewire
 from . import views
@@ -374,6 +375,27 @@ async def _apply_hid_setting(key: str, verb: str, value) -> None:
                                   "controls": views.headset_controls_view(key)})
 
 
+_MONITOR_SETTERS: dict[str, Callable] = {
+    "set_monitor": mic_monitor.set_enabled,
+    "set_monitor_volume": mic_monitor.set_volume,
+}
+
+
+async def _apply_monitor_setting(key: str, verb: str, value) -> None:
+    """Software mic monitoring (mic_monitor.py). Saved and broadcast here,
+    then the loopback follows on its own. Only for headsets with the HyperX
+    controls, since that dialog is where the switch lives."""
+    if headset_hid.for_card(key) is None:
+        return
+    try:
+        await _MONITOR_SETTERS[verb](key, value)
+    except ValueError as exc:
+        logger.info("%s on %s refused: %s", verb, key, exc)
+        return
+    manager.broadcast_nowait({"type": "headset_controls", "key": key,
+                              "controls": views.headset_controls_view(key)})
+
+
 async def _change_eq_presets(verb: str, value) -> None:
     """Saving or deleting a preset. Presets are global, not per headset,
     so every tab gets the new list, and every open headset is re-sent:
@@ -470,6 +492,9 @@ async def apply_action(action: dict) -> None:
     if target == "headset":
         if verb in _HID_SETTERS:
             await _apply_hid_setting(key, verb, action.get("value"))
+            return
+        if verb in _MONITOR_SETTERS:
+            await _apply_monitor_setting(key, verb, action.get("value"))
             return
 
         if verb == "toggle_enabled":

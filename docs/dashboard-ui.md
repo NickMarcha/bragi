@@ -36,8 +36,9 @@ index.html                     page shell
   folds down to its header.
 - **`_headset_controls.html`** holds macros for a HyperX Cloud III S
   Wireless (`view.controls`, from `app/headset_hid.py`): the battery in the
-  card's meta line, the settings button, and a `<dialog>` with mic monitor,
-  auto-off, the EQ preset picker and the 10 EQ sliders. Right-click on an
+  card's meta line, the settings button, and a `<dialog>` with mic
+  monitoring (Bragi's loopback, a switch and a volume slider), the
+  headset's built-in monitor, auto-off, the EQ preset picker and the 10 EQ sliders. Right-click on an
   EQ slider resets that band to 0 dB, the same `contextmenu` reset the
   volume faders and balance pads use (Android fires it on a long press;
   iOS Safari doesn't, for any of them). The picker shows "Custom" as soon

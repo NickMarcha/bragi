@@ -20,6 +20,7 @@ from . import api
 from . import audio_reset
 from . import auth
 from . import microphone
+from . import mic_monitor
 from . import eq_presets
 from . import headset_hid
 from . import knob_watcher
@@ -45,6 +46,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(headset_hid.supervise(ws.broadcast_headset_controls)),
         asyncio.create_task(level_meter.supervise()),
         asyncio.create_task(microphone.supervise()),
+        asyncio.create_task(mic_monitor.supervise()),
     ]
     yield
     for task in tasks:

@@ -10,6 +10,7 @@ from . import microphone
 from . import audio_state
 from . import eq_presets
 from . import headset_hid
+from . import mic_monitor
 from . import headsets as headsets_module
 from . import peer_presence
 from . import peers as peers_module
@@ -136,6 +137,8 @@ def headset_controls_view(card_id: str) -> dict | None:
     view = headset_hid.view_for(card_id)
     if view is not None:
         view["eq_preset"] = eq_presets.matching(view["eq"])
+        # Bragi's own loopback (mic_monitor.py), not the headset's.
+        view["monitor"] = mic_monitor.settings_for(card_id)
     return view
 
 

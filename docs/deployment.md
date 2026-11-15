@@ -147,7 +147,7 @@ Run `host/systemd/install.sh` again to switch to the hourly one.
 
 With a HyperX Cloud III S Wireless dongle (USB `03f0:06be`, or `03f0:02cc`
 for the other hardware revision), the headset's card shows the battery,
-and its settings button opens mic monitor, the auto-off timer and a 10-band
+and its settings button opens mic monitoring, the auto-off timer and a 10-band
 EQ (`app/headset_hid.py`). Bragi talks to the dongle over its vendor HID
 interface. Without one of these dongles none of this appears.
 
@@ -214,8 +214,20 @@ If the controls don't appear, the container log says why: `cannot open
 `Permission denied` is the udev rule. A dongle that opens but never shows a
 battery is the missing quirk.
 
-Mic monitor and auto-off are read back from the headset after every
-change. The EQ can't be read from the headset, so Bragi shows the last EQ
+Mic monitoring in the dialog is Bragi's, not the headset's. The headset's
+own monitor (HID op `0x0D`) switches on but plays only noise on the Pi's
+headset, so it stays in the dialog as "Headset's built-in monitoring (may
+be noisy)". The switch above it runs a `pw-loopback` from the headset's mic
+to its own speaker, at 256/48000 (`app/mic_monitor.py`). While it runs, the
+whole graph runs at quantum 256 instead of 1024. On the Pi that showed no
+new errors on any Roc or VBAN node. The switch and the volume are saved in
+`data/mic_monitor.yaml` and come back when Bragi restarts. The volume is the
+loopback stream's own, so the computers get the same mic level either way.
+Unplugging the dongle stops the loopback, and plugging it back in starts it
+again within a couple of seconds.
+
+The built-in monitor and auto-off are read back from the headset after
+every change. The EQ can't be read from the headset, so Bragi shows the last EQ
 it set (`data/headset_eq.yaml`) and says so in the dialog. Until Bragi has
 set one, the sliders sit at 0 and don't reflect what the headset is using.
 
