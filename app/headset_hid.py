@@ -17,6 +17,12 @@ real headset on the Pi:
   counts here if this process asked for that op and is still waiting.
 - The headset also pushes input report 0x0D on its own:
   `0D 02 03 00 <kind> <value>`.
+- Its buttons arrive as input report 0x0F, `0F <code>`, measured on the
+  Pi's headset: the macro button's single, double and triple press are
+  08, 10 and 20, each followed by 00 (release). The headset tells the
+  gestures apart itself, and holding the button sends nothing. The wheel
+  sends 01 and 02 here too, but the knob watcher already turns it into
+  volume from the Consumer Control node, so this ignores them.
 
 On Linux the dongle only answers at all if the kernel read its full
 configuration descriptor at the first enumeration after power-up. Linux
@@ -109,7 +115,13 @@ NOTIFY_LINK = 0x0C
 
 _CHARGING = {0: "no", 1: "charging", 2: "full"}
 
+BUTTON = 0x0F
+BUTTON_GESTURES = {0x08: "single", 0x10: "double", 0x20: "triple"}
+
 OnChange = Callable[[str], None]
+# (serial, gesture): called on the event loop, from the hidraw reader, so
+# it must hand any real work to a task (see ws.on_macro_button).
+OnButton = Callable[[str, str], None]
 
 
 def find_devices(sysfs_root: Path = Path("/sys/class/hidraw")) -> dict[str, str]:
@@ -195,12 +207,15 @@ class HidHeadset:
     Owns no I/O itself: `write` sends one 64-byte report, and whoever reads
     the node calls handle_report() with each input report, which keeps this
     testable without a device. on_change(serial) runs after a report
-    changed what view() returns."""
+    changed what view() returns, on_button(serial, gesture) after a macro
+    button press."""
 
-    def __init__(self, serial: str, write: Callable[[bytes], None], on_change: OnChange) -> None:
+    def __init__(self, serial: str, write: Callable[[bytes], None], on_change: OnChange,
+                 on_button: OnButton | None = None) -> None:
         self.serial = serial
         self._write = write
         self._on_change = on_change
+        self._on_button = on_button
         self._pending: set[int] = set()
         self._state: dict = {"headset_on": None, "battery": None, "millivolts": None, "charging": None,
                              "mic_monitor": None, "auto_off_known": False, "auto_off_minutes": None,
@@ -259,6 +274,9 @@ class HidHeadset:
         self._state["eq"] = gains
 
     def handle_report(self, data: bytes) -> None:
+        if len(data) >= 2 and data[0] == BUTTON:
+            self._handle_button(data[1])
+            return
         before = self.view()
         if len(data) >= 7 and data[:3] == _PREFIX and data[3] == _READ:
             self._handle_reply(data[5], data[6:])
@@ -266,6 +284,15 @@ class HidHeadset:
             self._handle_notification(data[4], data[5])
         if self.view() != before:
             self._on_change(self.serial)
+
+    def _handle_button(self, code: int) -> None:
+        gesture = BUTTON_GESTURES.get(code)
+        if gesture is None or self._on_button is None:
+            return  # a release, the wheel, or nobody listening
+        try:
+            self._on_button(self.serial, gesture)
+        except Exception:
+            logger.exception("macro button handler failed for %s", self.serial)
 
     def _handle_reply(self, op: int, value: bytes) -> None:
         if op not in self._pending:
@@ -312,8 +339,9 @@ class HidHeadset:
 _devices: dict[str, HidHeadset] = {}
 
 
-def attach(serial: str, write: Callable[[bytes], None], on_change: OnChange) -> HidHeadset:
-    headset = HidHeadset(serial, write, on_change)
+def attach(serial: str, write: Callable[[bytes], None], on_change: OnChange,
+           on_button: OnButton | None = None) -> HidHeadset:
+    headset = HidHeadset(serial, write, on_change, on_button)
     _devices[serial] = headset
     return headset
 
@@ -345,11 +373,12 @@ _RESCAN_SECONDS = 5
 _POLL_SECONDS = 60
 
 
-async def supervise(on_change: Callable[[str], Awaitable[None]]) -> None:
+async def supervise(on_change: Callable[[str], Awaitable[None]], on_button: OnButton | None = None) -> None:
     """Runs forever, like knob_watcher.watch(). Rescans sysfs every few
     seconds, opens each dongle that appears, polls it, and closes it when
     it goes. on_change(serial) is awaited whenever a headset's view changes
-    or its dongle comes or goes. With no such dongle it does nothing and
+    or its dongle comes or goes, and on_button(serial, gesture) is called
+    for each macro button press. With no such dongle it does nothing and
     logs nothing."""
     loop = asyncio.get_running_loop()
     open_nodes: dict[str, tuple[int, str]] = {}  # 'hidrawN' -> (fd, serial)
@@ -407,7 +436,7 @@ async def supervise(on_change: Callable[[str], Awaitable[None]]) -> None:
                             warned.add(node)
                         continue
                     warned.discard(node)
-                    headset = attach(serial, lambda data, fd=fd: os.write(fd, data), notify)
+                    headset = attach(serial, lambda data, fd=fd: os.write(fd, data), notify, on_button)
                     loop.add_reader(fd, on_readable, node, fd, headset)
                     open_nodes[node] = (fd, serial)
                     last_poll[node] = float("-inf")

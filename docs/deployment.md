@@ -235,6 +235,47 @@ EQ presets saved from the dialog go to `data/headset_eq_presets.yaml`. The
 built-in presets are in `app/eq_presets_builtin.yaml`, and where their
 curves come from is in [`eq-presets.md`](eq-presets.md).
 
+### Macro button
+
+The dialog's "Macro button" section gives the headset's single, double and
+triple press an action each. The headset tells the gestures apart itself
+and sends one report per gesture. Holding the button sends nothing, so
+there's no hold action. The wheel belongs to the knob watcher and isn't
+offered here.
+
+An action is nothing (the default), Bragi's mic monitoring on/off, or an
+HTTP request. A request has a method, a target, extra headers one per line
+(`Name: value`) and an optional JSON body, sent as `application/json`
+unless the headers say otherwise. The target is a URL, or a unix socket on
+the host plus an HTTP path. Use the socket for services that listen only
+on the host's 127.0.0.1 or on a socket, since the container can't reach
+those over TCP. The container mounts the host's `/run/user/UID`, so a
+socket under it works as is.
+
+Actions are saved per dongle in `data/macro_button.yaml` and come back on
+restart. Each request gets 3 seconds to answer. A press that arrives while
+the same gesture's last request is still running is dropped. Under each
+gesture the dialog shows the last result (`HTTP 204 No Content`, `no socket
+at ...`, `connection refused`), and Test runs what's in the form once,
+saved or not. Results live in memory only. The container log gets a
+failure once, then again only when the error changes or the action works.
+
+An example: a double press that sends a keystroke through a web UI that
+listens on a socket.
+
+| Field | Value |
+|---|---|
+| Action | HTTP request |
+| Method | POST |
+| Send to | a unix socket on the host |
+| Socket | `/run/user/1000/deskflow-headless/webui.sock` |
+| Path | `/api/keystroke` |
+| Headers | `X-Deskflow-Webui: 1` |
+| Body | `{"keys": "Control+Shift+Alt+M", "computers": ["sage", "sage-dev", "sagedeck"]}` |
+
+Bragi doesn't know what's behind the socket. Whatever answers there
+decides what the request does.
+
 ## Updating
 
 ```bash

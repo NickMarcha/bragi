@@ -66,6 +66,13 @@ class FakeDongle:
         """An unsolicited input report 0x0D, as the headset sends it."""
         self._send(bytes([0x0D, 0x02, 0x03, 0x00, kind, value]))
 
+    def press(self, code: int) -> None:
+        """A button report and its release, as the headset sends them: 08,
+        10 or 20 for the macro button's single, double or triple press, 01
+        or 02 for the wheel."""
+        self._send(bytes([0x0F, code]))
+        self._send(bytes([0x0F, 0x00]))
+
     def reply_from_elsewhere(self, op: int) -> None:
         """A reply to a read some other program on the host sent."""
         self._send(bytes([0x0C, 0x02, 0x03, 0x01, 0x00, op]) + self._value(op))

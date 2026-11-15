@@ -37,7 +37,8 @@ body {
 
 button,
 select,
-input {
+input,
+textarea {
   font: inherit;
   color: var(--text);
 }
@@ -62,7 +63,8 @@ button.primary {
 }
 
 select,
-input {
+input,
+textarea {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -71,6 +73,7 @@ input {
 
 select:focus,
 input:focus,
+textarea:focus,
 button:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 1px;
@@ -925,4 +928,83 @@ dialog h2 {
 .hid-preset-save input {
   flex: 1;
   min-width: 0;
+}
+
+.hid-macro {
+  margin: 0 0 12px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.hid-macro legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hid-macro-gesture + .hid-macro-gesture {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.hid-macro-gesture .viz-settings-row {
+  margin-bottom: 6px;
+}
+
+.hid-macro-label {
+  min-width: 92px;
+}
+
+.hid-macro-gesture select[data-macro-field="type"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.hid-macro-http {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.hid-macro-http input,
+.hid-macro-http textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.hid-macro-http textarea {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.hid-macro-pair {
+  display: flex;
+  gap: 6px;
+}
+
+.hid-macro-pair > * {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Which fields show follows the selects, with no JS, like #add-peer. */
+.hid-macro-gesture:not(:has([data-macro-field="type"] option[value="http"]:checked)) .hid-macro-http {
+  display: none;
+}
+
+.hid-macro-http:has([data-macro-field="target"] option[value="url"]:checked) .socket-only,
+.hid-macro-http:has([data-macro-field="target"] option[value="socket"]:checked) .url-only {
+  display: none;
+}
+
+.hid-dialog .hid-macro .form-note {
+  margin-bottom: 0;
+}
+
+.hid-macro .macro-failed {
+  color: var(--danger);
 }

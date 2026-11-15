@@ -33,13 +33,14 @@ if not peers.PEERS_FILE.exists():
 watcher.watch = knob_watcher.watch = level_meter.supervise = _idle
 
 
-async def _fake_dongle(on_change) -> None:
+async def _fake_dongle(on_change, on_button=None) -> None:
     """The first demo headset gets a fake HyperX dongle (tests/fake_hyperx.py),
-    so the battery, mic monitor, auto-off and EQ controls can be tried."""
+    so the battery, mic monitor, auto-off, EQ and macro button controls can
+    be tried. The dialog's Test button stands in for pressing the button."""
     loop = asyncio.get_running_loop()
     dongle = fake_hyperx.FakeDongle()
     headset = headset_hid.attach(fake_hyperx.SERIAL, dongle.write,
-                                 lambda serial: loop.create_task(on_change(serial)))
+                                 lambda serial: loop.create_task(on_change(serial)), on_button)
     dongle.deliver = lambda report: loop.call_soon_threadsafe(headset.handle_report, report)
     headset.refresh()
     await asyncio.Event().wait()

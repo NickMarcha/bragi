@@ -10,6 +10,7 @@ from . import microphone
 from . import audio_state
 from . import eq_presets
 from . import headset_hid
+from . import macro_button
 from . import mic_monitor
 from . import headsets as headsets_module
 from . import peer_presence
@@ -134,11 +135,15 @@ def headset_controls_view(card_id: str) -> dict | None:
     """headset_hid's view plus the name of the EQ preset the current gains
     match (None for custom or unknown). Kept here because eq_presets
     imports headset_hid."""
-    view = headset_hid.view_for(card_id)
-    if view is not None:
-        view["eq_preset"] = eq_presets.matching(view["eq"])
-        # Bragi's own loopback (mic_monitor.py), not the headset's.
-        view["monitor"] = mic_monitor.settings_for(card_id)
+    hs = headset_hid.for_card(card_id)
+    if hs is None:
+        return None
+    view = hs.view()
+    view["eq_preset"] = eq_presets.matching(view["eq"])
+    # Bragi's own loopback (mic_monitor.py), not the headset's.
+    view["monitor"] = mic_monitor.settings_for(card_id)
+    # The macro button's actions and their last results (macro_button.py).
+    view["macro"] = macro_button.view(hs.serial)
     return view
 
 

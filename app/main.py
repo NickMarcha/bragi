@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
     tasks = [
         asyncio.create_task(watcher.watch(ws.on_node_changed)),
         asyncio.create_task(knob_watcher.watch(ws.broadcast_headset_volume_change)),
-        asyncio.create_task(headset_hid.supervise(ws.broadcast_headset_controls)),
+        asyncio.create_task(headset_hid.supervise(ws.broadcast_headset_controls, ws.on_macro_button)),
         asyncio.create_task(level_meter.supervise()),
         asyncio.create_task(microphone.supervise()),
         asyncio.create_task(mic_monitor.supervise()),
