@@ -195,6 +195,12 @@ ls -l /dev/hidraw*   # the dongle's node: crw-rw---- root input
 
 A rule of your own that does the same is fine. Skip this step if you have one.
 
+Game controllers paired over Bluetooth need the same for HID passthrough
+(`app/gamepad.py`): `host/udev/73-bragi-bluetooth-hidraw.rules` gives every
+Bluetooth HID device's hidraw node to the `input` group. Install it the
+same way. Without it a controller still works, but only as an Xbox 360
+pad, and the log says "no passthrough".
+
 **3. The compose settings.** `docker-compose.yml` mounts the host's `/dev`
 read-only at `/host/dev` and allows the hidraw device major through
 `device_cgroup_rules`. It doesn't list the node under `devices:`, because
