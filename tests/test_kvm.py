@@ -1,0 +1,114 @@
+"""The KVM bar and API (app/kvm.py): the computers sharing the desk's
+keyboard and mouse, the active one, and switching. The engine (the
+headless Deskflow server) is a status file and a fake web UI here."""
+
+from __future__ import annotations
+
+import http.server
+import json
+import socket
+import socketserver
+import threading
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app import auth, kvm
+from app.main import app
+
+STATUS = {"active": "sagedeck", "server": "pi",
+          "clients": [{"name": "sage", "width": 5360, "height": 1440},
+                      {"name": "sage-dev", "width": 1920, "height": 1080},
+                      {"name": "sagedeck", "width": 2560, "height": 1440}]}
+
+
+@pytest.fixture
+def engine(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRAGI_KVM_DIR", str(tmp_path))
+    (tmp_path / "status.json").write_text(json.dumps(STATUS))
+    return tmp_path
+
+
+def test_the_view_lists_connected_computers_and_never_the_host_itself():
+    assert kvm.view_from_status(STATUS) == {
+        "available": True, "active": "sagedeck", "computers": ["sage", "sage-dev", "sagedeck"]}
+    # Right after a client drops, the server is briefly its own active screen.
+    assert kvm.view_from_status({**STATUS, "active": "pi"})["active"] is None
+    assert kvm.view_from_status(None) == {"available": False, "active": None, "computers": []}
+
+
+def test_a_missing_or_broken_status_file_means_no_kvm(engine):
+    (engine / "status.json").write_text("{not json")
+    assert kvm.read_view()["available"] is False
+    (engine / "status.json").unlink()
+    assert kvm.read_view()["available"] is False
+
+
+def test_switching_to_a_computer_that_isnt_connected_never_reaches_the_engine(engine, monkeypatch):
+    calls = []
+    monkeypatch.setattr(kvm, "_post", lambda path, body: calls.append((path, body)))
+    with pytest.raises(kvm.KvmError, match="isn't connected"):
+        kvm.switch("homeserver")
+    kvm.switch("sage-dev")
+    assert calls == [("/api/switch", {"computer": "sage-dev"})]
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="needs Unix sockets")
+def test_the_engine_is_asked_over_its_unix_socket(engine):
+    seen = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            seen.append((self.path, self.headers.get("X-Deskflow-Webui"), body))
+            reply = {"ok": True} if body["computer"] != "sagedeck" else {"ok": False, "error": "sagedeck isn't connected"}
+            data = json.dumps(reply).encode()
+            self.send_response(200 if reply["ok"] else 400)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    class Server(socketserver.UnixStreamServer):
+        def get_request(self):
+            request, _ = super().get_request()
+            return request, ("local", 0)
+
+    server = Server(str(engine / "webui.sock"), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        kvm.switch("sage")
+        with pytest.raises(kvm.KvmError, match="sagedeck isn't connected"):
+            kvm.switch("sagedeck")
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert seen[0] == ("/api/switch", "1", {"computer": "sage"})
+
+
+def test_the_dashboard_bar_shows_the_computers_and_switches(engine, monkeypatch, session):
+    switched = []
+    monkeypatch.setattr(kvm, "_post", lambda path, body: switched.append(body["computer"]))
+    client = TestClient(app)
+
+    page = client.get("/").text
+    assert 'class="kvm-computer active"' in page and ">sagedeck</button>" in page and ">pi<" not in page
+
+    assert client.post("/kvm/switch", data={"computer": "sage"}).status_code == 200
+    assert switched == ["sage"]
+    assert "isn&#39;t connected" in client.post("/kvm/switch", data={"computer": "ghost"}).text
+
+
+def test_the_api_reads_and_switches(engine, monkeypatch, session):
+    monkeypatch.setattr(kvm, "_post", lambda path, body: None)
+    _, key = auth.create_api_key("test app")
+    client = TestClient(app)
+    client.headers["Authorization"] = f"Bearer {key}"
+
+    assert client.get("/api/v1/kvm").json() == {
+        "available": True, "active": "sagedeck", "computers": ["sage", "sage-dev", "sagedeck"]}
+    assert client.post("/api/v1/kvm/active", json={"computer": "sage"}).status_code == 200
+    assert client.post("/api/v1/kvm/active", json={"computer": "ghost"}).status_code == 409
+    assert TestClient(app).get("/api/v1/kvm").status_code == 401

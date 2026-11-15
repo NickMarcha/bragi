@@ -26,6 +26,7 @@ from . import eq_presets
 from . import gamepad
 from . import headset_hid
 from . import knob_watcher
+from . import kvm
 from . import level_meter
 from . import peer_control
 from . import peers as peers_module
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(microphone.supervise()),
         asyncio.create_task(mic_monitor.supervise()),
         asyncio.create_task(gamepad.supervise(peer_control.send, peer_control.broadcast_desktop)),
+        asyncio.create_task(kvm.supervise(_kvm_changed)),
     ]
     bluetooth.start(_bluetooth_changed)
     yield
@@ -58,6 +60,11 @@ async def lifespan(app: FastAPI):
     for task in tasks:
         with contextlib.suppress(asyncio.CancelledError):
             await task
+
+
+def _kvm_changed(message: dict) -> None:
+    """The KVM's computers or active one changed: dashboards and tray apps."""
+    peer_control.broadcast_desktop(message)
 
 
 _bluetooth_pending = False
@@ -95,7 +102,8 @@ templates.env.globals["eq_preset_store"] = eq_presets
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     state = views.build_state()
-    return templates.TemplateResponse(request, "index.html", {**state, "password_set": auth.password_set()})
+    return templates.TemplateResponse(request, "index.html", {**state, "password_set": auth.password_set(),
+                                                              "kvm": kvm.read_view()})
 
 
 @app.websocket("/ws")
@@ -226,6 +234,24 @@ def _bluetooth() -> bluetooth.Manager:
 
 
 _ADDRESS = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
+
+
+def _kvm_bar(request: Request, error: str | None = None):
+    return templates.TemplateResponse(request, "_kvm.html", {"kvm": kvm.read_view(), "kvm_error": error})
+
+
+@app.get("/kvm", response_class=HTMLResponse)
+def kvm_bar(request: Request):
+    return _kvm_bar(request)
+
+
+@app.post("/kvm/switch", response_class=HTMLResponse)
+async def kvm_switch(request: Request, computer: str = Form(..., max_length=64)):
+    try:
+        await asyncio.to_thread(kvm.switch, computer)
+    except kvm.KvmError as exc:
+        return _kvm_bar(request, str(exc))
+    return _kvm_bar(request)
 
 
 @app.get("/bluetooth", response_class=HTMLResponse)
