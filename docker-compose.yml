@@ -31,6 +31,10 @@ services:
     # allows writing to a device node.
     device_cgroup_rules:
       - "c ${HIDRAW_MAJOR:-241}:* rwm"
+      # Input devices (major 13 on every Linux). Game controllers connect
+      # and disconnect over Bluetooth, so app/gamepad.py opens their event
+      # nodes under /host/dev, which needs this rule like hidraw does.
+      - "c 13:* rwm"
     environment:
       XDG_RUNTIME_DIR: /run/user/${BRAGI_UID:-1000}
       BRAGI_HOST_DEV: /host/dev

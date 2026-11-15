@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Bragi.Client.Config;
+using Bragi.Client.Gamepad;
 using Bragi.Client.Setup;
 using Bragi.Client.Tray;
 
@@ -14,6 +15,7 @@ public partial class App : Application
     private LinkStatusService? _statusService;
     private TrayIconManager? _trayIconManager;
     private PeerPresenceClient? _presenceClient;
+    private GamepadService? _gamepads;
 
     public override void Initialize()
     {
@@ -56,10 +58,17 @@ public partial class App : Application
     /// <summary>The parts that read roc-link.env once, at construction.</summary>
     private void StartConfigured()
     {
-        _trayIconManager = new TrayIconManager(_statusService!);
-        _trayIconManager.SetupRequested += ShowSetup;
         var config = RocLinkConfig.TryLoad();
         _presenceClient = new PeerPresenceClient(config?.PeerName, config?.BragiWsBaseUrl);
+        // Controllers on the Bragi host, played here through a virtual one.
+        // Linux only for now; Windows needs ViGEm.
+        _gamepads = new GamepadService(config?.PeerName,
+            OperatingSystem.IsLinux() ? () => new UinputGamepad() : null);
+        _presenceClient.MessageReceived += _gamepads.OnMessage;
+        _presenceClient.Disconnected += _gamepads.OnDisconnected;
+        _gamepads.Send = _presenceClient.SendAsync;
+        _trayIconManager = new TrayIconManager(_statusService!, _gamepads);
+        _trayIconManager.SetupRequested += ShowSetup;
         _presenceClient.SetEnabled(_statusService!.Current.State == TrayState.Enabled);
     }
 
@@ -67,8 +76,10 @@ public partial class App : Application
     {
         _trayIconManager?.Dispose();
         _presenceClient?.Dispose();
+        _gamepads?.Dispose();
         _trayIconManager = null;
         _presenceClient = null;
+        _gamepads = null;
     }
 
     private void ShowSetup() => SetupLauncher.Show(async () =>

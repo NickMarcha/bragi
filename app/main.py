@@ -22,6 +22,7 @@ from . import auth
 from . import microphone
 from . import mic_monitor
 from . import eq_presets
+from . import gamepad
 from . import headset_hid
 from . import knob_watcher
 from . import level_meter
@@ -47,6 +48,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(level_meter.supervise()),
         asyncio.create_task(microphone.supervise()),
         asyncio.create_task(mic_monitor.supervise()),
+        asyncio.create_task(gamepad.supervise(peer_control.send, peer_control.broadcast_desktop)),
     ]
     yield
     for task in tasks:

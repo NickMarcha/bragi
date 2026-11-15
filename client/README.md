@@ -125,6 +125,27 @@ WebSocket for live changes, reconnecting after a network interruption.
 Unavailable directions and disconnected controls are disabled. Closing the
 window closes that connection. An idle tray has no volume connection.
 
+## Game controllers
+
+A controller paired with the Bragi host (over Bluetooth, see
+`app/gamepad.py`) can be played on any computer running this app. "Use
+<controller> here" in the tray menu claims it for this computer; on Linux
+the app then creates a virtual Xbox 360 controller with `/dev/uinput`
+(`Gamepad/UinputGamepad.cs`) and feeds it what the host sends. Choosing
+it again gives it back; claiming it on another computer moves it there.
+The item only shows once the host has a controller.
+
+The virtual controller needs write access to `/dev/uinput`. Steam's udev
+rules (`60-steam-input.rules`, in the `steam` package) give it to the
+logged-in user; without them the menu item says it can't open uinput.
+Windows shows the item but can't play the controller yet (that needs
+ViGEm).
+
+Everything goes over the same `/ws/peer/{PEER_NAME}` socket as the
+presence heartbeat below: the host sends `gamepads` (which controllers,
+which computer has them), `gamepad` (one controller's state, Xbox layout)
+and `gamepad_detach`; the app sends `gamepad_claim` and `gamepad_release`.
+
 ## Dashboard presence heartbeat
 
 `Tray/PeerPresenceClient.cs` holds a WebSocket open to the server's
