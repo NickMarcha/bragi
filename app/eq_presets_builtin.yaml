@@ -1,0 +1,70 @@
+# Built-in EQ presets for the HyperX Cloud III S Wireless dialog.
+# app/eq_presets.py reads this file. To change a preset, edit it here.
+#
+# Where each curve comes from, with sources, the measurement and the
+# limits: docs/eq-presets.md. Each entry's comment gives its basis:
+# sourced, derived from a measurement or standard, or a reasoned
+# suggestion.
+#
+# gains: dB per band, in this order: 32, 64, 125, 250, 500, 1k, 2k, 4k,
+# 8k, 16k Hz. Keep every band within +/-6 dB (the slider limit is +/-12,
+# but the dongle has no preamp and nothing above about +6 dB has been
+# tried on it). The first entry is shown first and should stay flat.
+
+# Sourced: NGENUITY's "EQ off" sends all bands at 0.
+- name: Flat
+  description: The headset's own sound, unchanged.
+  gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+# Derived from measurement: fitted to SoundGuys' B&K 5128 measurement of
+# the Cloud III S, averaged over two target curves.
+- name: Balanced (measured)
+  description: Small fixes for this headset's own quirks, so it sounds more natural.
+  gains: [2.7, 1.1, -0.4, 2.3, -1.0, -0.2, -0.9, 2.8, -1.6, 0.0]
+
+# Reasoned suggestion: Harman listener-preference data (3-6 dB more bass).
+- name: Bass boost
+  description: More thump and rumble for music, explosions and engines.
+  gains: [5.0, 4.5, 3.0, 1.0, 0, 0, 0, 0, 0, 0]
+
+# Reasoned suggestion: Harman listener-preference data (2-3 dB less bass).
+- name: Less bass
+  description: Lighter, less boomy low end. Good if bass feels heavy or tiring.
+  gains: [-3.0, -3.0, -2.0, -1.0, 0, 0, 0, 0, 0, 0]
+
+# Reasoned suggestion: speech intelligibility peaks in the 2 kHz band.
+- name: Voice clarity
+  description: Makes speech easier to follow in podcasts, calls and videos.
+  gains: [-4.0, -3.0, -1.5, 0, 0, 1.0, 3.0, 2.5, 0.5, 0]
+
+# Reasoned suggestion: gaming-guide consensus on 2-4 kHz, no measurement.
+- name: Footsteps
+  description: Quieter booms, crisper small sounds such as steps and reloads in games.
+  gains: [-4.0, -3.0, -2.0, -1.0, 0, 0.5, 2.0, 3.5, 2.0, 0]
+
+# Reasoned suggestion: a milder version of common V-shape presets.
+- name: Music
+  description: "A gentle smile curve: fuller bass and a little extra sparkle."
+  gains: [4.0, 3.0, 1.0, 0, -1.0, -1.5, -0.5, 1.0, 2.5, 2.0]
+
+# Reasoned suggestion: close to Nogenuity's "Cinema".
+- name: Movies
+  description: Bigger effects and rumble, with dialogue still clear.
+  gains: [4.0, 3.5, 1.5, 0, -0.5, 0, 1.5, 1.5, 0.5, 0]
+
+# Derived from ISO 226:2003: about half the difference between the 60-phon
+# and 80-phon equal-loudness contours.
+- name: Late night
+  description: Keeps bass and detail audible when listening quietly.
+  gains: [4.5, 4.0, 2.5, 1.5, 0.5, 0, -0.5, -0.5, 0, 1.5]
+
+# Reasoned suggestion: sibilance sits at 4-10 kHz, and the Cloud III S
+# measures about +3 dB near 6 and 10 kHz.
+- name: Smooth
+  description: Tames sharp s sounds and shrill highs for long sessions.
+  gains: [0, 0, 0, 0, 0, 0, -1.0, -3.0, -3.5, -2.0]
+
+# Reasoned suggestion: a taste option, not a correction for this headset.
+- name: Brighter
+  description: More detail and air in the highs.
+  gains: [0, 0, 0, 0, 0, 0, 1.0, 2.0, 3.0, 3.0]

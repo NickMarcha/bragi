@@ -12,6 +12,17 @@
   {%- endif -%}
 {%- endmacro %}
 
+{# What the preset picker shows when no preset matches: the gains are
+   unknown until Bragi sets them, custom after. ws.js says the same. #}
+{% macro preset_placeholder(c) -%}{{ 'Custom' if c.eq else 'Unknown' }}{%- endmacro %}
+
+{% macro preset_description(c, presets) -%}
+{%- set active = presets | selectattr('name', 'equalto', c.eq_preset) | first if c.eq_preset else none -%}
+{%- if active -%}{{ active.description or 'Saved preset.' }}
+{%- elif c.eq -%}Your own settings. Save them as a preset to come back to them.
+{%- endif -%}
+{%- endmacro %}
+
 {% macro battery_short(c) -%}
   {%- if c is none -%}
   {%- elif c.headset_on == false -%}Off
@@ -65,6 +76,25 @@
     </select>
   </label>
 
+  {%- set presets = eq_preset_store.list_all() %}
+  <label class="viz-settings-row">
+    Preset
+    <select data-hid-preset {% if off %}disabled{% endif %}>
+      <option value="" disabled {% if not c.eq_preset %}selected{% endif %}>{{ preset_placeholder(c) }}</option>
+      <optgroup label="Built in">
+        {% for p in presets if p.builtin %}
+        <option value="{{ p.name }}" title="{{ p.description }}" {% if c.eq_preset == p.name %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </optgroup>
+      <optgroup label="Saved" {% if not presets | rejectattr('builtin') | list %}hidden{% endif %}>
+        {% for p in presets if not p.builtin %}
+        <option value="{{ p.name }}" {% if c.eq_preset == p.name %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </optgroup>
+    </select>
+  </label>
+  <p class="form-note" data-hid="preset-description">{{ preset_description(c, presets) }}</p>
+
   <fieldset class="hid-eq" {% if off %}disabled{% endif %}>
     <legend>Equalizer, dB</legend>
     <div class="hid-eq-bands">
@@ -73,13 +103,21 @@
       <label class="hid-eq-band">
         <output data-eq-readout>{{ '%+g' % gain if gain else '0' }}</output>
         <input type="range" data-eq-band="{{ loop.index0 }}" min="-{{ hid.EQ_LIMIT_DB }}" max="{{ hid.EQ_LIMIT_DB }}" step="0.5" value="{{ gain }}"
-               aria-label="{{ hz }} Hz" />
+               aria-label="{{ hz }} Hz" title="{{ hz }} Hz (right-click to reset to 0 dB)" />
         <span>{{ '%gk' % (hz / 1000) if hz >= 1000 else hz }}</span>
       </label>
       {% endfor %}
     </div>
   </fieldset>
   <p class="form-note" data-hid="eq-note">{{ eq_note(c) }}</p>
+
+  <form class="hid-preset-save" data-hid-preset-form>
+    <input type="text" name="name" maxlength="40" placeholder="Name for these settings" required aria-label="Preset name" />
+    <button type="submit" {% if off %}disabled{% endif %}>Save preset</button>
+    <button type="button" data-hid-preset-delete
+            {% if not (c.eq_preset and presets | selectattr('name', 'equalto', c.eq_preset) | rejectattr('builtin') | list) %}disabled{% endif %}
+            title="Delete the selected saved preset">Delete preset</button>
+  </form>
 
   <div class="dialog-actions">
     <button type="button" data-hid-flat {% if off %}disabled{% endif %}>Flat</button>

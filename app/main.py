@@ -20,6 +20,7 @@ from . import api
 from . import audio_reset
 from . import auth
 from . import microphone
+from . import eq_presets
 from . import headset_hid
 from . import knob_watcher
 from . import level_meter
@@ -63,6 +64,7 @@ app.mount("/static", StaticFiles(directory=str(_app_dir / "static")), name="stat
 templates = Jinja2Templates(directory=str(_app_dir / "templates"))
 # The EQ bands and auto-off choices, for _headset_controls.html.
 templates.env.globals["hid"] = headset_hid
+templates.env.globals["eq_preset_store"] = eq_presets
 
 
 @app.get("/", response_class=HTMLResponse)

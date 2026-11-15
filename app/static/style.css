@@ -915,3 +915,14 @@ dialog h2 {
 .hid-eq:disabled .hid-eq-band {
   opacity: 0.4;
 }
+
+.hid-preset-save {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.hid-preset-save input {
+  flex: 1;
+  min-width: 0;
+}

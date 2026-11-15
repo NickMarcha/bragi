@@ -123,3 +123,70 @@ async def test_a_battery_notification_reaches_every_tab(session, broadcasts, att
 
     message = await controls_broadcast(broadcasts, lambda m: m["controls"]["battery"] == 9)
     assert message["key"] == HEADSET_CARD_ID
+
+
+BASS_BOOST = [5.0, 4.5, 3.0, 1.0, 0, 0, 0, 0, 0, 0]
+
+
+async def test_applying_a_preset_sends_its_eq_and_names_it(session, broadcasts, attached, dongle):
+    await ws.apply_action({"target": "headset", "key": HEADSET_CARD_ID, "action": "apply_eq_preset",
+                           "value": "Bass boost"})
+
+    message = await controls_broadcast(broadcasts, lambda m: m["controls"]["eq"] == BASS_BOOST)
+    assert message["controls"]["eq_preset"] == "Bass boost"
+    assert dongle.sent(0x5F)[0][:9] == bytes.fromhex("0c 02 03 00 00 5f 00 01 f4")  # +5.00 dB
+    assert dongle.sent(0x5F)[1][:9] == bytes.fromhex("0c 02 03 00 00 5f 01 01 c2")  # +4.50 dB
+    assert len(dongle.sent(0x5F)) == 10
+
+
+async def test_moving_a_slider_off_a_preset_makes_it_custom(session, broadcasts, attached, dongle):
+    await ws.apply_action({"target": "headset", "key": HEADSET_CARD_ID, "action": "set_eq",
+                           "value": [4.5] + BASS_BOOST[1:]})
+
+    message = await controls_broadcast(broadcasts, lambda m: m["controls"]["eq"] is not None)
+    assert message["controls"]["eq_preset"] is None
+
+
+async def test_an_unknown_preset_sends_nothing(session, broadcasts, attached, dongle):
+    await ws.apply_action({"target": "headset", "key": HEADSET_CARD_ID, "action": "apply_eq_preset",
+                           "value": "Nope"})
+
+    assert dongle.sent(0x5F) == []
+
+
+async def test_saving_a_preset_reaches_every_tab_and_names_the_current_eq(session, broadcasts, attached, dongle):
+    gains = [2, 2, 1, 0, 0, 0, 0, 1, 2, 2]
+    await ws.apply_action({"target": "headset", "key": HEADSET_CARD_ID, "action": "set_eq", "value": gains})
+    await controls_broadcast(broadcasts, lambda m: m["controls"]["eq"] == gains)
+
+    await ws.apply_action({"action": "save_eq_preset", "value": {"name": "Mine", "gains": gains}})
+
+    presets = broadcasts.of_type("eq_presets")[-1]["presets"]
+    assert presets[-1]["name"] == "Mine"
+    await controls_broadcast(broadcasts, lambda m: m["controls"]["eq_preset"] == "Mine")
+
+
+async def test_deleting_a_preset_reaches_every_tab(session, broadcasts):
+    await ws.apply_action({"action": "save_eq_preset", "value": {"name": "Mine", "gains": [1] * 10}})
+    await ws.apply_action({"action": "delete_eq_preset", "value": "Mine"})
+
+    assert "Mine" not in [p["name"] for p in broadcasts.of_type("eq_presets")[-1]["presets"]]
+
+
+async def test_a_bad_preset_save_or_delete_changes_nothing(session, broadcasts):
+    for action in ({"action": "save_eq_preset", "value": {"name": "Flat", "gains": [1] * 10}},
+                   {"action": "save_eq_preset", "value": {"name": "Loud", "gains": [99] * 10}},
+                   {"action": "save_eq_preset", "value": "Mine"},
+                   {"action": "delete_eq_preset", "value": "Flat"}):
+        await ws.apply_action(action)
+
+    assert broadcasts.of_type("eq_presets") == []
+
+
+def test_the_dialog_offers_the_presets(session, sync_attached):
+    state = views.build_state()
+    assert state["eq_presets"][0]["name"] == "Flat"
+
+    html = TestClient(app).get("/").text
+    assert ">Bass boost</option>" in html
+    assert "More thump and rumble for music, explosions and engines." in html

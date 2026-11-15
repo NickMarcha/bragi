@@ -26,7 +26,8 @@ that pushes voices around a network.
   it. Its physical volume knob works even though the host has no desktop
   session to catch the media keys.
 - **HyperX Cloud III S Wireless extras.** Battery and charging state on the
-  card, live, plus mic monitor, the auto-off timer and a 10-band EQ. They
+  card, live, plus mic monitor, the auto-off timer and a 10-band EQ with
+  presets, built-in and your own. They
   need a kernel quirk and a udev rule on the host, see
   [`docs/deployment.md`](docs/deployment.md#hyperx-cloud-iii-s-wireless-controls).
 - **Peers over Roc or VBAN.** [Roc](https://roc-streaming.org/) for Linux
@@ -121,6 +122,8 @@ Then connect the peers:
 - [`docs/audio-bridge.md`](docs/audio-bridge.md): the PipeWire graph, the
   Roc and VBAN transports, and the parts that took several tries to make
   stable.
+- [`docs/eq-presets.md`](docs/eq-presets.md): where the HyperX EQ presets
+  come from, the headset measurement behind them, and safe gain limits.
 - [`docs/dashboard-ui.md`](docs/dashboard-ui.md): the templates, the data
   they render from, and where htmx stops and the WebSocket takes over.
 - [`docs/realtime-control-plane.md`](docs/realtime-control-plane.md): how
