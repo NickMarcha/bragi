@@ -1,3 +1,4 @@
+using Avalonia.Input;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -175,6 +176,15 @@ public class VolumeTests
             await Until(() => sliders[1].Value == 40);
             Assert.DoesNotContain("active", mute[1].Classes);
             Assert.False(server.Actions.Reader.TryRead(out _));
+
+            // Right-click resets a fader to 100%, as on the dashboard.
+            var onFader = sliders[1].TranslatePoint(new Point(sliders[1].Bounds.Width / 2, sliders[1].Bounds.Height * 0.9), window)!.Value;
+            window.MouseDown(onFader, MouseButton.Right);
+            window.MouseUp(onFader, MouseButton.Right);
+            var reset = await server.NextAction();
+            Assert.Equal(("set_volume", "outgoing", 1.0), (reset.GetProperty("action").GetString(),
+                reset.GetProperty("direction").GetString(), reset.GetProperty("value").GetDouble()));
+            Assert.Equal(100, sliders[1].Value);
 
             await server.DropConnection();
             await Until(() => !sliders[0].IsEnabled);

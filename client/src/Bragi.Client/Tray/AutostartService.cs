@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using Microsoft.Win32;
@@ -67,14 +69,17 @@ public static class AutostartService
     /// replaces. The stub in &lt;root&gt; always starts the current version, so
     /// the Run entry points there when it exists.
     /// </summary>
-    public static string WindowsLaunchPath(string processPath, Func<string, bool>? fileExists = null)
+    public static string WindowsLaunchPath(string processPath, Func<string, IEnumerable<string>>? exesIn = null)
     {
-        fileExists ??= File.Exists;
+        exesIn ??= dir => Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "*.exe") : [];
         var dir = Path.GetDirectoryName(processPath);
         if (dir is not null && string.Equals(Path.GetFileName(dir), "current", StringComparison.OrdinalIgnoreCase))
         {
-            var stub = Path.Combine(Path.GetDirectoryName(dir)!, Path.GetFileName(processPath));
-            if (fileExists(stub))
+            // The stub is named after the pack title ("Bragi Client.exe"), not
+            // the main exe, and sits next to Velopack's Update.exe.
+            var exes = exesIn(Path.GetDirectoryName(dir)!).ToList();
+            var stub = exes.FirstOrDefault(e => !string.Equals(Path.GetFileName(e), "Update.exe", StringComparison.OrdinalIgnoreCase));
+            if (stub is not null && exes.Count > 1)
             {
                 return stub;
             }

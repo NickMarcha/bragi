@@ -87,12 +87,15 @@ public class WindowsClientTests
     {
         var installed = Path.Combine("C:", "Users", "u", "AppData", "Local", "BragiClient");
         var running = Path.Combine(installed, "current", "Bragi.Client.exe");
-        var stub = Path.Combine(installed, "Bragi.Client.exe");
+        // Velopack names the stub after the pack title and puts Update.exe beside it.
+        var stub = Path.Combine(installed, "Bragi Client.exe");
+        var update = Path.Combine(installed, "Update.exe");
 
-        Assert.Equal(stub, AutostartService.WindowsLaunchPath(running, path => path == stub));
-        Assert.Equal(running, AutostartService.WindowsLaunchPath(running, _ => false));
+        Assert.Equal(stub, AutostartService.WindowsLaunchPath(running, dir => dir == installed ? [update, stub] : []));
+        Assert.Equal(running, AutostartService.WindowsLaunchPath(running, _ => [update]));
+        Assert.Equal(running, AutostartService.WindowsLaunchPath(running, _ => []));
         var dev = Path.Combine("C:", "src", "bin", "Bragi.Client.exe");
-        Assert.Equal(dev, AutostartService.WindowsLaunchPath(dev, _ => true));
+        Assert.Equal(dev, AutostartService.WindowsLaunchPath(dev, _ => [stub, update]));
     }
 
     private static string Url(WebApplication app) =>
