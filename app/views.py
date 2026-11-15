@@ -8,6 +8,7 @@ from __future__ import annotations
 from . import audio_reset
 from . import microphone
 from . import audio_state
+from . import headset_hid
 from . import headsets as headsets_module
 from . import peer_presence
 from . import peers as peers_module
@@ -121,6 +122,9 @@ def headset_view(
         "device_id": device_id,
         "playback": direction_view(hs.playback_node_id, volumes=volumes),
         "capture": direction_view(hs.capture_node_id, volumes=volumes),
+        # Battery, mic monitor, auto-off and EQ, for a headset whose dongle
+        # headset_hid has open. None for every other headset.
+        "controls": headset_hid.view_for(hs.key),
     }
 
 

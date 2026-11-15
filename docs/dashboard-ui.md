@@ -14,6 +14,7 @@ markup and CSS.
 ```
 index.html                     page shell
 ├── _headset_card.html          one local USB headset
+│   └── _headset_controls.html  its HyperX battery and settings dialog
 ├── _peers_list.html            loops _peer_card over `peers`
 │   └── _peer_card.html         one peer
 ├── _fader.html                 the fader() macro (used by both cards)
@@ -33,6 +34,13 @@ index.html                     page shell
   capture are connected (`online` / `offline` / `partial` / `disabled`).
   Two strips: Speakers (`playback`) and Mic (`capture`). A disabled headset
   folds down to its header.
+- **`_headset_controls.html`** holds macros for a HyperX Cloud III S
+  Wireless (`view.controls`, from `app/headset_hid.py`): the battery in the
+  card's meta line, the settings button, and a `<dialog>` with mic monitor,
+  auto-off and the 10 EQ sliders. They render for every headset card and
+  stay `hidden` while `controls` is `None`, so a dongle plugged in after the
+  page loaded shows up from the `headset_controls` broadcast alone.
+  `ws.js` repeats the battery wording, so keep the two in step.
 - **`_peer_card.html`** renders one peer as a `.device`: the name on its
   own line (up to two lines, with the status dot), then a bar with the
   reorder grip, a meta line (`Roc` or `VBAN` and the IP, or for a phone its

@@ -1,0 +1,89 @@
+{# HyperX Cloud III S Wireless controls (app/headset_hid.py) for the headset
+   card. Rendered for every headset card and hidden without a dongle, so
+   one plugged in after the page loaded still shows up: ws.js's
+   applyHeadsetControls fills and shows it. The server renders the same
+   text first, so the card is right before the socket connects. #}
+{# Long form for titles and the dialog, short form for the card's narrow
+   meta line. ws.js's batteryText/batteryShort say the same. #}
+{% macro battery_text(c) -%}
+  {%- if c is none -%}
+  {%- elif c.headset_on == false -%}Headset off
+  {%- elif c.battery is not none -%}Battery {{ c.battery }}%{{ {'charging': ', charging', 'full': ', charged'}.get(c.charging, '') }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro battery_short(c) -%}
+  {%- if c is none -%}
+  {%- elif c.headset_on == false -%}Off
+  {%- elif c.battery is not none -%}{{ c.battery }}%
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro eq_note(c) -%}
+{%- if c.eq -%}The headset can't report its EQ. This is what Bragi last set.
+{%- else -%}The headset can't report its EQ, and Bragi hasn't set one yet, so these sliders don't show what it's using now.
+{%- endif -%}
+{%- endmacro %}
+
+{# The card's meta line: "USB headset" until there's a battery reading. #}
+{% macro meta(view) -%}
+{%- set c = view.controls -%}
+{%- set short = battery_short(c) -%}
+<p class="device-meta" title="{{ battery_text(c) or 'USB headset' }}">
+  <span data-hid="meta-default" {% if short %}hidden{% endif %}>USB headset</span>
+  <span data-hid="battery" class="hid-battery {{ 'charging' if c and c.charging == 'charging' }}" {% if not short %}hidden{% endif %}>{{ short }}</span>
+</p>
+{%- endmacro %}
+
+{% macro button(view) -%}
+<button class="icon-btn hid-settings-btn" type="button" data-hid-open="{{ view.key }}"
+        title="Mic monitor, auto-off and EQ" {% if view.controls is none %}hidden{% endif %}>
+  {{ icons.settings() }}
+</button>
+{%- endmacro %}
+
+{% macro dialog(view) -%}
+{%- set c = view.controls or {} -%}
+{%- set off = c.headset_on == false -%}
+<dialog class="hid-dialog" data-hid-dialog="{{ view.key }}">
+  <h2>{{ view.label }}</h2>
+  <p class="form-note" data-hid="status">{{ battery_text(view.controls) or 'Waiting for the headset' }}</p>
+
+  <label class="viz-settings-row">
+    <input type="checkbox" data-hid-action="set_mic_monitor" {% if c.mic_monitor %}checked{% endif %} {% if off %}disabled{% endif %} />
+    Mic monitor (hear your own voice)
+  </label>
+
+  <label class="viz-settings-row">
+    Turn off after
+    <select data-hid-action="set_auto_off" {% if off %}disabled{% endif %}>
+      <option value="" disabled {% if not c.auto_off_known %}selected{% endif %}>Unknown</option>
+      <option value="never" {% if c.auto_off_known and c.auto_off_minutes is none %}selected{% endif %}>Never</option>
+      {% for minutes in hid.AUTO_OFF_MINUTES %}
+      <option value="{{ minutes }}" {% if c.auto_off_known and c.auto_off_minutes == minutes %}selected{% endif %}>{{ minutes }} min idle</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <fieldset class="hid-eq" {% if off %}disabled{% endif %}>
+    <legend>Equalizer, dB</legend>
+    <div class="hid-eq-bands">
+      {% for hz in hid.EQ_BANDS_HZ %}
+      {%- set gain = c.eq[loop.index0] if c.eq else 0 -%}
+      <label class="hid-eq-band">
+        <output data-eq-readout>{{ '%+g' % gain if gain else '0' }}</output>
+        <input type="range" data-eq-band="{{ loop.index0 }}" min="-{{ hid.EQ_LIMIT_DB }}" max="{{ hid.EQ_LIMIT_DB }}" step="0.5" value="{{ gain }}"
+               aria-label="{{ hz }} Hz" />
+        <span>{{ '%gk' % (hz / 1000) if hz >= 1000 else hz }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+  <p class="form-note" data-hid="eq-note">{{ eq_note(c) }}</p>
+
+  <div class="dialog-actions">
+    <button type="button" data-hid-flat {% if off %}disabled{% endif %}>Flat</button>
+    <button type="button" data-hid-close>Close</button>
+  </div>
+</dialog>
+{%- endmacro %}

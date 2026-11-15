@@ -19,8 +19,8 @@ import uvicorn
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import knob_watcher, level_meter, peers, pipewire, watcher  # noqa: E402
-from tests import fake_pipewire  # noqa: E402
+from app import headset_hid, knob_watcher, level_meter, peers, pipewire, watcher  # noqa: E402
+from tests import fake_hyperx, fake_pipewire  # noqa: E402
 
 
 async def _idle(*_args) -> None:
@@ -31,6 +31,21 @@ pipewire._run = fake_pipewire.demo_session().run
 if not peers.PEERS_FILE.exists():
     peers.save_peers(fake_pipewire.demo_peers())
 watcher.watch = knob_watcher.watch = level_meter.supervise = _idle
+
+
+async def _fake_dongle(on_change) -> None:
+    """The first demo headset gets a fake HyperX dongle (tests/fake_hyperx.py),
+    so the battery, mic monitor, auto-off and EQ controls can be tried."""
+    loop = asyncio.get_running_loop()
+    dongle = fake_hyperx.FakeDongle()
+    headset = headset_hid.attach(fake_hyperx.SERIAL, dongle.write,
+                                 lambda serial: loop.create_task(on_change(serial)))
+    dongle.deliver = lambda report: loop.call_soon_threadsafe(headset.handle_report, report)
+    headset.refresh()
+    await asyncio.Event().wait()
+
+
+headset_hid.supervise = _fake_dongle
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000)

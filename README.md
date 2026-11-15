@@ -25,6 +25,10 @@ that pushes voices around a network.
   Switching a headset off releases the USB device entirely, not just mutes
   it. Its physical volume knob works even though the host has no desktop
   session to catch the media keys.
+- **HyperX Cloud III S Wireless extras.** Battery and charging state on the
+  card, live, plus mic monitor, the auto-off timer and a 10-band EQ. They
+  need a kernel quirk and a udev rule on the host, see
+  [`docs/deployment.md`](docs/deployment.md#hyperx-cloud-iii-s-wireless-controls).
 - **Peers over Roc or VBAN.** [Roc](https://roc-streaming.org/) for Linux
   and Android, VBAN for Windows machines running Voicemeeter. Peers added
   from the dashboard go live within about a second, and survive PipeWire
@@ -110,7 +114,8 @@ Then connect the peers:
 ## Docs
 
 - [`docs/deployment.md`](docs/deployment.md): installing and running it on
-  a host, Tailscale, the host units, the reset button.
+  a host, Tailscale, the host units, the reset button, the HyperX
+  controls' kernel quirk and udev rule.
 - [`docs/development.md`](docs/development.md): the `app/` module map,
   local setup, the test suite and what it can't cover, the `data/` files.
 - [`docs/audio-bridge.md`](docs/audio-bridge.md): the PipeWire graph, the
@@ -158,6 +163,9 @@ These are design constraints. Open bugs are in
   unit restarts the whole `peers.conf` process, about a second of silence.
 - **Peers configured outside Bragi** (`managed: false` in `peers.yaml`) get
   volume control but can't be removed from the UI.
+- **The HyperX EQ can't be read back.** The headset has no command for it,
+  so the dashboard shows the last EQ Bragi set. One set from NGENUITY on
+  another computer won't show.
 - **Two people dragging the same fader at once** isn't a designed-for case.
   Every client sees the result, but ordering only holds within one client.
 

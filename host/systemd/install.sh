@@ -50,6 +50,10 @@ if [[ ! -f "$env_file" ]]; then
     else
       echo "# No input group on this host: the headset volume knob won't work."
     fi
+    hidraw_major=$(awk '$2 == "hidraw" {print $1}' /proc/devices)
+    if [[ -n "$hidraw_major" ]]; then
+      echo "HIDRAW_MAJOR=$hidraw_major"
+    fi
     echo "BRAGI_DATA=$HOME/.local/share/bragi/data"
   } > "$env_file"
   echo "Wrote $env_file:"

@@ -262,6 +262,10 @@ button:focus-visible {
   padding: 0;
 }
 
+.icon-btn[hidden] {
+  display: none;
+}
+
 .icon-btn:disabled {
   cursor: not-allowed;
   opacity: 0.4;
@@ -843,4 +847,71 @@ dialog h2 {
 
 #viz-settings-dialog .form-note {
   margin-bottom: 12px;
+}
+
+/* --- HyperX controls (_headset_controls.html) --- */
+
+.hid-battery.charging {
+  color: var(--accent);
+}
+
+.hid-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.hid-dialog .form-note {
+  margin-bottom: 12px;
+}
+
+.hid-dialog .viz-settings-row {
+  margin-bottom: 12px;
+}
+
+.hid-eq {
+  margin: 0 0 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.hid-eq legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.hid-eq-bands {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.hid-eq-band {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hid-eq-band output {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.hid-eq-band input[type="range"] {
+  width: 22px;
+  height: 120px;
+  margin: 0;
+  padding: 0;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  background: none;
+  border: 0;
+  accent-color: var(--accent);
+}
+
+.hid-eq:disabled .hid-eq-band {
+  opacity: 0.4;
 }

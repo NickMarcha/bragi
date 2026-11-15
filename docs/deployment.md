@@ -20,6 +20,9 @@ the Roc and VBAN modules run bare metal. Only the web UI runs in Docker.
   addresses and HTTPS server URLs.
 - For the headset volume knob: read access to `/dev/input`, which the
   compose file grants through the `input` group (see below).
+- For the HyperX Cloud III S Wireless battery, mic monitor, auto-off and EQ:
+  a kernel quirk and a udev rule. See
+  [HyperX Cloud III S Wireless controls](#hyperx-cloud-iii-s-wireless-controls).
 
 ## Install
 
@@ -139,6 +142,82 @@ To reset by hand: `systemctl --user start bragi-audio-reset@manual.service`.
 
 Installs from before the hour became a setting have a timer pinned to 05:00.
 Run `host/systemd/install.sh` again to switch to the hourly one.
+
+## HyperX Cloud III S Wireless controls
+
+With a HyperX Cloud III S Wireless dongle (USB `03f0:06be`, or `03f0:02cc`
+for the other hardware revision), the headset's card shows the battery,
+and its settings button opens mic monitor, the auto-off timer and a 10-band
+EQ (`app/headset_hid.py`). Bragi talks to the dongle over its vendor HID
+interface. Without one of these dongles none of this appears.
+
+It takes three things on the host.
+
+**1. The usbcore quirk.** Without it the dongle answers nothing on Linux.
+At its first enumeration after power-up it checks how much of its
+configuration descriptor the host asks for. Windows asks for 255 bytes,
+Linux for 9, and after a 9-byte request the dongle stops passing anything
+from the headset to the host until it's unplugged. Audio and the volume
+knob keep working, so nothing looks wrong, but battery reads come back
+`0xFF` or not at all. The quirk flag `r` makes Linux ask for 255. The root
+cause is in HyperHeadset issue 36
+(https://github.com/LennardKittner/HyperHeadset/issues/36), with the
+kernel versions known to support the flag. Older kernels drop flags they
+don't know without saying so. Raspberry Pi OS's 6.18.60+rpt has it.
+
+Add it to the kernel command line (`/boot/firmware/cmdline.txt` on a Pi,
+one line, space-separated):
+
+```
+usbcore.quirks=03f0:06be:r,03f0:02cc:r
+```
+
+To apply it without a reboot, then unplug the dongle and plug it back in:
+
+```bash
+echo 03f0:06be:r,03f0:02cc:r | sudo tee /sys/module/usbcore/parameters/quirks
+```
+
+A dongle that's already stuck stays stuck until it loses power, and a Pi
+can keep its USB ports powered through a reboot. Unplug it once with the
+quirk active.
+
+**2. Access to the hidraw node.** The node is `root:root 0600` by default.
+`host/udev/72-bragi-hyperx-hidraw.rules` gives it to the `input` group,
+which the container already joins for the volume knob:
+
+```bash
+sudo install -m 644 host/udev/72-bragi-hyperx-hidraw.rules /etc/udev/rules.d/
+sudo udevadm control --reload
+sudo udevadm trigger --subsystem-match=hidraw
+ls -l /dev/hidraw*   # the dongle's node: crw-rw---- root input
+```
+
+A rule of your own that does the same is fine. Skip this step if you have one.
+
+**3. The compose settings.** `docker-compose.yml` mounts the host's `/dev`
+read-only at `/host/dev` and allows the hidraw device major through
+`device_cgroup_rules`. It doesn't list the node under `devices:`, because
+that copies only the nodes present when the container starts: a replug
+gives the dongle a new `hidrawN`, and starting without the dongle plugged
+in would fail. The major comes from `HIDRAW_MAJOR` in `.env` (default 241).
+`install.sh` writes it to a new `.env`. For an existing one, add it by hand:
+
+```bash
+grep hidraw /proc/devices   # e.g. "241 hidraw"
+echo HIDRAW_MAJOR=241 >> .env
+docker compose up -d
+```
+
+If the controls don't appear, the container log says why: `cannot open
+/host/dev/hidrawN ... Operation not permitted` is a wrong `HIDRAW_MAJOR`,
+`Permission denied` is the udev rule. A dongle that opens but never shows a
+battery is the missing quirk.
+
+Mic monitor and auto-off are read back from the headset after every
+change. The EQ can't be read from the headset, so Bragi shows the last EQ
+it set (`data/headset_eq.yaml`) and says so in the dialog. Until Bragi has
+set one, the sliders sit at 0 and don't reflect what the headset is using.
 
 ## Updating
 

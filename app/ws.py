@@ -45,6 +45,7 @@ from collections.abc import Callable
 from fastapi import WebSocket, WebSocketDisconnect
 
 from . import audio_state
+from . import headset_hid
 from . import headsets as headsets_module
 from . import pipewire
 from . import views
@@ -337,6 +338,53 @@ async def _throttle_worker(key: tuple) -> None:
             asyncio.create_task(_throttle_worker(key))
 
 
+def _set_mic_monitor(hs: headset_hid.HidHeadset, value) -> None:
+    if not isinstance(value, bool):
+        raise ValueError("mic monitor is true or false")
+    hs.set_mic_monitor(value)
+
+
+_HID_SETTERS: dict[str, Callable] = {
+    "set_mic_monitor": _set_mic_monitor,
+    "set_auto_off": lambda hs, value: hs.set_auto_off(value),
+    "set_eq": lambda hs, value: hs.set_eq(value),
+}
+
+
+async def _apply_hid_setting(key: str, verb: str, value) -> None:
+    """The HyperX controls (headset_hid.py). Mic monitor and auto-off are
+    read back from the headset after the write, and that reply is what
+    gets broadcast, through supervise()'s on_change. The EQ can't be read
+    back, so it's broadcast here once every band is written."""
+    hs = headset_hid.for_card(key)
+    if hs is None:
+        return
+    try:
+        await asyncio.to_thread(_HID_SETTERS[verb], hs, value)
+    except (ValueError, headset_hid.HeadsetOff) as exc:
+        logger.info("%s on %s refused: %s", verb, key, exc)
+        return
+    except OSError:
+        logger.exception("%s on %s failed", verb, key)
+        return
+    if verb == "set_eq":
+        manager.broadcast_nowait({"type": "headset_controls", "key": key, "controls": hs.view()})
+
+
+async def broadcast_headset_controls(serial: str) -> None:
+    """headset_hid.supervise()'s on_change: a battery or setting changed, or
+    a dongle came or went. Costs one pw-dump to find which card the dongle
+    belongs to, which is fine at the rate these happen (a battery percent
+    every few minutes)."""
+    def _keys() -> list[str]:
+        graph = pipewire.dump()
+        return [hs.key for hs in headsets_module.list_headsets(graph)
+                if headset_hid.serial_matches(hs.key, serial)]
+
+    for key in await asyncio.to_thread(_keys):
+        manager.broadcast_nowait({"type": "headset_controls", "key": key, "controls": headset_hid.view_for(key)})
+
+
 async def _apply_action_logged(action: dict) -> None:
     """Wraps apply_action for fire-and-forget dispatch (see
     websocket_endpoint) - exceptions would otherwise vanish into asyncio's
@@ -394,6 +442,10 @@ async def apply_action(action: dict) -> None:
         return
 
     if target == "headset":
+        if verb in _HID_SETTERS:
+            await _apply_hid_setting(key, verb, action.get("value"))
+            return
+
         if verb == "toggle_enabled":
             # Resolved by ALSA card Device, never by node - a disabled
             # headset has no nodes at all, so a Node-based lookup would find
