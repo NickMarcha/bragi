@@ -7,6 +7,8 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Shapes;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -219,6 +221,14 @@ public sealed class VolumeWindow : Window
             _timestamp = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _timestamp + 0.01);
             strip.LastSent = _timestamp;
         };
+        // Right-click resets to 100% (unity gain), like the dashboard's faders.
+        // Tunnelling, so the slider never treats the right button as a drag.
+        strip.Slider.AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            if (!e.GetCurrentPoint(strip.Slider).Properties.IsRightButtonPressed) return;
+            e.Handled = true;
+            if (strip.Slider.IsEnabled) strip.Slider.Value = 100;
+        }, RoutingStrategies.Tunnel);
         strip.Mute.Click += async (_, _) =>
         {
             if (!await _connection.SendAsync(new { action = "toggle_mute", target = device.Target, key = device.Key, direction }))
