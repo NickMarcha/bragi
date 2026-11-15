@@ -1,5 +1,7 @@
 using System;
+using System.IO;
 using System.Net.WebSockets;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -13,9 +15,10 @@ namespace Bragi.Client.Tray;
 /// module can't prove that on its own since Roc runs over UDP - see
 /// client/README.md and the server's peer_presence.py docstring.
 ///
-/// Never sends anything meaningful (the server only reads to detect
-/// disconnect) - this is a heartbeat purely by connection lifetime, not
-/// message content.
+/// The connection's lifetime is the heartbeat. Over the same socket the
+/// server sends the gamepad status and, on the computer that claimed the
+/// controllers, their input; the client sends gamepad_claim and
+/// gamepad_release (app/peer_control.py, app/gamepad.py).
 /// </summary>
 public sealed class PeerPresenceClient : IDisposable
 {
@@ -60,23 +63,67 @@ public sealed class PeerPresenceClient : IDisposable
         _cts = null;
     }
 
-    private static async Task RunLoopAsync(Uri uri, CancellationToken token)
+    /// <summary>A JSON message from the server, e.g. the gamepad status (app/peer_control.py). Raised on the socket's thread.</summary>
+    public event Action<JsonElement>? MessageReceived;
+    /// <summary>The socket closed or dropped.</summary>
+    public event Action? Disconnected;
+
+    private ClientWebSocket? _socket;
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
+
+    /// <summary>Sends a JSON message; false if the socket isn't open.</summary>
+    public async Task<bool> SendAsync(object message)
+    {
+        var socket = _socket;
+        if (socket is null || socket.State != WebSocketState.Open)
+        {
+            return false;
+        }
+        await _sendLock.WaitAsync();
+        try
+        {
+            await socket.SendAsync(JsonSerializer.SerializeToUtf8Bytes(message), WebSocketMessageType.Text, true, CancellationToken.None);
+            return true;
+        }
+        catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or InvalidOperationException)
+        {
+            return false;
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
+    }
+
+    private async Task RunLoopAsync(Uri uri, CancellationToken token)
     {
         var delay = TimeSpan.FromSeconds(2);
-        var buffer = new byte[16];
+        var buffer = new byte[4096];
+        var message = new MemoryStream();
         while (!token.IsCancellationRequested)
         {
             try
             {
                 using var socket = new ClientWebSocket();
                 await socket.ConnectAsync(uri, token);
+                _socket = socket;
                 delay = TimeSpan.FromSeconds(2); // reset backoff after a successful connect
                 while (!token.IsCancellationRequested && socket.State == WebSocketState.Open)
                 {
-                    // Blocks until the server closes it, the link disables
-                    // (token cancelled), or the connection drops - never
-                    // expects real message content.
-                    await socket.ReceiveAsync(buffer, token);
+                    // The connection's lifetime is the heartbeat; messages
+                    // are the gamepad status and input (app/gamepad.py).
+                    var result = await socket.ReceiveAsync(buffer, token);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        break;
+                    }
+                    message.Write(buffer, 0, result.Count);
+                    if (!result.EndOfMessage)
+                    {
+                        continue;
+                    }
+                    Deliver(message.ToArray());
+                    message.SetLength(0);
                 }
             }
             catch (OperationCanceledException)
@@ -86,6 +133,12 @@ public sealed class PeerPresenceClient : IDisposable
             catch
             {
                 // Connection failed/dropped - fall through to the retry delay below.
+            }
+            finally
+            {
+                _socket = null;
+                message.SetLength(0);
+                Disconnected?.Invoke();
             }
 
             try
@@ -97,6 +150,19 @@ public sealed class PeerPresenceClient : IDisposable
                 break;
             }
             delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 30));
+        }
+    }
+
+    private void Deliver(byte[] json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            MessageReceived?.Invoke(doc.RootElement);
+        }
+        catch (JsonException)
+        {
+            // Not JSON: nothing this client understands.
         }
     }
 

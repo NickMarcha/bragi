@@ -5,6 +5,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using Bragi.Client.Config;
+using Bragi.Client.Gamepad;
 using Bragi.Client.Volume;
 
 namespace Bragi.Client.Tray;
@@ -24,6 +25,8 @@ public sealed class TrayIconManager : IDisposable
     private readonly NativeMenuItem _restartItem;
     private readonly NativeMenuItem _autostartItem;
     private readonly VolumeMenu _volumeMenu;
+    private readonly GamepadService? _gamepads;
+    private readonly NativeMenuItem _gamepadItem;
 
     /// <summary>"Connect to Bragi..." / "Change Bragi connection..." was chosen; App opens the setup window.</summary>
     public event Action? SetupRequested;
@@ -32,9 +35,19 @@ public sealed class TrayIconManager : IDisposable
     private readonly WindowIcon _enabledIcon = LoadIcon("tray-enabled.png");
     private readonly WindowIcon _errorIcon = LoadIcon("tray-error.png");
 
-    public TrayIconManager(LinkStatusService statusService)
+    public TrayIconManager(LinkStatusService statusService, GamepadService? gamepads = null)
     {
         _statusService = statusService;
+        _gamepads = gamepads;
+        // "Use controller here": takes the Bragi host's controllers for this
+        // computer, or gives them back. Hidden until the host has one.
+        _gamepadItem = new NativeMenuItem { ToggleType = MenuItemToggleType.CheckBox, IsVisible = false };
+        _gamepadItem.Click += async (_, _) =>
+        {
+            if (_gamepads is null) return;
+            var ok = _gamepads.IsHere ? await _gamepads.ReleaseAsync() : await _gamepads.ClaimAsync();
+            if (!ok) Dispatcher.UIThread.Post(() => _gamepadItem.Header = "Controller: Bragi isn't connected");
+        };
         _volumeMenu = new VolumeMenu(RocLinkConfig.TryLoad());
 
         _statusItem = new NativeMenuItem { Header = "Status: checking...", IsEnabled = false };
@@ -96,6 +109,7 @@ public sealed class TrayIconManager : IDisposable
         foreach (var item in new NativeMenuItemBase[]
         {
             new NativeMenuItemSeparator(),
+            _gamepadItem,
             _volumeMenu.Item,
             _volumeMenu.WebUiItem,
             new NativeMenuItemSeparator(),
@@ -122,6 +136,10 @@ public sealed class TrayIconManager : IDisposable
         _trayIcon.Clicked += (_, _) => _volumeMenu.Open();
 
         _statusService.StatusChanged += OnStatusChanged;
+        if (_gamepads is not null)
+        {
+            _gamepads.StatusChanged += OnGamepadsChanged;
+        }
         // Render whatever the service's initial (pre-first-poll) state is immediately.
         Render(_statusService.Current);
     }
@@ -134,6 +152,36 @@ public sealed class TrayIconManager : IDisposable
                 $"VBAN in: {config.VbanStreamSend} from {config.BragiHostIp}:{config.VbanPort}",
                 $"VBAN out: {config.VbanStreamReceive} to {config.BragiHostIp}:{config.VbanPort}",
             ];
+
+    private void OnGamepadsChanged(GamepadStatus status) => Dispatcher.UIThread.Post(() =>
+    {
+        var (visible, header, isChecked, enabled) = GamepadMenu(status, _gamepads!.IsHere, _gamepads.Problem);
+        _gamepadItem.IsVisible = visible;
+        _gamepadItem.Header = header;
+        _gamepadItem.IsChecked = isChecked;
+        _gamepadItem.IsEnabled = enabled;
+    });
+
+    /// <summary>The "Use controller here" item for this status.</summary>
+    public static (bool Visible, string Header, bool Checked, bool Enabled) GamepadMenu(
+        GamepadStatus status, bool isHere, string? problem)
+    {
+        if (status.Controllers.Count == 0)
+        {
+            return (false, "", false, false);
+        }
+        var name = status.Controllers.Count == 1 ? status.Controllers[0] : $"{status.Controllers.Count} controllers";
+        if (!status.HereSupported)
+        {
+            return (true, $"{name}: not on Windows yet", false, false);
+        }
+        if (isHere && problem is not null)
+        {
+            return (true, $"{name}: {problem}", true, true);
+        }
+        var elsewhere = !isHere && status.Target is not null ? $" (now on {status.Target})" : "";
+        return (true, $"Use {name} here{elsewhere}", isHere, true);
+    }
 
     public static string SetupMenuLabel(bool alreadySetUp) =>
         alreadySetUp ? "Change Bragi connection..." : "Connect to Bragi...";
@@ -193,6 +241,10 @@ public sealed class TrayIconManager : IDisposable
 
     public void Dispose()
     {
+        if (_gamepads is not null)
+        {
+            _gamepads.StatusChanged -= OnGamepadsChanged;
+        }
         _volumeMenu.Dispose();
         _statusService.StatusChanged -= OnStatusChanged;
         _trayIcon.IsVisible = false;

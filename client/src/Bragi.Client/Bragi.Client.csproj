@@ -3,10 +3,12 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
+    <!-- Gamepad/UinputGamepad.cs builds uinput structs in place. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Bumped + tagged as client-vX.Y.Z to cut a release - see
          .github/workflows/client-release.yml and client/README.md. -->
-    <Version>0.1.11</Version>
+    <Version>0.1.12</Version>
     <AssemblyName>Bragi.Client</AssemblyName>
     <!-- The exe's own icon (Explorer, taskbar, installer); only Windows builds carry one. -->
     <ApplicationIcon Condition="$(RuntimeIdentifier.StartsWith('win')) Or '$(OS)' == 'Windows_NT'">Assets/bragi.ico</ApplicationIcon>

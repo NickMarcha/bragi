@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import audio_state, auth, eq_presets, headset_hid, layout, level_meter, macro_button, mic_monitor, peers as peers_module, pipewire, viz_settings, ws  # noqa: E402
+from app import audio_state, auth, eq_presets, gamepad, headset_hid, layout, level_meter, macro_button, mic_monitor, peers as peers_module, pipewire, viz_settings, ws  # noqa: E402
 
 from . import fake_pipewire  # noqa: E402
 
@@ -35,6 +35,8 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(eq_presets, "FILE", tmp_path / "headset_eq_presets.yaml")
     monkeypatch.setattr(mic_monitor, "SETTINGS_FILE", tmp_path / "mic_monitor.yaml")
     monkeypatch.setattr(macro_button, "SETTINGS_FILE", tmp_path / "macro_button.yaml")
+    monkeypatch.setattr(gamepad, "SETTINGS_FILE", tmp_path / "gamepad.yaml")
+    monkeypatch.setattr(gamepad, "hub", None)
     peers_module.save_peers(fake_pipewire.demo_peers())
     return tmp_path
 

@@ -1,7 +1,10 @@
 """Android peer configuration and commands, separate from dashboard fader timing.
 
-Old desktop clients keep their receive-free presence socket. Android clients
-opt in with ?client=android and receive configuration and stream commands.
+Android clients opt in with ?client=android and receive configuration and
+stream commands. Desktop tray apps receive the gamepad status and, on the
+computer that has the controllers, their input (gamepad.py); they can send
+gamepad_claim and gamepad_release. Older desktop clients read and ignore
+whatever arrives.
 Each connection has one writer; dashboard actions only enqueue commands.
 """
 from __future__ import annotations
@@ -14,9 +17,14 @@ from dataclasses import asdict
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from . import peer_presence, peers, ws
+from . import gamepad, peer_presence, peers, ws
 
 _connections: dict[str, dict[WebSocket, asyncio.Queue]] = {}
+# Sockets of Android clients; every other connection is a desktop tray app.
+_android: set[WebSocket] = set()
+# A droppable message (a gamepad state) is skipped once this many are queued:
+# the next one carries the whole state anyway.
+_DROP_AFTER = 8
 statuses: dict[str, dict] = {}
 # The tailnet address each phone's control socket actually came from.
 seen_addresses: dict[str, str] = {}
@@ -68,6 +76,37 @@ def publish_streams(peer: peers.Peer) -> dict:
     return message
 
 
+def send(name: str, message: dict, droppable: bool = False) -> None:
+    """Queues a message for every desktop connection of this peer."""
+    for socket, queue in _connections.get(name, {}).items():
+        if socket in _android or (droppable and queue.qsize() >= _DROP_AFTER):
+            continue
+        queue.put_nowait(message)
+
+
+def broadcast_desktop(message: dict) -> None:
+    """Queues a message for every desktop tray app, and for the dashboard."""
+    for connections in _connections.values():
+        for socket, queue in connections.items():
+            if socket not in _android:
+                queue.put_nowait(message)
+    ws.manager.broadcast_nowait(message)
+
+
+def _desktop_message(name: str, raw: str) -> None:
+    """What a desktop tray app may ask: take or give back the controllers."""
+    try:
+        message = json.loads(raw)
+    except (ValueError, TypeError):
+        return
+    if not isinstance(message, dict) or gamepad.hub is None:
+        return
+    if message.get('type') == 'gamepad_claim':
+        gamepad.hub.set_target(name)
+    elif message.get('type') == 'gamepad_release':
+        gamepad.hub.release(name)
+
+
 def remove(name: str) -> None:
     for queue in _connections.get(name, {}).values():
         queue.put_nowait({'type': 'peer_removed', 'name': name})
@@ -83,6 +122,10 @@ async def endpoint(socket: WebSocket, name: str) -> None:
     queue: asyncio.Queue = asyncio.Queue()
     connections = _connections.setdefault(name, {})
     connections[socket] = queue
+    if android:
+        _android.add(socket)
+    elif gamepad.hub is not None:
+        queue.put_nowait(gamepad.hub.status())
     peer_presence.connected_peers.add(name)
     if android and (seen := _tailnet_source(socket)):
         seen_addresses[name] = seen
@@ -100,6 +143,8 @@ async def endpoint(socket: WebSocket, name: str) -> None:
             if receive_task in done:
                 raw = receive_task.result()
                 receive_task = None
+                if not android:
+                    _desktop_message(name, raw)
                 if android:
                     try:
                         message = json.loads(raw)
@@ -129,6 +174,7 @@ async def endpoint(socket: WebSocket, name: str) -> None:
         pass
     finally:
         connections.pop(socket, None)
+        _android.discard(socket)
         if not connections:
             _connections.pop(name, None)
             statuses.pop(name, None)
