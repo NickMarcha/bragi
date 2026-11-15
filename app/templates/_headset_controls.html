@@ -48,7 +48,7 @@
 
 {% macro button(view) -%}
 <button class="icon-btn hid-settings-btn" type="button" data-hid-open="{{ view.key }}"
-        title="Mic monitoring, auto-off and EQ" {% if view.controls is none %}hidden{% endif %}>
+        title="Mic monitoring, auto-off, EQ and the macro button" {% if view.controls is none %}hidden{% endif %}>
   {{ icons.settings() }}
 </button>
 {%- endmacro %}
@@ -133,6 +133,58 @@
             {% if not (c.eq_preset and presets | selectattr('name', 'equalto', c.eq_preset) | rejectattr('builtin') | list) %}disabled{% endif %}
             title="Delete the selected saved preset">Delete preset</button>
   </form>
+
+  {#- The macro button (app/macro_button.py). The headset tells single,
+      double and triple presses apart itself. Each field is saved when it
+      changes, and Test runs what's in the form once. Which fields show
+      is CSS (:has), like the add-peer form. ws.js fills it live. -#}
+  <fieldset class="hid-macro">
+    <legend>Macro button</legend>
+    {% for gesture, label in (('single', 'Single press'), ('double', 'Double press'), ('triple', 'Triple press')) %}
+    {%- set g = (c.macro or {}).get(gesture) or {'action': {'type': 'none'}, 'result': none} %}
+    {%- set a = g.action %}
+    <div class="hid-macro-gesture" data-macro="{{ gesture }}">
+      <div class="viz-settings-row">
+        <span class="hid-macro-label">{{ label }}</span>
+        <select data-macro-field="type" aria-label="{{ label }} action">
+          <option value="none" {% if a.type == 'none' %}selected{% endif %}>Nothing</option>
+          <option value="http" {% if a.type == 'http' %}selected{% endif %}>HTTP request</option>
+          <option value="toggle_mic_monitor" {% if a.type == 'toggle_mic_monitor' %}selected{% endif %}>Mic monitoring on/off</option>
+        </select>
+        <button type="button" data-macro-test {% if a.type == 'none' %}disabled{% endif %}
+                title="Run this action once, as it is in the form">Test</button>
+      </div>
+      <div class="hid-macro-http">
+        <div class="hid-macro-pair">
+          <select data-macro-field="method" aria-label="Method">
+            {% for m in ('GET', 'POST', 'PUT', 'PATCH', 'DELETE') %}
+            <option {% if (a.method or 'POST') == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+          <select data-macro-field="target" aria-label="Send to">
+            <option value="url" {% if a.target != 'socket' %}selected{% endif %}>to a URL</option>
+            <option value="socket" {% if a.target == 'socket' %}selected{% endif %}>to a unix socket on the host</option>
+          </select>
+        </div>
+        <input type="text" class="url-only" data-macro-field="url" value="{{ a.url or '' }}" maxlength="2000"
+               placeholder="https://example.com/hook" aria-label="URL" />
+        <div class="hid-macro-pair socket-only">
+          <input type="text" data-macro-field="socket" value="{{ a.socket or '' }}" maxlength="2000"
+                 placeholder="/run/user/1000/app.sock" aria-label="Socket path" title="Socket path. The host's /run/user is mounted in the container." />
+          <input type="text" data-macro-field="path" value="{{ a.path or '/' }}" maxlength="2000"
+                 placeholder="/api/path" aria-label="HTTP path" title="HTTP path on that socket" />
+        </div>
+        <textarea data-macro-field="headers" rows="2" spellcheck="false" aria-label="Extra headers"
+                  placeholder="Extra headers, one per line: X-Name: value">{{ (a.headers or {}).items() | map('join', ': ') | join('\n') }}</textarea>
+        <textarea data-macro-field="body" rows="3" maxlength="8000" spellcheck="false" aria-label="JSON body"
+                  placeholder="JSON body (optional)">{{ a.body or '' }}</textarea>
+      </div>
+      <p class="form-note {{ 'macro-failed' if g.result and not g.result.ok }}" data-macro-result>
+        {%- if g.result %}Last: {{ g.result.text }}{% else %}Not run since Bragi started{% endif -%}
+      </p>
+    </div>
+    {% endfor %}
+  </fieldset>
 
   <div class="dialog-actions">
     <button type="button" data-hid-flat {% if off %}disabled{% endif %}>Flat</button>

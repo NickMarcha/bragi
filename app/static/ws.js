@@ -473,6 +473,111 @@
     dialog.querySelector("[data-hid-preset-delete]").disabled = !(preset && !preset.builtin);
   }
 
+  // --- The macro button (app/macro_button.py) ---
+
+  // "Name: value" per line, as the form shows headers. Same as the
+  // template's join.
+  function headersText(headers) {
+    return Object.entries(headers || {}).map(([name, value]) => `${name}: ${value}`).join("\n");
+  }
+
+  function macroResultText(result) {
+    if (!result) return "Not run since Bragi started";
+    const at = new Date(result.at * 1000).toLocaleTimeString();
+    return `Last: ${result.text}, ${at}`;
+  }
+
+  // [the gesture's action, null] from its fields, or [null, what's wrong
+  // with them]. The server checks the same (macro_button.valid_action) and
+  // ignores an action that fails, so a gesture with an error isn't sent.
+  function macroAction(row) {
+    const field = (name) => row.querySelector(`[data-macro-field="${name}"]`).value;
+    const type = field("type");
+    if (type !== "http") return [{ type }, null];
+    const action = {
+      type, method: field("method"), target: field("target"), url: field("url").trim(),
+      socket: field("socket").trim(), path: field("path").trim() || "/", headers: {}, body: field("body").trim(),
+    };
+    if (action.target === "url" && !/^https?:\/\/[^/\s?#]+/.test(action.url)) {
+      return [null, "the URL starts with http:// or https:// and names a host"];
+    }
+    if (action.target === "socket") {
+      if (!action.socket.startsWith("/")) return [null, "the socket is an absolute path, like /run/user/1000/app.sock"];
+      if (!action.path.startsWith("/") || /\s/.test(action.path)) return [null, "the HTTP path starts with / and has no spaces"];
+    }
+    for (const line of field("headers").split("\n")) {
+      if (!line.trim()) continue;
+      const colon = line.indexOf(":");
+      const name = line.slice(0, colon).trim();
+      if (colon < 1 || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) return [null, `"${line.trim()}" isn't a Name: value header`];
+      action.headers[name] = line.slice(colon + 1).trim();
+    }
+    if (action.body) {
+      try {
+        JSON.parse(action.body);
+      } catch (err) {
+        return [null, "the body isn't valid JSON"];
+      }
+    }
+    return [action, null];
+  }
+
+  function showMacroResult(row, text, failed) {
+    const note = row.querySelector("[data-macro-result]");
+    note.textContent = text;
+    note.classList.toggle("macro-failed", failed);
+  }
+
+  function applyMacro(dialog, macro) {
+    dialog.querySelectorAll("[data-macro]").forEach((row) => {
+      // A gesture holding an edit that couldn't be saved keeps it, and
+      // says why, until it's fixed.
+      if (row.dataset.unsaved === "1") return;
+      const g = (macro || {})[row.dataset.macro] || { action: { type: "none" }, result: null };
+      showMacroResult(row, macroResultText(g.result), !!g.result && !g.result.ok);
+      // The fields stay as they are while you're in them (Test keeps focus).
+      if (row.contains(document.activeElement)) return;
+      const a = g.action;
+      const values = {
+        type: a.type, method: a.method || "POST", target: a.target || "url", url: a.url || "",
+        socket: a.socket || "", path: a.path || "/", headers: headersText(a.headers), body: a.body || "",
+      };
+      for (const [name, value] of Object.entries(values)) {
+        row.querySelector(`[data-macro-field="${name}"]`).value = value;
+      }
+      row.querySelector("[data-macro-test]").disabled = a.type === "none";
+    });
+  }
+
+  function wireMacro(dialog, key) {
+    dialog.querySelectorAll("[data-macro]").forEach((row) => {
+      const gesture = row.dataset.macro;
+      const test = row.querySelector("[data-macro-test]");
+      row.querySelectorAll("[data-macro-field]").forEach((input) => {
+        input.addEventListener("change", () => {
+          test.disabled = row.querySelector('[data-macro-field="type"]').value === "none";
+          const [action, error] = macroAction(row);
+          if (error) {
+            row.dataset.unsaved = "1";
+            showMacroResult(row, `Not saved: ${error}`, true);
+            return;
+          }
+          row.dataset.unsaved = "0";
+          send({ action: "set_macro", target: "headset", key, value: { gesture, action } });
+        });
+      });
+      test.addEventListener("click", () => {
+        const [action, error] = macroAction(row);
+        if (error) {
+          showMacroResult(row, `Can't run: ${error}`, true);
+          return;
+        }
+        showMacroResult(row, "Running...", false);
+        send({ action: "test_macro", target: "headset", key, value: { gesture, action } });
+      });
+    });
+  }
+
   function applyHeadsetControls(key, c) {
     if (c) lastControls.set(key, c);
     else lastControls.delete(key);
@@ -539,6 +644,8 @@
     dialog.querySelector('[data-hid="eq-note"]').textContent = c.eq
       ? "The headset can't report its EQ. This is what Bragi last set."
       : "The headset can't report its EQ, and Bragi hasn't set one yet, so these sliders don't show what it's using now.";
+
+    applyMacro(dialog, c.macro);
   }
 
   function wireHeadsetControls(root) {
@@ -548,6 +655,7 @@
       const openBtn = card && card.querySelector("[data-hid-open]");
       if (openBtn) openBtn.addEventListener("click", () => dialog.showModal());
       dialog.querySelector("[data-hid-close]").addEventListener("click", () => dialog.close());
+      wireMacro(dialog, key);
 
       const monitor = dialog.querySelector('[data-hid-action="set_mic_monitor"]');
       monitor.addEventListener("change", () => {

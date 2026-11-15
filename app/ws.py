@@ -47,6 +47,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from . import audio_state
 from . import eq_presets
 from . import headset_hid
+from . import macro_button
 from . import mic_monitor
 from . import headsets as headsets_module
 from . import pipewire
@@ -396,6 +397,48 @@ async def _apply_monitor_setting(key: str, verb: str, value) -> None:
                               "controls": views.headset_controls_view(key)})
 
 
+async def _apply_macro_setting(key: str, verb: str, value) -> None:
+    """The macro button (macro_button.py). set_macro saves one gesture's
+    action, test_macro runs the action it's given once, without saving it,
+    so the dialog's Test button tries what's in the form."""
+    hs = headset_hid.for_card(key)
+    if hs is None:
+        return
+    try:
+        if not isinstance(value, dict):
+            raise ValueError(f"{verb} takes {{gesture, action}}")
+        if verb == "set_macro":
+            await macro_button.set_action(hs.serial, value.get("gesture"), value.get("action"))
+        else:
+            # Broadcast even when nothing ran, so the dialog's "Running..."
+            # goes back to the last result.
+            await macro_button.press(hs.serial, value.get("gesture"), value.get("action"))
+    except ValueError as exc:
+        logger.info("%s on %s refused: %s", verb, key, exc)
+        return
+    manager.broadcast_nowait({"type": "headset_controls", "key": key,
+                              "controls": views.headset_controls_view(key)})
+
+
+# Presses still running, so a task isn't collected before it finishes.
+_macro_tasks: set[asyncio.Task] = set()
+
+
+def on_macro_button(serial: str, gesture: str) -> None:
+    """headset_hid.supervise()'s on_button, called from the hidraw reader:
+    runs the action in its own task and shows every tab the result."""
+    async def _run() -> None:
+        try:
+            if await macro_button.press(serial, gesture) is not None:
+                await broadcast_headset_controls(serial)
+        except Exception:
+            logger.exception("macro button %s on %s failed", gesture, serial)
+
+    task = asyncio.get_running_loop().create_task(_run())
+    _macro_tasks.add(task)
+    task.add_done_callback(_macro_tasks.discard)
+
+
 async def _change_eq_presets(verb: str, value) -> None:
     """Saving or deleting a preset. Presets are global, not per headset,
     so every tab gets the new list, and every open headset is re-sent:
@@ -495,6 +538,9 @@ async def apply_action(action: dict) -> None:
             return
         if verb in _MONITOR_SETTERS:
             await _apply_monitor_setting(key, verb, action.get("value"))
+            return
+        if verb in ("set_macro", "test_macro"):
+            await _apply_macro_setting(key, verb, action.get("value"))
             return
 
         if verb == "toggle_enabled":

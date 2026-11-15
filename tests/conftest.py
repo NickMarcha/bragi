@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import audio_state, auth, eq_presets, headset_hid, layout, level_meter, mic_monitor, peers as peers_module, pipewire, viz_settings, ws  # noqa: E402
+from app import audio_state, auth, eq_presets, headset_hid, layout, level_meter, macro_button, mic_monitor, peers as peers_module, pipewire, viz_settings, ws  # noqa: E402
 
 from . import fake_pipewire  # noqa: E402
 
@@ -34,6 +34,7 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(headset_hid, "EQ_FILE", tmp_path / "headset_eq.yaml")
     monkeypatch.setattr(eq_presets, "FILE", tmp_path / "headset_eq_presets.yaml")
     monkeypatch.setattr(mic_monitor, "SETTINGS_FILE", tmp_path / "mic_monitor.yaml")
+    monkeypatch.setattr(macro_button, "SETTINGS_FILE", tmp_path / "macro_button.yaml")
     peers_module.save_peers(fake_pipewire.demo_peers())
     return tmp_path
 
@@ -54,6 +55,10 @@ def reset_ws_state():
     pipewire.forget_volumes()
     headset_hid._devices.clear()
     mic_monitor._runner = None
+    macro_button._results.clear()
+    macro_button._running.clear()
+    macro_button._last_failure.clear()
+    macro_button._written_seq.clear()
 
 
 @pytest.fixture

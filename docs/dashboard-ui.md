@@ -38,7 +38,7 @@ index.html                     page shell
   Wireless (`view.controls`, from `app/headset_hid.py`): the battery in the
   card's meta line, the settings button, and a `<dialog>` with mic
   monitoring (Bragi's loopback, a switch and a volume slider), the
-  headset's built-in monitor, auto-off, the EQ preset picker and the 10 EQ sliders. Right-click on an
+  headset's built-in monitor, auto-off, the EQ preset picker, the 10 EQ sliders and the macro button's three gestures. Right-click on an
   EQ slider resets that band to 0 dB, the same `contextmenu` reset the
   volume faders and balance pads use (Android fires it on a long press;
   iOS Safari doesn't, for any of them). The picker shows "Custom" as soon
@@ -46,6 +46,12 @@ index.html                     page shell
   stay `hidden` while `controls` is `None`, so a dongle plugged in after the
   page loaded shows up from the `headset_controls` broadcast alone.
   `ws.js` repeats the battery wording, so keep the two in step.
+  Each macro gesture saves its action on `change` (`set_macro`). Which HTTP
+  fields show is CSS `:has()` on the selects, like the add-peer form. `ws.js`
+  checks the fields the way `macro_button.valid_action` does, and a gesture
+  with a bad field keeps the edit and says "Not saved: ..." instead of
+  sending it. Test sends the form's action as it is (`test_macro`), saved
+  or not.
 - **`_peer_card.html`** renders one peer as a `.device`: the name on its
   own line (up to two lines, with the status dot), then a bar with the
   reorder grip, a meta line (`Roc` or `VBAN` and the IP, or for a phone its
