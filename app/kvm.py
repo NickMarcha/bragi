@@ -60,7 +60,10 @@ class _UnixConnection(http.client.HTTPConnection):
         self._path = path
 
     def connect(self):
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        family = getattr(socket, "AF_UNIX", None)
+        if family is None:  # a dev machine without Unix sockets
+            raise OSError("Unix sockets aren't available here")
+        self.sock = socket.socket(family, socket.SOCK_STREAM)
         self.sock.settimeout(_TIMEOUT)
         self.sock.connect(str(self._path))
 
@@ -81,6 +84,39 @@ def _post(path: str, body: dict) -> dict:
     if not data.get("ok"):
         raise KvmError(data.get("error") or f"The KVM refused ({response.status}).")
     return data
+
+
+# The engine's own setup page (computers, layout, hotkeys, input devices),
+# served by Bragi at /kvm/setup/ so it sits behind Bragi's login instead of a
+# port of its own. Only these paths are passed on.
+_SETUP_GET = {"/", "/index.html", "/api/state"}
+_SETUP_POST_PREFIX = "/api/"
+SETUP_MAX_BODY = 256 * 1024
+
+
+def setup_request(method: str, path: str, body: bytes, guard: str | None) -> tuple[int, str, bytes]:
+    """Forwards one request from the setup page to the engine's web UI and
+    returns (status, content type, body). A POST must carry the page's own
+    X-Deskflow-Webui header, which a cross-site form can't send."""
+    if method == "GET" and path not in _SETUP_GET:
+        return 404, "application/json", b'{"ok": false, "error": "not found"}'
+    if method == "POST" and (not path.startswith(_SETUP_POST_PREFIX) or guard != "1"):
+        return 403, "application/json", b'{"ok": false, "error": "not allowed"}'
+    if method not in ("GET", "POST") or len(body) > SETUP_MAX_BODY:
+        return 400, "application/json", b'{"ok": false, "error": "bad request"}'
+    conn = _UnixConnection(_engine_dir() / "webui.sock")
+    try:
+        headers = {"X-Deskflow-Webui": "1"} if method == "POST" else {}
+        if method == "POST":
+            headers["Content-Type"] = "application/json"
+        conn.request(method, path, body if method == "POST" else None, headers)
+        response = conn.getresponse()
+        return response.status, response.getheader("Content-Type", "application/octet-stream"), response.read()
+    except OSError as exc:
+        message = json.dumps({"ok": False, "error": f"The KVM isn't reachable: {exc}"}).encode()
+        return 502, "application/json", message
+    finally:
+        conn.close()
 
 
 def switch(computer: str) -> None:
