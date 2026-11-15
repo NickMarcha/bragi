@@ -26,7 +26,8 @@ that pushes voices around a network.
   it. Its physical volume knob works even though the host has no desktop
   session to catch the media keys.
 - **HyperX Cloud III S Wireless extras.** Battery and charging state on the
-  card, live, plus mic monitor, the auto-off timer and a 10-band EQ. They
+  card, live, plus mic monitor, the auto-off timer and a 10-band EQ with
+  presets, built-in and your own. They
   need a kernel quirk and a udev rule on the host, see
   [`docs/deployment.md`](docs/deployment.md#hyperx-cloud-iii-s-wireless-controls).
 - **Peers over Roc or VBAN.** [Roc](https://roc-streaming.org/) for Linux

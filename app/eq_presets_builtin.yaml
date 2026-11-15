@@ -1,0 +1,42 @@
+# Built-in EQ presets for the HyperX Cloud III S Wireless dialog
+# (app/eq_presets.py reads this file; replace the values here, nothing else).
+#
+# PLACEHOLDER VALUES. These curves are Bragi's own rough suggestions, not
+# taken from NGENUITY, measurements or any published source, and are due
+# to be replaced with researched ones. They stay within +/-6 dB.
+#
+# gains: dB per band, in this order: 32, 64, 125, 250, 500, 1k, 2k, 4k,
+# 8k, 16k Hz. Each must be within +/-12 dB (headset_hid.EQ_LIMIT_DB).
+# The first entry is shown first and should stay a flat curve.
+
+- name: Flat
+  description: "No EQ: the headset's own sound."
+  gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+- name: Bass boost
+  description: More low end for music and films.
+  gains: [6, 5, 4, 2, 0, 0, 0, 0, 0, 0]
+
+- name: Bass reducer
+  description: Less low end, for a lighter sound with less rumble.
+  gains: [-6, -5, -4, -2, 0, 0, 0, 0, 0, 0]
+
+- name: Treble boost
+  description: More detail and air in the highs.
+  gains: [0, 0, 0, 0, 0, 0, 1, 3, 5, 5]
+
+- name: Vocal clarity
+  description: Pushes voices forward, for calls, podcasts and videos.
+  gains: [-4, -3, -2, -1, 0, 2, 3, 3, 1, 0]
+
+- name: Gaming footsteps
+  description: Quieter explosions, louder footsteps and other cues that tell you where things are.
+  gains: [-3, -3, -2, -1, 0, 1, 3, 4, 2, 0]
+
+- name: Music
+  description: "A gentle V: a little more bass and treble."
+  gains: [4, 3, 2, 0, -1, -1, 0, 2, 3, 3]
+
+- name: Late night
+  description: Less boom and clearer voices, for watching at low volume.
+  gains: [-5, -4, -3, -1, 0, 1, 2, 1, 0, -1]

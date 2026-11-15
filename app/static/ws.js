@@ -96,6 +96,7 @@
       else if (msg.type === "levels") applyLevels(msg);
       else if (msg.type === "viz_settings") applyVizSettings(msg);
       else if (msg.type === "nightly_reset") applyNightlyReset(msg);
+      else if (msg.type === "eq_presets") applyEqPresets(msg.presets);
       else if (msg.type === "order") applyOrder(msg.order);
     });
     socket.addEventListener("close", () => {
@@ -334,6 +335,7 @@
     }
     if (state.viz_settings) applyVizSettings(state.viz_settings);
     if (state.nightly_reset) applyNightlyReset(state.nightly_reset);
+    if (state.eq_presets) applyEqPresets(state.eq_presets);
   }
 
   // One frame per ~50ms audio chunk from app/level_meter.py, carrying every
@@ -432,7 +434,48 @@
     return gain > 0 ? `+${gain}` : String(gain);
   }
 
+  // EQ presets (app/eq_presets.py): the list every tab shares, and the
+  // last controls each headset was sent, so a changed list can redraw the
+  // picker without waiting for the server.
+  let eqPresets = [];
+  const lastControls = new Map();
+
+  // Same matching as eq_presets.matching(): the first preset with exactly
+  // these gains. Used while dragging, before the server has heard of it.
+  function matchingPreset(gains) {
+    if (!gains) return null;
+    const hit = eqPresets.find((p) => p.gains.every((g, i) => Number(g) === Number(gains[i])));
+    return hit ? hit.name : null;
+  }
+
+  function applyEqPresets(presets) {
+    eqPresets = presets;
+    document.querySelectorAll("[data-hid-preset]").forEach((select) => {
+      const saved = select.querySelector('optgroup[label="Saved"]');
+      saved.replaceChildren(...presets.filter((p) => !p.builtin).map((p) => new Option(p.name, p.name)));
+      saved.hidden = !saved.children.length;
+    });
+    for (const [key, c] of lastControls) applyHeadsetControls(key, c);
+  }
+
+  // The picker, its description line and the delete button, for the given
+  // gains and the preset they match. Mirrors _headset_controls.html.
+  function showPreset(dialog, gains, active) {
+    const select = dialog.querySelector("[data-hid-preset]");
+    const placeholder = select.querySelector('option[value=""]');
+    placeholder.textContent = gains ? "Custom" : "Unknown";
+    select.value = active || "";
+    const preset = eqPresets.find((p) => p.name === active);
+    let description = "";
+    if (preset) description = preset.description || "Saved preset.";
+    else if (gains) description = "Your own settings. Save them as a preset to come back to them.";
+    dialog.querySelector('[data-hid="preset-description"]').textContent = description;
+    dialog.querySelector("[data-hid-preset-delete]").disabled = !(preset && !preset.builtin);
+  }
+
   function applyHeadsetControls(key, c) {
+    if (c) lastControls.set(key, c);
+    else lastControls.delete(key);
     const card = document.querySelector(`[data-headset="${cssEscape(key)}"]`);
     if (!card) return;
     const text = batteryText(c);
@@ -479,6 +522,10 @@
       input.value = gain;
       input.closest(".hid-eq-band").querySelector("[data-eq-readout]").textContent = formatGain(gain);
     });
+    const select = dialog.querySelector("[data-hid-preset]");
+    select.disabled = off;
+    dialog.querySelector('.hid-preset-save button[type="submit"]').disabled = off;
+    showPreset(dialog, c.eq, c.eq_preset);
     dialog.querySelector('[data-hid="eq-note"]').textContent = c.eq
       ? "The headset can't report its EQ. This is what Bragi last set."
       : "The headset can't report its EQ, and Bragi hasn't set one yet, so these sliders don't show what it's using now.";
@@ -507,18 +554,56 @@
       const bands = Array.from(dialog.querySelectorAll("[data-eq-band]"));
       // The whole EQ goes out once a slider is let go: every change is ten
       // reports to the dongle, so not on every step of a drag.
-      const sendEq = () => send({ action: "set_eq", target: "headset", key,
-        value: bands.map((input) => Number(input.value)) });
+      const gains = () => bands.map((input) => Number(input.value));
+      const sendEq = () => send({ action: "set_eq", target: "headset", key, value: gains() });
       bands.forEach((input) => {
         const readout = input.closest(".hid-eq-band").querySelector("[data-eq-readout]");
         input.addEventListener("input", () => {
           input.dataset.dragging = "1";
           readout.textContent = formatGain(Number(input.value));
+          // "Custom" the moment a slider leaves the preset, not on release.
+          showPreset(dialog, gains(), matchingPreset(gains()));
         });
         input.addEventListener("change", () => {
           input.dataset.dragging = "0";
           sendEq();
         });
+        // Right-click resets the band to 0 dB instead of opening the
+        // browser context menu, like the volume faders' reset to 100%.
+        input.addEventListener("contextmenu", (evt) => {
+          evt.preventDefault();
+          if (input.matches(":disabled")) return;
+          input.value = 0;
+          readout.textContent = formatGain(0);
+          showPreset(dialog, gains(), matchingPreset(gains()));
+          sendEq();
+        });
+      });
+
+      const select = dialog.querySelector("[data-hid-preset]");
+      select.addEventListener("change", () => {
+        if (select.value) send({ action: "apply_eq_preset", target: "headset", key, value: select.value });
+      });
+
+      const form = dialog.querySelector("[data-hid-preset-form]");
+      form.addEventListener("submit", (evt) => {
+        evt.preventDefault();
+        const input = form.elements.name;
+        const name = input.value.trim();
+        if (!name) return;
+        // The server refuses these too (eq_presets.save), but silently.
+        const builtIn = eqPresets.some((p) => p.builtin && p.name.toLowerCase() === name.toLowerCase());
+        input.setCustomValidity(builtIn ? "That's a built-in preset. Pick another name." : "");
+        if (builtIn) {
+          input.reportValidity();
+          input.addEventListener("input", () => input.setCustomValidity(""), { once: true });
+          return;
+        }
+        send({ action: "save_eq_preset", value: { name, gains: gains() } });
+        form.reset();
+      });
+      dialog.querySelector("[data-hid-preset-delete]").addEventListener("click", () => {
+        if (select.value) send({ action: "delete_eq_preset", value: select.value });
       });
       dialog.querySelector("[data-hid-flat]").addEventListener("click", () => {
         bands.forEach((input) => { input.value = 0; });

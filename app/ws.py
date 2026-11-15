@@ -45,6 +45,7 @@ from collections.abc import Callable
 from fastapi import WebSocket, WebSocketDisconnect
 
 from . import audio_state
+from . import eq_presets
 from . import headset_hid
 from . import headsets as headsets_module
 from . import pipewire
@@ -348,6 +349,7 @@ _HID_SETTERS: dict[str, Callable] = {
     "set_mic_monitor": _set_mic_monitor,
     "set_auto_off": lambda hs, value: hs.set_auto_off(value),
     "set_eq": lambda hs, value: hs.set_eq(value),
+    "apply_eq_preset": lambda hs, value: hs.set_eq(eq_presets.gains_for(value)),
 }
 
 
@@ -367,8 +369,28 @@ async def _apply_hid_setting(key: str, verb: str, value) -> None:
     except OSError:
         logger.exception("%s on %s failed", verb, key)
         return
-    if verb == "set_eq":
-        manager.broadcast_nowait({"type": "headset_controls", "key": key, "controls": hs.view()})
+    if verb in ("set_eq", "apply_eq_preset"):
+        manager.broadcast_nowait({"type": "headset_controls", "key": key,
+                                  "controls": views.headset_controls_view(key)})
+
+
+async def _change_eq_presets(verb: str, value) -> None:
+    """Saving or deleting a preset. Presets are global, not per headset,
+    so every tab gets the new list, and every open headset is re-sent:
+    the preset its current gains match may have just appeared or gone."""
+    try:
+        if verb == "save_eq_preset":
+            if not isinstance(value, dict):
+                raise ValueError("save_eq_preset takes {name, gains}")
+            await asyncio.to_thread(eq_presets.save, value.get("name"), value.get("gains"))
+        else:
+            await asyncio.to_thread(eq_presets.delete, value)
+    except ValueError as exc:
+        logger.info("%s refused: %s", verb, exc)
+        return
+    manager.broadcast_nowait({"type": "eq_presets", "presets": await asyncio.to_thread(eq_presets.list_all)})
+    for serial in headset_hid.serials():
+        await broadcast_headset_controls(serial)
 
 
 async def broadcast_headset_controls(serial: str) -> None:
@@ -382,7 +404,7 @@ async def broadcast_headset_controls(serial: str) -> None:
                 if headset_hid.serial_matches(hs.key, serial)]
 
     for key in await asyncio.to_thread(_keys):
-        manager.broadcast_nowait({"type": "headset_controls", "key": key, "controls": headset_hid.view_for(key)})
+        manager.broadcast_nowait({"type": "headset_controls", "key": key, "controls": views.headset_controls_view(key)})
 
 
 async def _apply_action_logged(action: dict) -> None:
@@ -412,6 +434,10 @@ async def apply_action(action: dict) -> None:
         return
 
     if verb in ("set_volume", "set_balance") and not _accept_ts((target, key, direction), action.get("ts")):
+        return
+
+    if verb in ("save_eq_preset", "delete_eq_preset"):
+        await _change_eq_presets(verb, action.get("value"))
         return
 
     if verb == "set_order":

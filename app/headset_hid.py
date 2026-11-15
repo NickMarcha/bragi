@@ -156,7 +156,7 @@ def eq_requests(gains_db: list[float]) -> list[bytes]:
     return reports
 
 
-def _valid_eq(gains) -> list[float]:
+def valid_eq(gains) -> list[float]:
     if not isinstance(gains, list) or len(gains) != len(EQ_BANDS_HZ):
         raise ValueError(f"EQ needs {len(EQ_BANDS_HZ)} band gains")
     for gain in gains:
@@ -250,7 +250,7 @@ class HidHeadset:
         the headset can't be asked. A setting changed elsewhere (NGENUITY on
         another computer) won't show here."""
         self._require_on()
-        gains = _valid_eq(gains_db)
+        gains = valid_eq(gains_db)
         for i, report in enumerate(eq_requests(gains)):
             if i:
                 time.sleep(_EQ_REPORT_GAP_SECONDS)
@@ -326,6 +326,10 @@ def for_card(card_id: str) -> HidHeadset | None:
     """The HID side of the headset whose ALSA card id is card_id, if its
     dongle is one of these and is open."""
     return next((hs for serial, hs in _devices.items() if serial_matches(card_id, serial)), None)
+
+
+def serials() -> list[str]:
+    return list(_devices)
 
 
 def view_for(card_id: str) -> dict | None:

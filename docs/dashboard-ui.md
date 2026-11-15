@@ -37,7 +37,11 @@ index.html                     page shell
 - **`_headset_controls.html`** holds macros for a HyperX Cloud III S
   Wireless (`view.controls`, from `app/headset_hid.py`): the battery in the
   card's meta line, the settings button, and a `<dialog>` with mic monitor,
-  auto-off and the 10 EQ sliders. They render for every headset card and
+  auto-off, the EQ preset picker and the 10 EQ sliders. Right-click on an
+  EQ slider resets that band to 0 dB, the same `contextmenu` reset the
+  volume faders and balance pads use (Android fires it on a long press;
+  iOS Safari doesn't, for any of them). The picker shows "Custom" as soon
+  as a slider leaves the preset, before the server has heard about it. They render for every headset card and
   stay `hidden` while `controls` is `None`, so a dongle plugged in after the
   page loaded shows up from the `headset_controls` broadcast alone.
   `ws.js` repeats the battery wording, so keep the two in step.
