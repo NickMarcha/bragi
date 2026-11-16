@@ -9,6 +9,7 @@
           hx-post="/kvm/switch" hx-vals='{"computer": "{{ name }}"}' hx-target="#kvm-bar" hx-swap="innerHTML">{{ name }}</button>
   {% endfor %}
 </div>
+<button type="button" class="kvm-setup-open" data-open-kvm-setup title="KVM setup: computers, layout, hotkeys">&#9881;</button>
 {% if kvm_error %}<span class="form-error kvm-error">{{ kvm_error }}</span>{% endif %}
 {% elif kvm.available %}
 <span class="form-note" title="No computer is connected to the KVM">No computers</span>

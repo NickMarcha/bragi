@@ -1118,3 +1118,96 @@ dialog h2 {
   margin: 0 0 6px;
   font-size: 13px;
 }
+
+/* --- KVM setup dialog --- */
+
+#kvm-setup-dialog {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.kvm-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.kvm-row, .kvm-hotkey {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.kvm-row .kvm-name { width: 9em; }
+.kvm-row .kvm-aliases { flex: 1; min-width: 12em; }
+.kvm-hotkey .kvm-keys { width: 11em; }
+.kvm-hotkey .kvm-raw { flex: 1; min-width: 16em; }
+.kvm-hotkey .kvm-send { width: 11em; }
+.kvm-hotkey [hidden] { display: none; }
+
+.kvm-targets {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.kvm-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.kvm-cell {
+  min-height: 44px;
+  padding: 4px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kvm-cell.taken {
+  border-style: solid;
+  background: var(--raised);
+  color: var(--text);
+}
+
+.kvm-cell.selected, .kvm-chip.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.kvm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kvm-input {
+  display: grid;
+  gap: 8px;
+}
+
+.kvm-input label {
+  display: grid;
+  grid-template-columns: 10em 9em 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+@media (max-width: 560px) {
+  .kvm-input label { grid-template-columns: 1fr; gap: 2px; }
+}
+
+.kvm-setup-open {
+  padding: 2px 6px;
+  line-height: 1;
+}
