@@ -37,7 +37,8 @@ public sealed class TrayIconManager : IDisposable
     private readonly WindowIcon _enabledIcon = LoadIcon("tray-enabled.png");
     private readonly WindowIcon _errorIcon = LoadIcon("tray-error.png");
 
-    public TrayIconManager(LinkStatusService statusService, GamepadService? gamepads = null, KvmService? kvm = null)
+    public TrayIconManager(LinkStatusService statusService, GamepadService? gamepads = null, KvmService? kvm = null,
+                           NativeMenuItem? audioItem = null)
     {
         _statusService = statusService;
         _gamepads = gamepads;
@@ -105,11 +106,18 @@ public sealed class TrayIconManager : IDisposable
         };
         if (OperatingSystem.IsWindows())
         {
-            // No link of our own to switch: Voicemeeter carries the audio.
-            // Show what to set it to instead.
-            foreach (var line in VbanMenuLines(RocLinkConfig.TryLoad()))
+            // The app's own VBAN link (Audio/VbanLink.cs), or, without one,
+            // what Voicemeeter's VBAN would have to be set to.
+            if (audioItem is not null)
             {
-                menu.Add(new NativeMenuItem { Header = line, IsEnabled = false });
+                menu.Add(audioItem);
+            }
+            else
+            {
+                foreach (var line in VbanMenuLines(RocLinkConfig.TryLoad()))
+                {
+                    menu.Add(new NativeMenuItem { Header = line, IsEnabled = false });
+                }
             }
         }
         else
