@@ -1,0 +1,11 @@
+[Unit]
+Description=Bragi updater: daily check for new packages (never installs)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# "check" on the command line: the last dashboard request (maybe "upgrade")
+# is ignored.
+ExecStart=/usr/lib/bragi/bragi-update check
+TimeoutStartSec=5min

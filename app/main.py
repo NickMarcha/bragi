@@ -6,6 +6,7 @@ import contextlib
 import logging
 import ipaddress
 import os
+import time
 from typing import Literal
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from . import headset_hid
 from . import knob_watcher
 from . import kvm
 from . import modules
+from . import updates
 from . import level_meter
 from . import peer_control
 from . import peers as peers_module
@@ -100,13 +102,15 @@ templates = Jinja2Templates(directory=str(_app_dir / "templates"))
 # The EQ bands and auto-off choices, for _headset_controls.html.
 templates.env.globals["hid"] = headset_hid
 templates.env.globals["eq_preset_store"] = eq_presets
+templates.env.filters["datetimeformat"] = lambda ts: time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
 
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     state = views.build_state()
     return templates.TemplateResponse(request, "index.html", {**state, "password_set": auth.password_set(),
-                                                              "kvm": kvm.read_view(), "modules": modules.enabled()})
+                                                              "kvm": kvm.read_view(), "modules": modules.enabled(),
+                                                              "updates": updates.status()})
 
 
 @app.websocket("/ws")
@@ -271,6 +275,25 @@ async def kvm_setup(request: Request, path: str):
         kvm.setup_request, request.method, "/" + path, body, request.headers.get("x-deskflow-webui"))
     return Response(content, status_code=status, media_type=content_type,
                     headers={"Cache-Control": "no-cache"})
+
+
+def _updates_section(request: Request, error: str | None = None):
+    return templates.TemplateResponse(request, "_updates.html", {"updates": updates.status(), "error": error})
+
+
+@app.get("/updates", response_class=HTMLResponse)
+def updates_section(request: Request):
+    return _updates_section(request)
+
+
+@app.post("/updates/{action}", response_class=HTMLResponse)
+def run_update(request: Request, action: str):
+    """Asks the root updater (packaging/bragi-update) to check or upgrade."""
+    try:
+        updates.request(action)
+    except updates.UpdateError as exc:
+        return _updates_section(request, str(exc))
+    return _updates_section(request)
 
 
 @app.get("/bluetooth", response_class=HTMLResponse)

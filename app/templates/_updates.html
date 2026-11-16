@@ -1,0 +1,35 @@
+{# Settings > Updates (app/updates.py). Reloaded while the updater runs. #}
+{% set u = updates %}
+<h3>Updates</h3>
+{% if not u.available %}
+<p class="form-note">This Bragi wasn't installed as a package, so it updates the way it was installed (git pull, Docker).</p>
+{% else %}
+<p class="form-note">
+  Bragi {{ u.running or "?" }}{% if u.packages.deskflow and u.packages.deskflow.installed %}, Deskflow {{ u.packages.deskflow.installed }}{% endif %}.
+  {% if u.state == "running" %}
+    {{ "Installing the update…" if u.action == "upgrade" else "Checking for updates…" }}
+  {% elif u.state == "failed" %}
+    <span class="form-error">{{ u.message }}</span>
+  {% elif u.newer %}
+    New:
+    {% for name, p in u.packages.items() %}{% if p.installed and p.candidate and p.installed != p.candidate %}{{ name }} {{ p.candidate }} {% endif %}{% endfor %}
+  {% elif u.at %}
+    Up to date (checked {{ u.at|int|datetimeformat }}).
+  {% else %}
+    Not checked yet.
+  {% endif %}
+</p>
+{% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+<div class="dialog-actions">
+  <button type="button" hx-post="/updates/check" hx-target="#updates" hx-swap="innerHTML"
+          {% if u.state == "running" %}disabled{% endif %}>Check now</button>
+  {% if u.newer %}
+  <button type="button" class="primary" hx-post="/updates/upgrade" hx-target="#updates" hx-swap="innerHTML"
+          hx-confirm="Install the update now? Bragi restarts on the new version; the page reconnects by itself."
+          {% if u.state == "running" %}disabled{% endif %}>Update now</button>
+  {% endif %}
+</div>
+{% if u.state == "running" %}
+<div hx-get="/updates" hx-trigger="every 3s" hx-target="#updates" hx-swap="innerHTML"></div>
+{% endif %}
+{% endif %}

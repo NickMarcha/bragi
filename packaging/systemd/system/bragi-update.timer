@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily check for new Bragi packages
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=2h
+Persistent=true
+Unit=bragi-update-check.service
+
+[Install]
+WantedBy=timers.target
