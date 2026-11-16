@@ -1,10 +1,9 @@
 """The KVM bar and API (app/kvm.py): the computers sharing the desk's
 keyboard and mouse, the active one, and switching. The engine (the
-headless Deskflow server) is a status file and a fake web UI here."""
+headless Deskflow server) is a status file and a fake core socket here."""
 
 from __future__ import annotations
 
-import http.server
 import json
 import socket
 import socketserver
@@ -46,51 +45,40 @@ def test_a_missing_or_broken_status_file_means_no_kvm(engine):
 
 def test_switching_to_a_computer_that_isnt_connected_never_reaches_the_engine(engine, monkeypatch):
     calls = []
-    monkeypatch.setattr(kvm, "_post", lambda path, body: calls.append((path, body)))
+    monkeypatch.setattr(kvm, "core_command", calls.append)
     with pytest.raises(kvm.KvmError, match="isn't connected"):
         kvm.switch("homeserver")
     kvm.switch("sage-dev")
-    assert calls == [("/api/switch", {"computer": "sage-dev"})]
+    assert calls == ["switch=sage-dev"]
 
 
 @pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="needs Unix sockets")
-def test_the_engine_is_asked_over_its_unix_socket(engine):
+def test_the_engine_is_asked_over_its_core_socket(engine):
     seen = []
 
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_POST(self):
-            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            seen.append((self.path, self.headers.get("X-Deskflow-Webui"), body))
-            reply = {"ok": True} if body["computer"] != "sagedeck" else {"ok": False, "error": "sagedeck isn't connected"}
-            data = json.dumps(reply).encode()
-            self.send_response(200 if reply["ok"] else 400)
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+    class Handler(socketserver.StreamRequestHandler):
+        def handle(self):
+            line = self.rfile.readline().decode().strip()
+            seen.append(line)
+            self.wfile.write(b"status=running\n")  # a broadcast to a GUI, skipped
+            self.wfile.write(b"ok\n" if line != "switch=sagedeck" else b"error=sagedeck isn't connected\n")
 
-        def log_message(self, *args):
-            pass
-
-    class Server(socketserver.UnixStreamServer):
-        def get_request(self):
-            request, _ = super().get_request()
-            return request, ("local", 0)
-
-    server = Server(str(engine / "webui.sock"), Handler)
+    server = socketserver.UnixStreamServer(str(engine / "core.sock"), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         kvm.switch("sage")
         with pytest.raises(kvm.KvmError, match="sagedeck isn't connected"):
             kvm.switch("sagedeck")
+        kvm.keystroke("Control+Shift+Alt+M", ["sage", "sagedeck"])
     finally:
         server.shutdown()
         server.server_close()
-    assert seen[0] == ("/api/switch", "1", {"computer": "sage"})
+    assert seen == ["switch=sage", "switch=sagedeck", "keystroke=Control+Shift+Alt+M,sage:sagedeck"]
 
 
 def test_the_dashboard_bar_shows_the_computers_and_switches(engine, monkeypatch, session):
     switched = []
-    monkeypatch.setattr(kvm, "_post", lambda path, body: switched.append(body["computer"]))
+    monkeypatch.setattr(kvm, "core_command", lambda line: switched.append(line.split("=", 1)[1]))
     client = TestClient(app)
 
     page = client.get("/").text
@@ -102,7 +90,7 @@ def test_the_dashboard_bar_shows_the_computers_and_switches(engine, monkeypatch,
 
 
 def test_the_api_reads_and_switches(engine, monkeypatch, session):
-    monkeypatch.setattr(kvm, "_post", lambda path, body: None)
+    monkeypatch.setattr(kvm, "core_command", lambda line: None)
     _, key = auth.create_api_key("test app")
     client = TestClient(app)
     client.headers["Authorization"] = f"Bearer {key}"
@@ -112,38 +100,6 @@ def test_the_api_reads_and_switches(engine, monkeypatch, session):
     assert client.post("/api/v1/kvm/active", json={"computer": "sage"}).status_code == 200
     assert client.post("/api/v1/kvm/active", json={"computer": "ghost"}).status_code == 409
     assert TestClient(app).get("/api/v1/kvm").status_code == 401
-
-
-def test_the_setup_page_only_passes_on_its_own_requests(engine):
-    assert kvm.setup_request("GET", "/api/bindings", b"", None)[0] == 404
-    assert kvm.setup_request("GET", "/../etc/passwd", b"", None)[0] == 404
-    assert kvm.setup_request("POST", "/api/layout", b"{}", None)[0] == 403      # no page header
-    assert kvm.setup_request("POST", "/index.html", b"{}", "1")[0] == 403      # not an API path
-    assert kvm.setup_request("POST", "/api/layout", b"x" * (kvm.SETUP_MAX_BODY + 1), "1")[0] == 400
-    # Nothing listening: a clear 502, not an exception.
-    status, _, body = kvm.setup_request("GET", "/api/state", b"", None)
-    assert status == 502 and b"isn't reachable" in body
-
-
-def test_the_setup_page_is_served_under_bragi_and_behind_its_login(engine, monkeypatch, session):
-    assert 'href="/kvm/setup/"' in TestClient(app).get("/").text  # linked from Settings
-    seen = []
-
-    def fake(method, path, body, guard):
-        seen.append((method, path, body, guard))
-        return 200, "text/html; charset=utf-8", b"<html>setup</html>"
-
-    monkeypatch.setattr(kvm, "setup_request", fake)
-    client = TestClient(app)
-
-    assert client.get("/kvm/setup", follow_redirects=False).headers["location"] == "/kvm/setup/"
-    assert client.get("/kvm/setup/").text == "<html>setup</html>"
-    client.post("/kvm/setup/api/layout", content=b'{"cells": []}', headers={"X-Deskflow-Webui": "1"})
-    assert seen == [("GET", "/", b"", None), ("POST", "/api/layout", b'{"cells": []}', "1")]
-
-    auth.set_password("hunter22")
-    locked = TestClient(app).get("/kvm/setup/", follow_redirects=False)
-    assert locked.status_code != 200
 
 
 def test_a_tray_app_gets_the_kvm_on_connect_and_can_switch(engine, monkeypatch, session):

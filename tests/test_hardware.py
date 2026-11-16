@@ -104,15 +104,6 @@ def engine(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_without_a_core_socket_the_old_web_ui_is_used(engine, monkeypatch):
-    posted = []
-    monkeypatch.setattr(kvm, "_post", lambda path, body: posted.append((path, body)))
-    kvm.switch("sage-dev")
-    kvm.keystroke("Control+Shift+Alt+M", ["sage", "sage-dev"])
-    assert posted == [("/api/switch", {"computer": "sage-dev"}),
-                      ("/api/keystroke", {"keys": "Control+Shift+Alt+M", "computers": ["sage", "sage-dev"]})]
-
-
 def test_keystrokes_that_could_smuggle_a_second_command_are_refused(engine):
     for keys, computers in (("M\nstop", None), ("M,x", None), ("M", ["a:b"]), ("M", ["sage\n"]), ("", None)):
         with pytest.raises(kvm.KvmError):
