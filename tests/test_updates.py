@@ -49,14 +49,14 @@ def test_up_to_date_shows_the_versions_and_a_check_button(state, session):
     write_status(state)
     page = TestClient(app).get("/updates").text
     assert "Bragi 0.1.0, Deskflow 1.27.0.26" in page and "Up to date" in page
-    assert "Update now" not in page
+    assert "Install update" not in page
 
 
-def test_a_newer_package_offers_update_now_which_asks_the_updater(state, session):
+def test_a_newer_package_offers_install_which_asks_the_updater(state, session):
     write_status(state, packages={"bragi": {"installed": "0.1.0", "candidate": "0.2.0"}})
     client = TestClient(app)
     page = client.get("/updates").text
-    assert "bragi 0.2.0" in page and "Update now" in page
+    assert "bragi 0.2.0" in page and "Install update" in page
 
     client.post("/updates/upgrade")
     assert (state / "update-request").read_text() == "upgrade\n"
@@ -156,3 +156,19 @@ def test_the_polling_page_reloads_once_a_new_version_runs(state, session):
     write_status(state, action="upgrade", message="upgraded", at=int(time.time()) + 5)
     assert client.get("/updates?since=0.1.0").headers.get("HX-Refresh") == "true"
     assert "HX-Refresh" not in client.get("/updates?since=0.2.0").headers
+
+
+def test_one_action_at_a_time(state, session):
+    """At most one button, and none while the updater runs: a click can't be
+    repeated while the first is still being handled."""
+    client = TestClient(app)
+    write_status(state)
+    page = client.get("/updates").text
+    assert page.count("<button") == 1 and "Check for updates" in page and 'hx-disabled-elt="this"' in page
+
+    write_status(state, packages={"bragi": {"installed": "0.1.0", "candidate": "0.2.0"}})
+    page = client.get("/updates").text
+    assert page.count("<button") == 1 and "Install update" in page and "Check for updates" not in page
+
+    page = client.post("/updates/upgrade").text
+    assert "<button" not in page and "Installing the update" in page
