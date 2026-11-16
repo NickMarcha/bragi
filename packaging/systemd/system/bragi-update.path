@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the Bragi updater when the dashboard asks for it
+
+[Path]
+# Bragi (a user service) writes "check" or "upgrade" here.
+PathModified=/var/lib/bragi/update-request
+Unit=bragi-update.service
+
+[Install]
+WantedBy=multi-user.target

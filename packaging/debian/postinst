@@ -9,6 +9,12 @@ if [ "$1" = "configure" ]; then
     udevadm control --reload-rules 2>/dev/null || true
     udevadm trigger --subsystem-match=hidraw 2>/dev/null || true
 
+    # The updater (root): its state directory, the request it watches for,
+    # and the daily check.
+    systemd-tmpfiles --create bragi.conf 2>/dev/null || true
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable --now bragi-update.path bragi-update.timer >/dev/null 2>&1 || true
+
     # shellcheck disable=SC2086
     systemctl --global enable $UNITS >/dev/null 2>&1 || true
 

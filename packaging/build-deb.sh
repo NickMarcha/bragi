@@ -41,6 +41,13 @@ for unit in bragi-peers.service bragi-peers-reload.service bragi-peers.path \
 done
 install -D -m 755 "$root/host/bragi-audio-reset.sh" "$stage/usr/lib/bragi/bragi-audio-reset"
 
+# The updater: a root service Bragi asks through a request file.
+install -D -m 755 "$root/packaging/bragi-update" "$stage/usr/lib/bragi/bragi-update"
+install -d "$stage/usr/lib/systemd/system"
+install -m 644 "$root"/packaging/systemd/system/bragi-update* "$stage/usr/lib/systemd/system/"
+install -D -m 644 "$root/packaging/tmpfiles/bragi.conf" "$stage/usr/lib/tmpfiles.d/bragi.conf"
+echo "$version" > "$stage/opt/bragi/VERSION"
+
 # udev: hidraw access for the headset dongle and Bluetooth HID devices.
 install -d "$stage/usr/lib/udev/rules.d"
 install -m 644 "$root"/host/udev/*.rules "$stage/usr/lib/udev/rules.d/"

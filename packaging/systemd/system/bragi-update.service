@@ -1,0 +1,10 @@
+[Unit]
+Description=Bragi updater (check for or install new bragi and deskflow packages)
+Documentation=https://github.com/NickMarcha/bragi/blob/main/docs/deployment.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/bragi/bragi-update
+TimeoutStartSec=15min

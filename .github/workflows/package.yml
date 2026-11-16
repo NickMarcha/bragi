@@ -56,7 +56,7 @@ jobs:
         run: |
           deb=$(ls dist/*.deb)
           dpkg-deb --info "$deb"
-          dpkg-deb --contents "$deb" | grep -E 'opt/bragi/venv/bin/uvicorn|usr/lib/systemd/user/bragi.service|udev/rules.d'
+          dpkg-deb --contents "$deb" | grep -E 'opt/bragi/venv/bin/uvicorn|usr/lib/systemd/user/bragi.service|udev/rules.d|usr/lib/bragi/bragi-update|system/bragi-update.path|system/bragi-update-check.service|tmpfiles.d/bragi.conf|opt/bragi/VERSION'
           # The bundled environment must run the app on this Python.
           dpkg -i "$deb" || apt-get install -y -qq -f >/dev/null
           cd /opt/bragi && BRAGI_DATA_DIR=/tmp/bragi-data venv/bin/python -c "import app.main; print('app imports')"
