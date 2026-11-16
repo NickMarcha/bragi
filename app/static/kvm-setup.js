@@ -188,6 +188,92 @@
     $("#kvm-hotkeys").replaceChildren(...config.hotkeys.map((line) => hotkeyRow(line)));
   }
 
+  // --- mouse buttons (app/hidpp.py) --------------------------------------------------
+
+  // One select for every action: "none", "kvm_next", "kvm_keys" or "switch:<name>".
+  function mouseChoice(action) {
+    if (action.type === "kvm_switch") return `switch:${action.computer}`;
+    return action.type;
+  }
+
+  function mouseRow(device, control, computers) {
+    const a = control.action;
+    const choice = el("select", { "aria-label": `${control.label} action` },
+      el("option", { value: "none", selected: a.type === "none" }, "Nothing (a normal button)"),
+      el("option", { value: "kvm_next", selected: a.type === "kvm_next" }, "Next computer"),
+      computers.map((n) => el("option", { value: `switch:${n}`, selected: mouseChoice(a) === `switch:${n}` }, `Switch to ${n}`)),
+      el("option", { value: "kvm_keys", selected: a.type === "kvm_keys" }, "Press keys on computers"));
+    const keys = el("input", { type: "text", class: "kvm-send", value: a.keys || "", placeholder: "Control+Shift+Alt+M",
+                               "aria-label": "Keys to press" });
+    const targets = el("span", { class: "kvm-targets" }, computers.map((n) => el("label", {},
+      el("input", { type: "checkbox", value: n, checked: (a.computers || []).includes(n) }), n)));
+    const note = el("span", { class: "form-note" }, control.result
+      ? `Last: ${control.result.text}` : "");
+    const show = () => { keys.hidden = targets.hidden = choice.value !== "kvm_keys"; };
+    const save = async () => {
+      show();
+      const v = choice.value;
+      let action = { type: v };
+      if (v.startsWith("switch:")) action = { type: "kvm_switch", computer: v.slice(7) };
+      if (v === "kvm_keys") {
+        if (!keys.value.trim()) return;
+        action = { type: v, keys: keys.value.trim(),
+                   computers: [...targets.querySelectorAll("input:checked")].map((i) => i.value) };
+      }
+      say("mouse", "Saving…");
+      try {
+        renderMouse(await call("POST", "/mouse-buttons", { device: device.name, control: control.id, action }));
+        say("mouse", "Saved.");
+      } catch (err) {
+        say("mouse", err.message, true);
+      }
+    };
+    choice.addEventListener("change", save);
+    keys.addEventListener("change", save);
+    targets.addEventListener("change", save);
+    const row = el("li", { class: "kvm-hotkey" }, el("span", { class: "kvm-keys" }, control.label), choice, keys, targets, note);
+    show();
+    return row;
+  }
+
+  function renderMouse(view) {
+    const list = $("#kvm-mouse");
+    const rows = [];
+    for (const device of view.devices) {
+      const battery = device.battery ? `, battery ${device.battery.percent}% ${device.battery.state}` : "";
+      rows.push(el("li", {}, el("strong", {}, device.name || `Device in slot ${device.slot}`), battery));
+      if (!device.controls.length) rows.push(el("li", { class: "form-note" }, "No extra buttons."));
+      for (const control of device.controls) rows.push(mouseRow(device, control, view.computers));
+    }
+    if (!rows.length) rows.push(el("li", { class: "form-note" }, "No Logitech receiver with a paired device found. A mouse that's asleep shows up once it's moved."));
+    list.replaceChildren(...rows);
+    const fork = view.fork || {};
+    $("#kvm-fork-hidpp").hidden = !(fork.listening || (fork.bindings || []).length);
+  }
+
+  async function loadMouse() {
+    try {
+      renderMouse(await call("GET", "/mouse-buttons"));
+    } catch (err) {
+      say("mouse", err.message, true);
+    }
+  }
+
+  $("#kvm-hand-over").addEventListener("click", async (e) => {
+    if (!confirm("This turns the KVM server's own mouse-button handling off and restarts it; every computer reconnects. Go on?")) return;
+    e.target.disabled = true;
+    say("mouse", "Restarting the KVM…");
+    try {
+      const view = await call("POST", "/mouse-buttons/hand-over");
+      renderMouse(view);
+      say("mouse", view.note);
+    } catch (err) {
+      say("mouse", err.message, true);
+    } finally {
+      e.target.disabled = false;
+    }
+  });
+
   // --- input -------------------------------------------------------------------
 
   function renderInput() {
@@ -248,12 +334,13 @@
   });
 
   async function open() {
-    for (const s of ["load", "computers", "layout", "hotkeys", "input"]) say(s, "");
+    for (const s of ["load", "computers", "layout", "hotkeys", "mouse", "input"]) say(s, "");
     dialog.showModal();
     try {
       config = await call("GET", "/kvm/config");
       selected = null;
       render();
+      loadMouse();
     } catch (err) {
       say("load", err.message, true);
     }

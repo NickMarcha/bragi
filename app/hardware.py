@@ -207,7 +207,10 @@ def inventory(modules: dict[str, bool], proc_text: str | None = None, headsets: 
         charging = b.get("charging")
         match["battery"] = _battery(b.get("percent"), charging in (True, "yes") if charging is not None else None)
 
-    status = engine_status if engine_status is not None else _live_engine_status()
+    if engine_status is None and (own := _live_hidpp()) is not None:
+        status = {"hidpp": own}
+    else:
+        status = engine_status if engine_status is not None else _live_engine_status()
     for hidpp in (status or {}).get("hidpp", []):
         battery = hidpp.get("battery") or {}
         devices.append({"id": f"receiver:{hidpp.get('device', '')}", "name": hidpp.get("device", ""),
@@ -254,6 +257,15 @@ def _live_headsets() -> list[dict]:
                        "battery": {"percent": view.get("battery"), "charging": view.get("charging")}
                        if view.get("battery") is not None else None})
     return result
+
+
+def _live_hidpp() -> list[dict] | None:
+    """Bragi's own HID++ devices (hidpp.py), in the status file's shape, or
+    None when it has no receiver open."""
+    from . import hidpp
+    if hidpp.manager is None or not hidpp.manager.links:
+        return None
+    return [{"device": d["name"], "battery": d["battery"]} for d in hidpp.manager.devices()]
 
 
 def _live_engine_status() -> dict | None:
