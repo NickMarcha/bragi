@@ -58,4 +58,36 @@ public class KvmTests
         Assert.Contains("Not in the KVM setup", stranger?.Note);
         Assert.Null(IdentifyOverlay.Text(Json("""{"type":"kvm","available":true}""")));
     }
+
+    private sealed class FakeKeyboard : IKeyboard
+    {
+        public List<IReadOnlyList<ushort>> Pressed { get; } = [];
+        public void Press(IReadOnlyList<ushort> codes) => Pressed.Add(codes);
+        public void Dispose() { }
+    }
+
+    [Fact]
+    public void The_host_hears_this_computer_can_press_keys_and_its_keys_are_pressed()
+    {
+        var keyboard = new FakeKeyboard();
+        var sent = new List<string>();
+        var keys = new KeyPresser(() => keyboard) { Send = m => { sent.Add(JsonSerializer.Serialize(m)); return Task.FromResult(true); } };
+
+        keys.OnMessage(Json("""{"type":"kvm","available":true,"active":"sage","computers":["sage"]}"""));
+        keys.OnMessage(Json("""{"type":"kvm","available":true,"active":"sage","computers":["sage"]}"""));
+        keys.OnMessage(Json("""{"type":"press_keys","codes":[29,42,56,50]}"""));
+        keys.OnMessage(Json("""{"type":"press_keys","codes":[29,"x"]}"""));  // ignored
+
+        Assert.Equal(["""{"type":"client_hello","features":["keys"]}"""], sent);
+        Assert.Equal([(IReadOnlyList<ushort>)new ushort[] { 29, 42, 56, 50 }], keyboard.Pressed);
+    }
+
+    [Fact]
+    public void Without_a_keyboard_here_the_host_hears_so()
+    {
+        var sent = new List<string>();
+        var keys = new KeyPresser(null) { Send = m => { sent.Add(JsonSerializer.Serialize(m)); return Task.FromResult(true); } };
+        keys.OnMessage(Json("""{"type":"kvm","available":true,"active":null,"computers":[]}"""));
+        Assert.Equal(["""{"type":"client_hello","features":[]}"""], sent);
+    }
 }

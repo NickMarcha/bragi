@@ -93,6 +93,30 @@ def broadcast_desktop(message: dict) -> None:
     ws.manager.broadcast_nowait(message)
 
 
+# What each connected tray app can do besides audio, from its client_hello:
+# "keys" = it presses keys on its own computer (press_keys).
+_features: dict[str, set[str]] = {}
+
+
+def has_feature(peer: str, feature: str) -> bool:
+    return feature in _features.get(peer, set()) and peer in _connections
+
+
+def peer_for_computer(computer: str, computers: list[dict]) -> str | None:
+    """The connected tray app on a KVM computer: one whose peer name is the
+    computer's name or one of its aliases."""
+    entry = next((c for c in computers if c["name"] == computer), {"name": computer, "aliases": []})
+    names = {n.lower() for n in [entry["name"], *entry.get("aliases", [])]}
+    return next((p for p, conns in _connections.items()
+                 if p.lower() in names and any(s not in _android for s in conns)), None)
+
+
+def press_keys(peer: str, codes: list[int]) -> None:
+    """Asks a tray app to press and release these evdev key codes, in
+    order, on its own computer."""
+    send(peer, {"type": "press_keys", "codes": codes})
+
+
 def identify(computers: list[dict]) -> dict:
     """Asks every connected tray app to show its computer's name on its
     screens for a few seconds, like Windows' "Identify" in display settings.
@@ -124,6 +148,9 @@ def _desktop_message(name: str, raw: str) -> None:
         return
     if message.get('type') == 'kvm_switch':
         _kvm_switch(name, raw)
+        return
+    if message.get('type') == 'client_hello' and isinstance(message.get('features'), list):
+        _features[name] = {f for f in message['features'] if f in ('keys',)}
         return
     if gamepad.hub is None:
         return
@@ -238,6 +265,7 @@ async def endpoint(socket: WebSocket, name: str) -> None:
             statuses.pop(name, None)
             seen_addresses.pop(name, None)
             peer_presence.connected_peers.discard(name)
+            _features.pop(name, None)
             if gamepad.hub is not None:
                 gamepad.hub.forget(name)
             ws.manager.broadcast_nowait({'type': 'peer_presence', 'name': name, 'connected': False})

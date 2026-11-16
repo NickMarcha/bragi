@@ -18,6 +18,7 @@ public partial class App : Application
     private PeerPresenceClient? _presenceClient;
     private GamepadService? _gamepads;
     private KvmService? _kvm;
+    private KeyPresser? _keys;
 
     public override void Initialize()
     {
@@ -78,6 +79,10 @@ public partial class App : Application
         _presenceClient.Disconnected += _kvm.OnDisconnected;
         // "Identify" in the dashboard's KVM setup: this computer's name on its screens.
         _presenceClient.MessageReceived += IdentifyOverlay.OnMessage;
+        // "Press keys on computers" from the host, pressed here (Linux: uinput).
+        _keys = new KeyPresser(OperatingSystem.IsLinux() ? () => new UinputKeyboard() : null) { Send = _presenceClient.SendAsync };
+        _presenceClient.MessageReceived += _keys.OnMessage;
+        _presenceClient.Disconnected += _keys.OnDisconnected;
         _trayIconManager = new TrayIconManager(_statusService!, _gamepads, _kvm);
         _trayIconManager.SetupRequested += ShowSetup;
         _presenceClient.SetEnabled(_statusService!.Current.State == TrayState.Enabled);
@@ -88,6 +93,8 @@ public partial class App : Application
         _trayIconManager?.Dispose();
         _presenceClient?.Dispose();
         _gamepads?.Dispose();
+        _keys?.Dispose();
+        _keys = null;
         _trayIconManager = null;
         _presenceClient = null;
         _gamepads = null;
