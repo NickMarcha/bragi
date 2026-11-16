@@ -19,6 +19,7 @@ public partial class App : Application
     private GamepadService? _gamepads;
     private KvmService? _kvm;
     private KeyPresser? _keys;
+    private Audio.VbanLink? _audio;
 
     public override void Initialize()
     {
@@ -83,7 +84,15 @@ public partial class App : Application
         _keys = new KeyPresser(OperatingSystem.IsLinux() ? () => new UinputKeyboard() : null) { Send = _presenceClient.SendAsync };
         _presenceClient.MessageReceived += _keys.OnMessage;
         _presenceClient.Disconnected += _keys.OnDisconnected;
-        _trayIconManager = new TrayIconManager(_statusService!, _gamepads, _kvm);
+        // Windows: the app carries the audio itself, as VBAN (instead of Voicemeeter's).
+        NativeMenuItem? audioItem = null;
+        if (OperatingSystem.IsWindows() && config is { VbanPort: { } port, VbanStreamSend: { } fromHost, VbanStreamReceive: { } toHost })
+        {
+            _audio = new Audio.VbanLink(config.BragiHostIp, port, fromHost, toHost);
+            _audio.Apply(Audio.AudioDevices.Load());
+            audioItem = new AudioMenu(_audio).Item;
+        }
+        _trayIconManager = new TrayIconManager(_statusService!, _gamepads, _kvm, audioItem);
         _trayIconManager.SetupRequested += ShowSetup;
         _presenceClient.SetEnabled(_statusService!.Current.State == TrayState.Enabled);
     }
@@ -95,6 +104,8 @@ public partial class App : Application
         _gamepads?.Dispose();
         _keys?.Dispose();
         _keys = null;
+        _audio?.Dispose();
+        _audio = null;
         _trayIconManager = null;
         _presenceClient = null;
         _gamepads = null;
