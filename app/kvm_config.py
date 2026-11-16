@@ -497,6 +497,54 @@ def save_computers(computers) -> str:
         raise ConfigError("The KVM didn't start with the new computers, so the old ones are back.")
 
 
+HIDPP_CODE_BASE = 0x1000  # the fork's binding codes for HID++ controls (0x1000 + control id)
+
+
+def fork_hidpp() -> dict:
+    """Whether the KVM server still handles HID++ buttons itself: its
+    listener (DESKFLOW_EVDEV_HIDPP=1) and bindings for HID++ controls in
+    bindings.json. Both would fight Bragi over the same buttons."""
+    listening = any(line.split("=", 1)[0].strip() == "DESKFLOW_EVDEV_HIDPP"
+                    and line.split("=", 1)[1].strip().strip('"') not in ("", "0")
+                    for line in _env_lines() if "=" in line and not line.lstrip().startswith("#"))
+    bindings = []
+    try:
+        data = json.loads(_read(config_dir() / "bindings.json") or "{}")
+        bindings = [b for b in data.get("bindings", []) if isinstance(b, dict)
+                    and isinstance(b.get("code"), int) and b["code"] >= HIDPP_CODE_BASE]
+    except (ValueError, AttributeError):
+        pass
+    return {"listening": listening, "bindings": bindings}
+
+
+def hand_over_hidpp() -> str:
+    """Turns the KVM server's HID++ listener off and drops its HID++
+    bindings, so Bragi alone handles those buttons. Restarts the server."""
+    with _lock:
+        env_path = config_dir() / "env"
+        bindings_path = config_dir() / "bindings.json"
+        old_env, old_bindings = _read(env_path), _read(bindings_path)
+        lines = [line for line in _env_lines()
+                 if not (not line.lstrip().startswith("#") and line.split("=", 1)[0].strip() == "DESKFLOW_EVDEV_HIDPP")]
+        _backup(env_path)
+        _atomic_write(env_path, "\n".join(lines).rstrip("\n") + "\n")
+        if old_bindings is not None:
+            try:
+                data = json.loads(old_bindings)
+                data["bindings"] = [b for b in data.get("bindings", []) if not (
+                    isinstance(b, dict) and isinstance(b.get("code"), int) and b["code"] >= HIDPP_CODE_BASE)]
+                _backup(bindings_path)
+                _atomic_write(bindings_path, json.dumps(data, indent=2) + "\n")
+            except (ValueError, AttributeError):
+                pass
+        if _restart():
+            return "Done: Bragi handles the mouse buttons now; the KVM restarted and the computers are reconnecting."
+        _restore(env_path, old_env)
+        _restore(bindings_path, old_bindings)
+        _restart()
+        raise ConfigError("The KVM didn't start again, so its old settings are back.")
+
+
 def save_input(values) -> str:
     """Writes the input options to env and restarts the server. Keys this
     doesn't manage stay as they are."""

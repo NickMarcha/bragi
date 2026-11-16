@@ -170,6 +170,17 @@
     </section>
 
     <section class="security-section">
+      <h3>Mouse buttons</h3>
+      <p class="form-note">Extra buttons on Logitech mice behind a receiver (Bolt, Unifying), like the MX Master's thumb button. A button with an action stops being a normal button.</p>
+      <div id="kvm-fork-hidpp" class="form-note" hidden>
+        The KVM server still handles some of these buttons itself, which would do both.
+        <button type="button" id="kvm-hand-over">Hand them to Bragi</button>
+      </div>
+      <ul id="kvm-mouse" class="kvm-list"></ul>
+      <p data-msg="mouse" hidden></p>
+    </section>
+
+    <section class="security-section">
       <h3>Input</h3>
       <div class="kvm-input">
         <label>Key repeat <input type="text" data-input="DESKFLOW_EVDEV_REPEAT" placeholder="500,30" /><span class="form-note">delay in ms, rate per second</span></label>

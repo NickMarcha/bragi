@@ -34,6 +34,8 @@ from . import modules
 from . import updates
 from . import level_meter
 from . import peer_control
+from . import actions
+from . import hidpp
 from . import peers as peers_module
 from . import views
 from . import watcher
@@ -59,6 +61,7 @@ async def lifespan(app: FastAPI):
                                               ws.manager.broadcast_levels_nowait)),
         asyncio.create_task(kvm.supervise(_kvm_changed)),
         asyncio.create_task(hardware.watch_batteries()),
+        asyncio.create_task(hidpp.supervise()),
         asyncio.create_task(updates.watch(ws.manager.broadcast_nowait)),
     ]
     bluetooth.start(_bluetooth_changed)
@@ -348,6 +351,41 @@ def run_update(request: Request, action: str):
     except updates.UpdateError as exc:
         return _updates_section(request, str(exc))
     return _updates_section(request)
+
+
+# --- mouse buttons (app/hidpp.py), in the KVM setup ---
+
+def _mouse_buttons_view() -> dict:
+    return {"devices": hidpp.manager.devices() if hidpp.manager else [],
+            "computers": actions.computers(), "fork": kvm_config.fork_hidpp()}
+
+
+@app.get("/mouse-buttons")
+def mouse_buttons():
+    return _mouse_buttons_view()
+
+
+@app.post("/mouse-buttons")
+async def mouse_buttons_set(request: Request):
+    body = await request.json()
+    if hidpp.manager is None:
+        raise HTTPException(503, "Mouse buttons aren't running in this Bragi.")
+    try:
+        device, cid = str(body["device"]), int(str(body["control"]), 0)
+        await hidpp.manager.set_action(device, cid, body.get("action"))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(400, str(exc) or "device, control and action") from exc
+    return _mouse_buttons_view()
+
+
+@app.post("/mouse-buttons/hand-over")
+async def mouse_buttons_hand_over():
+    """The KVM server stops handling HID++ buttons itself."""
+    try:
+        note = await asyncio.to_thread(kvm_config.hand_over_hidpp)
+    except kvm_config.ConfigError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {**_mouse_buttons_view(), "note": note}
 
 
 # --- the controller test (app/gamepad.py) ---

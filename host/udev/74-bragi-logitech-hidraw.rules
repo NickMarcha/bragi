@@ -1,0 +1,4 @@
+# Logitech receivers' HID++ interfaces (Bolt, Unifying): Bragi reads the mouse's
+# extra buttons and battery there (app/hidpp.py). Bragi runs as a user in the
+# input group.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", MODE="0660", GROUP="input"
