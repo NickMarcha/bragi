@@ -6,7 +6,11 @@ The KVM actions run through deskflow-core's own socket (app/kvm.py):
 - kvm_switch: make one computer the active one,
 - kvm_next: the next connected computer, in the KVM setup's order,
 - kvm_keys: press a key combination on some computers (none listed: the
-  active one), e.g. Discord's mute on all of them.
+  active one), e.g. Discord's mute on all of them. A listed computer whose
+  Bragi tray app can press keys itself gets them from the tray app; the
+  others through the KVM. Linux clients on Wayland drop KVM keys while the
+  cursor is on another computer (deskflow/deskflow#10393), which the tray
+  app gets round.
 
 macro_button.py adds its own kinds (an HTTP request, mic monitoring) on top.
 """
@@ -15,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 
-from . import kvm, kvm_config
+from . import key_bindings, kvm, kvm_config, peer_control
 
 KVM_KINDS = ("kvm_switch", "kvm_next", "kvm_keys")
 _MAX_NAME = 63
@@ -83,8 +87,41 @@ def _run_kvm(action: dict) -> str:
         if target != view["active"]:
             kvm.switch(target)
         return f"switched to {target}"
-    kvm.keystroke(action["keys"], action["computers"] or None)
-    return f"pressed {action['keys']} on " + (", ".join(action["computers"]) or "the active computer")
+    targets = action["computers"]
+    if not targets:
+        kvm.keystroke(action["keys"], None)
+        return f"pressed {action['keys']} on the active computer"
+    if targets == ["*"]:
+        targets = computers()
+    by_app, by_kvm = split_by_tray_app(action["keys"], targets)
+    for peer, codes in by_app:
+        peer_control.press_keys(peer, codes)
+    if by_kvm:
+        kvm.keystroke(action["keys"], by_kvm)
+    done = [f"{peer} (Bragi app)" for peer, _ in by_app] + by_kvm
+    return f"pressed {action['keys']} on " + ", ".join(done)
+
+
+def split_by_tray_app(keys: str, targets: list[str]) -> tuple[list[tuple[str, list[int]]], list[str]]:
+    """Which computers get the keys from their tray app (peer, evdev codes)
+    and which through the KVM. Keys the tray apps' table doesn't know all go
+    through the KVM."""
+    try:
+        codes = key_bindings.parse_combo(keys)
+    except key_bindings.BindingError:
+        return [], targets
+    try:
+        setup = kvm_config.read()["computers"]
+    except Exception:
+        setup = []
+    by_app, by_kvm = [], []
+    for computer in targets:
+        peer = peer_control.peer_for_computer(computer, setup)
+        if peer is not None and peer_control.has_feature(peer, "keys"):
+            by_app.append((peer, codes))
+        else:
+            by_kvm.append(computer)
+    return by_app, by_kvm
 
 
 async def run_kvm(action: dict) -> tuple[bool, str]:

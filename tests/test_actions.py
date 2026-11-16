@@ -77,3 +77,36 @@ def test_the_macro_button_saves_and_runs_kvm_actions(monkeypatch, tmp_path):
     assert saved == {"type": "kvm_next"}
     result = asyncio.run(macro_button.press("SERIAL", "single"))
     assert result["ok"] and result["text"] == "switched to sagedeck" and ran == [{"type": "kvm_next"}]
+
+
+def test_keys_go_through_a_tray_app_that_can_press_them_and_the_kvm_for_the_rest(monkeypatch, session):
+    """Wayland clients drop KVM keys while the cursor is elsewhere
+    (deskflow#10393); a tray app that said "keys" presses them itself."""
+    from fastapi.testclient import TestClient
+
+    from app import kvm_config
+    from app.main import app
+    monkeypatch.setattr(kvm_config, "read", lambda: {"computers": [
+        {"name": "sage", "aliases": []}, {"name": "sage-dev", "aliases": []}, {"name": "sagedeck", "aliases": ["deck"]}]})
+    sent_to_kvm = []
+    monkeypatch.setattr(kvm, "keystroke", lambda keys, computers: sent_to_kvm.append((keys, computers)))
+    client = TestClient(app)
+    with client.websocket_connect("/ws/peer/deck") as deck, client.websocket_connect("/ws/peer/sage") as sage:
+        deck.receive_json(), sage.receive_json()  # the "kvm" view
+        deck.send_json({"type": "client_hello", "features": ["keys"]})
+        sage.send_json({"type": "client_hello", "features": []})
+        # The hellos land before the next message is handled.
+        deck.send_json({"type": "kvm_switch", "computer": "ghost"})
+        deck.receive_json()
+        ok, text = asyncio.run(actions.run_kvm({"type": "kvm_keys", "keys": "Control+Shift+Alt+M",
+                                                "computers": ["sage", "sage-dev", "sagedeck"]}))
+        assert deck.receive_json() == {"type": "press_keys", "codes": [29, 42, 56, 50]}
+    assert ok and text == "pressed Control+Shift+Alt+M on deck (Bragi app), sage, sage-dev"
+    assert sent_to_kvm == [("Control+Shift+Alt+M", ["sage", "sage-dev"])]
+
+
+def test_keys_the_tray_apps_dont_know_all_go_through_the_kvm(monkeypatch):
+    monkeypatch.setattr(actions.peer_control, "peer_for_computer", lambda computer, setup: computer)
+    monkeypatch.setattr(actions.peer_control, "has_feature", lambda peer, feature: True)
+    assert actions.split_by_tray_app("Control+Hyper_L", ["sagedeck"]) == ([], ["sagedeck"])
+    assert actions.split_by_tray_app("Control+M", ["sagedeck"]) == ([("sagedeck", [29, 50])], [])
