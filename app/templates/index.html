@@ -56,8 +56,7 @@
     <section id="updates" class="settings-updates">
       {% include "_updates.html" %}
     </section>
-    {% if modules.kvm %}<p class="form-note"><button type="button" data-open-kvm-setup>KVM setup</button> the computers, their layout, hotkeys and input options.
-      Button bindings are still on the <a href="/kvm/setup/" target="_blank" rel="noopener">old setup page</a> for now.</p>{% endif %}
+    {% if modules.kvm %}<p class="form-note"><button type="button" data-open-kvm-setup>KVM setup</button> the computers, their layout, hotkeys, mouse buttons, key remapping and input options.</p>{% endif %}
     <button id="viz-settings-close" type="button">Close</button>
   </dialog>
 
@@ -178,6 +177,17 @@
       </div>
       <ul id="kvm-mouse" class="kvm-list"></ul>
       <p data-msg="mouse" hidden></p>
+    </section>
+
+    <section class="security-section">
+      <h3>Keys and buttons</h3>
+      <p class="form-note">Make a key or mouse button send something else to the active computer, like a side button sending Control+Super+Right for the next virtual desktop.</p>
+      <ul id="kvm-bindings" class="kvm-list"></ul>
+      <div id="kvm-binding-editor"></div>
+      <div class="dialog-actions">
+        <button type="button" id="kvm-add-binding">Add a binding</button>
+      </div>
+      <p data-msg="bindings" hidden></p>
     </section>
 
     <section class="security-section">

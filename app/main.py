@@ -34,6 +34,7 @@ from . import modules
 from . import updates
 from . import level_meter
 from . import peer_control
+from . import key_bindings
 from . import actions
 from . import hidpp
 from . import peers as peers_module
@@ -309,20 +310,26 @@ async def kvm_config_input(body: dict):
     return await asyncio.to_thread(_kvm_config_call, kvm_config.save_input, body.get("input"))
 
 
-@app.get("/kvm/setup")
-def kvm_setup_root():
-    # The page fetches relative paths, so it needs the trailing slash.
-    return RedirectResponse("/kvm/setup/", status_code=308)
+@app.get("/kvm/bindings")
+def kvm_bindings():
+    """Key and button remapping in the KVM's input path (app/key_bindings.py)."""
+    return key_bindings.read()
 
 
-@app.api_route("/kvm/setup/{path:path}", methods=["GET", "POST"])
-async def kvm_setup(request: Request, path: str):
-    """The KVM engine's setup page, behind Bragi's login (app/kvm.py)."""
-    body = await request.body()
-    status, content_type, content = await asyncio.to_thread(
-        kvm.setup_request, request.method, "/" + path, body, request.headers.get("x-deskflow-webui"))
-    return Response(content, status_code=status, media_type=content_type,
-                    headers={"Cache-Control": "no-cache"})
+@app.post("/kvm/bindings")
+async def kvm_bindings_save(body: dict):
+    try:
+        note = await asyncio.to_thread(key_bindings.save, body.get("bindings"))
+    except key_bindings.BindingError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {**key_bindings.read(), "note": note}
+
+
+@app.post("/kvm/bindings/identify")
+def kvm_bindings_identify(body: dict):
+    """While on, the KVM reports the last key or button pressed."""
+    key_bindings.identify(bool(body.get("on")))
+    return key_bindings.read()
 
 
 def _updates_section(request: Request, error: str | None = None, since: str | None = None):

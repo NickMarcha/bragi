@@ -274,6 +274,115 @@
     }
   });
 
+  // --- keys and buttons (app/key_bindings.py) ------------------------------------------
+
+  let bindings = { bindings: [], last_input: null };
+  let capture = null; // {phase: "waiting", baseline, started, refreshed} or {phase: "captured", device, code, input}
+  let captureTimer = null;
+
+  function renderBindings() {
+    const list = $("#kvm-bindings");
+    const rows = bindings.bindings.map((b, i) => el("li", { class: "kvm-row" },
+      el("span", {}, el("strong", {}, b.input), ` on ${b.device || "any device"} sends `, el("strong", {}, b.label || b.sends)),
+      el("button", { type: "button", onclick: () => saveBindings(bindings.bindings.filter((_, j) => j !== i)) }, "Remove")));
+    list.replaceChildren(...(rows.length ? rows : [el("li", { class: "form-note" }, "No bindings.")]));
+    renderEditor();
+  }
+
+  async function saveBindings(list) {
+    say("bindings", "Saving…");
+    try {
+      const out = list.map((b) => ({ device: b.device, code: b.code, send: b.send, keys: b.keys, label: b.label }));
+      bindings = await call("POST", "/kvm/bindings", { bindings: out });
+      say("bindings", bindings.note);
+      renderBindings();
+      return true;
+    } catch (err) {
+      say("bindings", err.message, true);
+      return false;
+    }
+  }
+
+  async function stopCapture(keep) {
+    clearInterval(captureTimer);
+    captureTimer = null;
+    if (!keep) capture = null;
+    try { await call("POST", "/kvm/bindings/identify", { on: false }); } catch (_) { /* best effort */ }
+    renderEditor();
+  }
+
+  async function startCapture() {
+    try {
+      bindings = await call("POST", "/kvm/bindings/identify", { on: true });
+    } catch (err) {
+      say("bindings", err.message, true);
+      return;
+    }
+    capture = { phase: "waiting", baseline: bindings.last_input && bindings.last_input.at, started: Date.now(), refreshed: Date.now() };
+    renderEditor();
+    clearInterval(captureTimer);
+    captureTimer = setInterval(async () => {
+      if (Date.now() - capture.started > 120000) return stopCapture(false);
+      if (Date.now() - capture.refreshed > 20000) {
+        capture.refreshed = Date.now();
+        call("POST", "/kvm/bindings/identify", { on: true }).catch(() => {});
+      }
+      let now;
+      try { now = await call("GET", "/kvm/bindings"); } catch (_) { return; }
+      const last = now.last_input;
+      if (capture && capture.phase === "waiting" && last && last.at && last.at !== capture.baseline) {
+        capture = { phase: "captured", device: last.device, code: last.code, input: last.input };
+        stopCapture(true);
+      }
+    }, 700);
+  }
+
+  function renderEditor() {
+    const box = $("#kvm-binding-editor");
+    $("#kvm-add-binding").disabled = capture !== null;
+    if (!capture) { box.replaceChildren(); return; }
+    if (capture.phase === "waiting") {
+      box.replaceChildren(el("p", { class: "form-note" }, "Press the key or button to remap, on the box's keyboard or mouse. ",
+        el("button", { type: "button", onclick: () => stopCapture(false) }, "Cancel")));
+      return;
+    }
+    const send = el("input", { type: "text", class: "kvm-send", placeholder: "Control+Super+Right", "aria-label": "Send instead" });
+    const pick = (label, keys) => el("button", { type: "button", onclick: () => { send.value = keys; } }, label);
+    const hotkeyPicks = (config ? config.hotkeys : []).map(parseHotkey).filter((h) => h.keys && h.kind !== "raw")
+      .map((h) => pick(`${h.keys} (${h.kind === "switch" ? `switch to ${h.target}` : h.kind === "next" ? "next computer" : h.kind === "lock" ? "lock cursor" : "send keys"})`, h.keys));
+    const only = el("input", { type: "checkbox", checked: true });
+    box.replaceChildren(
+      el("p", {}, "Pressed ", el("strong", {}, capture.input), ` on ${capture.device || "an unnamed device"}. `,
+        el("button", { type: "button", onclick: startCapture }, "Press a different one")),
+      el("div", { class: "kvm-row" }, el("span", {}, "Send instead"), send),
+      el("div", { class: "kvm-chips" }, pick("Next virtual desktop", "Control+Super+Right"),
+        pick("Previous virtual desktop", "Control+Super+Left"), ...hotkeyPicks),
+      el("label", {}, only, " Only on this device"),
+      el("div", { class: "dialog-actions" },
+        el("button", { type: "button", class: "primary", onclick: async () => {
+          if (!send.value.trim()) { say("bindings", "Type what to send, or pick one.", true); return; }
+          const device = only.checked ? capture.device : "";
+          const kept = bindings.bindings.filter((b) => !(b.device === device && b.code === capture.code));
+          if (await saveBindings([...kept, { device, code: capture.code, keys: send.value.trim() }])) {
+            capture = null;
+            renderEditor();
+          }
+        } }, "Save"),
+        el("button", { type: "button", onclick: () => stopCapture(false) }, "Cancel")));
+  }
+
+  async function loadBindings() {
+    try {
+      bindings = await call("GET", "/kvm/bindings");
+      renderBindings();
+    } catch (err) {
+      say("bindings", err.message, true);
+    }
+  }
+
+  $("#kvm-add-binding").addEventListener("click", startCapture);
+  dialog.addEventListener("close", () => { if (capture) stopCapture(false); });
+
   // --- input -------------------------------------------------------------------
 
   function renderInput() {
@@ -334,13 +443,14 @@
   });
 
   async function open() {
-    for (const s of ["load", "computers", "layout", "hotkeys", "mouse", "input"]) say(s, "");
+    for (const s of ["load", "computers", "layout", "hotkeys", "mouse", "bindings", "input"]) say(s, "");
     dialog.showModal();
     try {
       config = await call("GET", "/kvm/config");
       selected = null;
       render();
       loadMouse();
+      loadBindings();
     } catch (err) {
       say("load", err.message, true);
     }
