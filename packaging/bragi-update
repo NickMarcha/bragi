@@ -14,6 +14,11 @@ REQUEST="$STATE/update-request"
 STATUS="$STATE/update.json"
 PACKAGES="bragi deskflow"
 
+# A request written while this runs doesn't start another run (the path
+# unit ignores changes while the service is active), so remember the
+# request file as it was and look again at the end.
+seen="$(stat -c %y "$REQUEST" 2>/dev/null || true)"
+
 action="${1:-}"
 if [[ -z "$action" && -f "$REQUEST" ]]; then
     # Left as it is: emptying it would be a change the path unit sees, and
@@ -71,4 +76,8 @@ if [[ "$action" == upgrade ]]; then
     write_status done "upgraded"
 else
     write_status done "checked"
+fi
+
+if [[ -f "$REQUEST" && "$(stat -c %y "$REQUEST" 2>/dev/null)" != "$seen" ]]; then
+    exec "$BASH" "$0"
 fi

@@ -8,6 +8,7 @@
   Bragi {{ u.running or "?" }}{% if u.packages.deskflow and u.packages.deskflow.installed %}, Deskflow {{ u.packages.deskflow.installed }}{% endif %}.
   {% if u.state == "running" %}
     {{ "Installing the update…" if u.action == "upgrade" else "Checking for updates…" }}
+    {% if u.action == "upgrade" %}Bragi restarts on the new version and this page reloads by itself.{% endif %}
   {% elif u.state == "failed" %}
     <span class="form-error">{{ u.message }}</span>
   {% elif u.newer %}
@@ -30,6 +31,6 @@
   {% endif %}
 </div>
 {% if u.state == "running" %}
-<div hx-get="/updates" hx-trigger="every 3s" hx-target="#updates" hx-swap="innerHTML"></div>
+<div hx-get="/updates?since={{ since or u.running }}" hx-trigger="every 3s" hx-target="#updates" hx-swap="innerHTML"></div>
 {% endif %}
 {% endif %}

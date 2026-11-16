@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -105,3 +106,53 @@ def test_the_updater_script_writes_its_status(tmp_path):
     calls.write_text("")
     subprocess.run(["bash", str(tmp_path / "bragi-update"), "check"], check=True, env=env)
     assert "--only-upgrade" not in calls.read_text()
+
+    # A request written while it runs is picked up when it's done.
+    (state / "update-request").write_text("check\n")
+    (bin_dir / "apt-get").write_text(
+        "#!/bin/bash\n"
+        f'echo "apt-get $*" >> {calls}\n'
+        f'if [[ "$*" == update* && ! -e {tmp_path}/asked ]]; then touch {tmp_path}/asked; sleep 0.05; echo upgrade > {state}/update-request; fi\n')
+    calls.write_text("")
+    subprocess.run(["bash", str(tmp_path / "bragi-update")], check=True, env=env)
+    log = calls.read_text()
+    assert log.count("apt-get update") == 2 and "--only-upgrade" in log
+
+
+def test_a_request_shows_as_queued_until_the_updater_answers(state, session):
+    """The path unit takes a moment to start the updater: the page polls from
+    the click on, and a second click is refused."""
+    write_status(state, packages={"bragi": {"installed": "0.1.0", "candidate": "0.2.0"}})
+    client = TestClient(app)
+    page = client.post("/updates/upgrade").text
+    assert "Installing the update" in page and 'hx-trigger="every 3s"' in page
+    assert "already running" in client.post("/updates/check").text
+
+    write_status(state, at=int(time.time()) + 5, message="upgraded", action="upgrade")
+    assert "Installing the update" not in client.get("/updates").text
+
+
+def test_a_request_nobody_picks_up_says_so(state, session):
+    write_status(state)
+    (state / "update-request").write_text("check\n")
+    old = time.time() - updates.QUEUE_TIMEOUT - 5
+    os.utime(state / "update-request", (old, old))
+    page = TestClient(app).get("/updates").text
+    assert "The updater didn" in page and "every 3s" not in page
+
+
+def test_the_polling_page_reloads_once_a_new_version_runs(state, session):
+    write_status(state, state="running", action="upgrade")
+    client = TestClient(app)
+    page = client.get("/updates").text
+    assert "/updates?since=0.1.0" in page
+
+    # Restarted on the new version while the updater finishes: keep polling,
+    # still against the version the page was loaded on.
+    (state / "VERSION").write_text("0.2.0\n")
+    response = client.get("/updates?since=0.1.0")
+    assert "HX-Refresh" not in response.headers and "/updates?since=0.1.0" in response.text
+
+    write_status(state, action="upgrade", message="upgraded", at=int(time.time()) + 5)
+    assert client.get("/updates?since=0.1.0").headers.get("HX-Refresh") == "true"
+    assert "HX-Refresh" not in client.get("/updates?since=0.2.0").headers

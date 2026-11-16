@@ -14,10 +14,14 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 STATE_DIR = Path(os.environ.get("BRAGI_UPDATE_DIR", "/var/lib/bragi"))
 VERSION_FILE = Path(__file__).resolve().parent.parent / "VERSION"
+# A request the updater hasn't picked up after this long means it isn't
+# listening (bragi-update.path stopped or missing).
+QUEUE_TIMEOUT = 90
 
 
 class UpdateError(Exception):
@@ -53,7 +57,30 @@ def status() -> dict:
                             for name, p in packages.items() if isinstance(p, dict)}
     view["newer"] = any(p["installed"] and p["candidate"] and p["installed"] != p["candidate"]
                          for p in view["packages"].values())
+    _queued(view)
     return view
+
+
+def _queued(view: dict) -> None:
+    """A request newer than the updater's last word: it's about to start
+    (the path unit takes a moment), or it never will."""
+    if view["state"] == "running":
+        return
+    path = STATE_DIR / "update-request"
+    try:
+        asked = path.read_text().strip()
+        mtime = path.stat().st_mtime
+    except OSError:
+        return
+    at = view["at"] if isinstance(view["at"], (int, float)) else 0
+    if asked not in ("check", "upgrade") or mtime <= at:
+        return
+    view["action"] = asked
+    if time.time() - mtime < QUEUE_TIMEOUT:
+        view["state"], view["message"] = "running", "queued"
+    else:
+        view["state"] = "failed"
+        view["message"] = "The updater didn't start. Is bragi-update.path running? (systemctl status bragi-update.path)"
 
 
 def request(action: str) -> None:

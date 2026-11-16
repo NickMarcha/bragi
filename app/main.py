@@ -310,13 +310,21 @@ async def kvm_setup(request: Request, path: str):
                     headers={"Cache-Control": "no-cache"})
 
 
-def _updates_section(request: Request, error: str | None = None):
-    return templates.TemplateResponse(request, "_updates.html", {"updates": updates.status(), "error": error})
+def _updates_section(request: Request, error: str | None = None, since: str | None = None):
+    status = updates.status()
+    response = templates.TemplateResponse(request, "_updates.html",
+                                          {"updates": status, "error": error, "since": since})
+    if since and status["running"] and since != status["running"] and status["state"] != "running":
+        # The page was rendered by the old version: reload it on the new one.
+        response.headers["HX-Refresh"] = "true"
+    return response
 
 
 @app.get("/updates", response_class=HTMLResponse)
-def updates_section(request: Request):
-    return _updates_section(request)
+def updates_section(request: Request, since: str | None = None):
+    """The Settings > Updates section; `since` is the version the polling
+    page was loaded on."""
+    return _updates_section(request, since=since)
 
 
 @app.post("/updates/{action}", response_class=HTMLResponse)
