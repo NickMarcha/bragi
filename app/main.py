@@ -29,6 +29,7 @@ from . import hardware
 from . import headset_hid
 from . import knob_watcher
 from . import kvm
+from . import kvm_config
 from . import modules
 from . import updates
 from . import level_meter
@@ -259,6 +260,38 @@ async def kvm_switch(request: Request, computer: str = Form(..., max_length=64))
     except kvm.KvmError as exc:
         return _kvm_bar(request, str(exc))
     return _kvm_bar(request)
+
+
+# --- KVM settings (app/kvm_config.py), for the dashboard's KVM setup ---
+
+def _kvm_config_call(fn, *args):
+    try:
+        return {"ok": True, "note": fn(*args), "config": kvm_config.read()}
+    except kvm_config.ConfigError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/kvm/config")
+async def kvm_config_read():
+    try:
+        return await asyncio.to_thread(kvm_config.read)
+    except kvm_config.ConfigError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@app.post("/kvm/config/layout")
+async def kvm_config_layout(body: dict):
+    return await asyncio.to_thread(_kvm_config_call, kvm_config.save_layout, body.get("cells"), body.get("hotkeys"))
+
+
+@app.post("/kvm/config/computers")
+async def kvm_config_computers(body: dict):
+    return await asyncio.to_thread(_kvm_config_call, kvm_config.save_computers, body.get("computers"))
+
+
+@app.post("/kvm/config/input")
+async def kvm_config_input(body: dict):
+    return await asyncio.to_thread(_kvm_config_call, kvm_config.save_input, body.get("input"))
 
 
 @app.get("/kvm/setup")

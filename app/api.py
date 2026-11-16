@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, model_validator
 
-from . import hardware, kvm, modules, views, ws
+from . import hardware, kvm, kvm_config, modules, views, ws
 
 router = APIRouter(prefix="/api/v1")
 
@@ -87,6 +87,37 @@ def explainer(request: Request):
 def root():
     return {"help": "/api/v1/help", "devices": "/api/v1/devices", "hardware": "/api/v1/hardware",
             "kvm": "/api/v1/kvm", "websocket": "/ws", "modules": modules.enabled()}
+
+
+def _kvm_config(fn, *args):
+    try:
+        return {"ok": True, "note": fn(*args), "config": kvm_config.read()}
+    except kvm_config.ConfigError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/kvm/config")
+async def get_kvm_config():
+    """The KVM's computers, layout, hotkeys and input options."""
+    try:
+        return await asyncio.to_thread(kvm_config.read)
+    except kvm_config.ConfigError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@router.put("/kvm/config/layout")
+async def put_kvm_layout(body: dict):
+    return await asyncio.to_thread(_kvm_config, kvm_config.save_layout, body.get("cells"), body.get("hotkeys"))
+
+
+@router.put("/kvm/config/computers")
+async def put_kvm_computers(body: dict):
+    return await asyncio.to_thread(_kvm_config, kvm_config.save_computers, body.get("computers"))
+
+
+@router.put("/kvm/config/input")
+async def put_kvm_input(body: dict):
+    return await asyncio.to_thread(_kvm_config, kvm_config.save_input, body.get("input"))
 
 
 @router.get("/hardware")
@@ -322,6 +353,20 @@ has them now:
 ```
 
 `available` is false when the KVM isn't running on this host.
+
+### GET /api/v1/kvm/config
+
+The KVM's settings: `host` (this box's own name), `computers` (each with
+`name` and `aliases`), `cells` (each computer's `[column, row]` on the
+layout grid; neighbours are linked), `hotkeys` (the server's option lines,
+e.g. `keystroke(Control+Alt+F12) = switchToScreen(sage)`) and `input`
+(input options such as `DESKFLOW_EVDEV_REPEAT`).
+
+`PUT /api/v1/kvm/config/layout {"cells": ..., "hotkeys": [...]}` applies
+without dropping connections; `PUT .../computers {"computers": [...]}` and
+`PUT .../input {"input": {...}}` restart the KVM. Each returns
+`{"ok", "note", "config"}`; `400` with the reason if it's refused, and the
+previous settings are then back in place.
 
 ### POST /api/v1/kvm/active
 
