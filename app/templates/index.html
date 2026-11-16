@@ -14,7 +14,7 @@
   <script src="/static/kvm-setup.js" defer></script>
   <script src="/static/security.js" defer></script>
 </head>
-<body class="{{ 'viz-enabled' if viz_settings.enabled }}">
+<body class="{{ 'viz-enabled' if viz_settings.enabled }}" data-version="{{ updates.running or '' }}">
   <header id="top-bar">
     <span class="brand"><img src="/static/logo.png" alt="" />Bragi</span>
     <div id="microphone-routing">
@@ -150,6 +150,7 @@
       <p id="kvm-unplaced-note" class="form-note" hidden>Not placed yet:</p>
       <div id="kvm-unplaced" class="kvm-chips"></div>
       <div class="dialog-actions">
+        <button type="button" id="kvm-identify" title="Show each computer's name on its own screens for a few seconds">Identify</button>
         <button type="button" id="kvm-unplace">Take the selected one off</button>
         <button type="button" id="kvm-save-layout" class="primary" data-section="layout">Save layout</button>
       </div>

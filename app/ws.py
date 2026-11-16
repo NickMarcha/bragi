@@ -45,6 +45,7 @@ from collections.abc import Callable
 from fastapi import WebSocket, WebSocketDisconnect
 
 from . import audio_state
+from . import updates
 from . import eq_presets
 from . import headset_hid
 from . import macro_button
@@ -746,6 +747,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     # (see this module's docstring, point 1).
     initial_state = await asyncio.to_thread(views.build_state)
     await websocket.send_json({"type": "state", **initial_state})
+    # The version this server runs: a page rendered by another one (Bragi
+    # restarted on an update) reloads itself.
+    await websocket.send_json({"type": "hello", "version": updates.running_version()})
 
     receive_task: asyncio.Task | None = None
     queue_task: asyncio.Task | None = None

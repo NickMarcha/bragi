@@ -93,6 +93,27 @@ def broadcast_desktop(message: dict) -> None:
     ws.manager.broadcast_nowait(message)
 
 
+def identify(computers: list[dict]) -> dict:
+    """Asks every connected tray app to show its computer's name on its
+    screens for a few seconds, like Windows' "Identify" in display settings.
+    A tray app is matched to a KVM computer by its peer name, or one of the
+    computer's aliases. Returns who was asked and which computers have no
+    tray app connected to show it."""
+    def computer_for(peer: str) -> str | None:
+        for c in computers:
+            if peer.lower() in (n.lower() for n in [c["name"], *c.get("aliases", [])]):
+                return c["name"]
+        return None
+
+    shown: dict[str, str | None] = {}
+    for peer, connections in _connections.items():
+        if any(socket not in _android for socket in connections):
+            shown[peer] = computer_for(peer)
+            send(peer, {"type": "kvm_identify", "computer": shown[peer], "peer": peer})
+    reached = {c for c in shown.values() if c}
+    return {"shown": shown, "missing": [c["name"] for c in computers if c["name"] not in reached]}
+
+
 def _desktop_message(name: str, raw: str) -> None:
     """What a desktop tray app may ask: take or give back the controllers."""
     try:

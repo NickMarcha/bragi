@@ -48,4 +48,14 @@ public class KvmTests
         Assert.Equal(["""{"type":"kvm_switch","computer":"sagedeck"}"""], sent);
         Assert.Null(kvm.Error);
     }
+
+    [Fact]
+    public void Identify_shows_the_kvm_name_or_says_this_computer_isnt_in_the_setup()
+    {
+        Assert.Equal("sagedeck", IdentifyOverlay.Text(Json("""{"type":"kvm_identify","computer":"sagedeck","peer":"deck"}"""))?.Title);
+        var stranger = IdentifyOverlay.Text(Json("""{"type":"kvm_identify","computer":null,"peer":"laptop"}"""));
+        Assert.Equal("laptop", stranger?.Title);
+        Assert.Contains("Not in the KVM setup", stranger?.Note);
+        Assert.Null(IdentifyOverlay.Text(Json("""{"type":"kvm","available":true}""")));
+    }
 }

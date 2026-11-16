@@ -216,6 +216,23 @@
   $("#kvm-unplace").addEventListener("click", () => {
     if (selected) { delete config.cells[selected]; selected = null; renderLayout(); }
   });
+  $("#kvm-identify").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try {
+      const { shown, missing } = await call("POST", "/kvm/identify");
+      const parts = [];
+      const reached = Object.values(shown).filter(Boolean);
+      if (reached.length) parts.push(`Showing the name on ${reached.join(", ")}.`);
+      const strangers = Object.entries(shown).filter(([, c]) => !c).map(([peer]) => peer);
+      if (strangers.length) parts.push(`${strangers.join(", ")} has the Bragi app but isn't one of these computers (add it, or its name as an alias).`);
+      if (missing.length) parts.push(`No Bragi app connected on ${missing.join(", ")}, so nothing shows there.`);
+      say("layout", parts.join(" ") || "No computers to identify.");
+    } catch (err) {
+      say("layout", err.message, true);
+    } finally {
+      setTimeout(() => { e.target.disabled = false; }, 4000);
+    }
+  });
   $("#kvm-add-hotkey").addEventListener("click", () => $("#kvm-hotkeys").append(hotkeyRow()));
   const saveLayout = (e) => {
     const hotkeys = [...dialog.querySelectorAll("#kvm-hotkeys li")].map(hotkeyLine).filter(Boolean);
