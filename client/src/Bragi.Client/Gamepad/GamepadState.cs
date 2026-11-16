@@ -42,4 +42,13 @@ public sealed record GamepadState(
 public interface IVirtualGamepad : IDisposable
 {
     void Apply(GamepadState state);
+
+    /// <summary>A game played (or stopped, with no strength) a rumble on this pad.</summary>
+    event Action<Rumble>? Rumble;
+}
+
+/// <summary>Strong (low-frequency) and weak (high-frequency) motors, 0..65535; Ms 0 plays until stopped.</summary>
+public readonly record struct Rumble(ushort Strong, ushort Weak, int Ms)
+{
+    public static readonly Rumble Stop = new(0, 0, 0);
 }

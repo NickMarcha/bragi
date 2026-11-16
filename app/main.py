@@ -55,7 +55,8 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(level_meter.supervise()),
         asyncio.create_task(microphone.supervise()),
         asyncio.create_task(mic_monitor.supervise()),
-        asyncio.create_task(gamepad.supervise(peer_control.send, peer_control.broadcast_desktop)),
+        asyncio.create_task(gamepad.supervise(peer_control.send, peer_control.broadcast_desktop,
+                                              ws.manager.broadcast_levels_nowait)),
         asyncio.create_task(kvm.supervise(_kvm_changed)),
         asyncio.create_task(hardware.watch_batteries()),
         asyncio.create_task(updates.watch(ws.manager.broadcast_nowait)),
@@ -233,7 +234,7 @@ async def _bluetooth_view(request: Request):
     status = gamepad.hub.status() if gamepad.hub is not None else {"target": gamepad.target(), "controllers": []}
     return templates.TemplateResponse(request, "_bluetooth.html", {
         "bt": view, "computers": computers, "target": status["target"],
-        "playing": {c["id"] for c in status["controllers"]}})
+        "controllers": status["controllers"], "playing": {c["id"] for c in status["controllers"]}})
 
 
 def _bluetooth() -> bluetooth.Manager:
@@ -347,6 +348,31 @@ def run_update(request: Request, action: str):
     except updates.UpdateError as exc:
         return _updates_section(request, str(exc))
     return _updates_section(request)
+
+
+# --- the controller test (app/gamepad.py) ---
+
+def _hub() -> gamepad.Hub:
+    if gamepad.hub is None:
+        raise HTTPException(503, "Controllers aren't running in this Bragi.")
+    return gamepad.hub
+
+
+@app.post("/gamepads/watch")
+def gamepads_watch():
+    """The test dialog is open: live "gamepad_state" on the websocket for a
+    while, and every controller's state now."""
+    return {"controllers": _hub().watch()}
+
+
+@app.post("/gamepads/{controller_id}/rumble")
+def gamepads_rumble(controller_id: str, strength: Literal["light", "strong"] = "strong"):
+    """Vibrates the controller for a moment, on the box itself."""
+    strong, weak = (0x4000, 0x8000) if strength == "light" else (0xFFFF, 0xC000)
+    error = _hub().test_rumble(controller_id, strong, weak, 600)
+    if error:
+        raise HTTPException(400, error)
+    return {"ok": True}
 
 
 @app.get("/bluetooth", response_class=HTMLResponse)

@@ -180,6 +180,8 @@ public sealed class GamepadService : IDisposable
             try
             {
                 pad = _createPad();
+                // A game's rumble on the virtual pad, played on the real controller.
+                pad.Rumble += r => _ = Send?.Invoke(new { type = "gamepad_rumble", id, strong = r.Strong, weak = r.Weak, ms = r.Ms });
                 Problem = null;
             }
             catch (Exception ex) when (ex is InvalidOperationException or DllNotFoundException or EntryPointNotFoundException)

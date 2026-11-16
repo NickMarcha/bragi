@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -23,6 +24,55 @@ public class GamepadTests
         public bool Disposed { get; private set; }
         public void Apply(GamepadState state) => Applied.Add(state);
         public void Dispose() => Disposed = true;
+        public event Action<Rumble>? Rumble;
+        public void Play(Rumble rumble) => Rumble?.Invoke(rumble);
+    }
+
+    private static byte[] Effect(ushort type, short id, ushort length, ushort strong, ushort weak)
+    {
+        var effect = new byte[48];
+        BinaryPrimitives.WriteUInt16LittleEndian(effect, type);
+        BinaryPrimitives.WriteInt16LittleEndian(effect.AsSpan(2), id);
+        BinaryPrimitives.WriteUInt16LittleEndian(effect.AsSpan(10), length);
+        BinaryPrimitives.WriteUInt16LittleEndian(effect.AsSpan(16), strong);
+        BinaryPrimitives.WriteUInt16LittleEndian(effect.AsSpan(18), weak);
+        return effect;
+    }
+
+    [Fact]
+    public void Rumble_effects_play_as_uploaded_scaled_by_the_gain()
+    {
+        var effects = new RumbleEffects();
+        Assert.False(effects.Upload(Effect(0x51, 0, 100, 1, 1)));  // FF_PERIODIC: not a rumble
+        Assert.True(effects.Upload(Effect(0x50, 3, 250, 0x8000, 0x4000)));
+
+        Assert.Equal(new Rumble(0x8000, 0x4000, 500), effects.Play(3, 2));  // two repeats
+        Assert.True(effects.Playing);
+        Assert.Null(effects.Play(7, 0));                                    // stopping another slot
+        Assert.Equal(Rumble.Stop, effects.Play(3, 0));
+
+        Assert.Null(effects.Play(0x60, 0x7FFF));                            // FF_GAIN: half
+        Assert.Equal(new Rumble(0x3FFF, 0x1FFF, 250), effects.Play(3, 1));
+        Assert.True(effects.Erase(3));                                      // erasing the one playing stops it
+        Assert.Null(effects.Play(3, 1));
+    }
+
+    [Fact]
+    public void A_rumble_on_the_virtual_pad_goes_to_the_host()
+    {
+        var pad = new FakePad();
+        var sent = new List<string>();
+        var service = new GamepadService("deck", () => pad)
+        {
+            Send = m => { sent.Add(JsonSerializer.Serialize(m)); return Task.FromResult(true); },
+        };
+        service.OnMessage(Json("""{"type":"gamepads","target":"deck","controllers":[{"id":"p","name":"8BitDo"}]}"""));
+        service.OnMessage(Json("""{"type":"gamepad","id":"p","buttons":[],"lx":0,"ly":0,"rx":0,"ry":0,"lt":0,"rt":0,"dx":0,"dy":0}"""));
+        sent.Clear();
+
+        pad.Play(new Rumble(1000, 2000, 300));
+
+        Assert.Equal(["""{"type":"gamepad_rumble","id":"p","strong":1000,"weak":2000,"ms":300}"""], sent);
     }
 
     private static JsonElement Json(string text) => JsonDocument.Parse(text).RootElement;

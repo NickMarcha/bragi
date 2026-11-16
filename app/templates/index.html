@@ -12,6 +12,7 @@
   <script src="/static/ws.js" defer></script>
   <script src="/static/passkeys.js" defer></script>
   <script src="/static/kvm-setup.js" defer></script>
+  <script src="/static/controller-test.js" defer></script>
   <script src="/static/security.js" defer></script>
 </head>
 <body class="{{ 'viz-enabled' if viz_settings.enabled }}" data-version="{{ updates.running or '' }}">
@@ -186,6 +187,36 @@
 
     <div class="dialog-actions">
       <button type="button" id="kvm-setup-close">Close</button>
+    </div>
+  </dialog>
+  {% endif %}
+
+  {% if modules.controllers %}
+  <dialog id="controller-test-dialog">
+    <h2>Controller test</h2>
+    <p class="form-note"><strong id="ct-name"></strong>, as the box reads it. Extra buttons (share, back paddles) aren't shown: an Xbox 360 pad has none.</p>
+    <div class="ct-pad">
+      <div class="ct-sticks">
+        <div class="ct-stick" id="ct-left" aria-label="Left stick"><span class="ct-dot"></span></div>
+        <div class="ct-stick" id="ct-right" aria-label="Right stick"><span class="ct-dot"></span></div>
+      </div>
+      <div class="ct-triggers">
+        <label>LT <span class="ct-bar"><span id="ct-lt"></span></span></label>
+        <label>RT <span class="ct-bar"><span id="ct-rt"></span></span></label>
+      </div>
+      <div class="ct-dpad" aria-label="D-pad">
+        <span class="ct-chip" data-dpad="up">Up</span>
+        <span class="ct-chip" data-dpad="left">Left</span>
+        <span class="ct-chip" data-dpad="right">Right</span>
+        <span class="ct-chip" data-dpad="down">Down</span>
+      </div>
+      <div class="ct-buttons" id="ct-buttons"></div>
+    </div>
+    <p data-ct-msg hidden></p>
+    <div class="dialog-actions">
+      <button type="button" data-rumble="light">Vibrate lightly</button>
+      <button type="button" data-rumble="strong">Vibrate</button>
+      <button type="button" id="ct-close">Close</button>
     </div>
   </dialog>
   {% endif %}
