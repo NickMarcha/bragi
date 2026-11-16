@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import struct
+
 import pytest
 
 from fastapi.testclient import TestClient
@@ -220,3 +222,95 @@ def test_output_from_the_target_reaches_the_real_controller_and_nobody_elses_doe
         hub.hid_request("sage", {"type": "hid_output", "id": "pad1", "data": "AQI="})
         hub.hid_request("deck", {"type": "hid_output", "id": "pad1", "data": "AwQ="})
     assert path.read_bytes() == b"\x03\x04"
+
+
+
+# --- rumble and the controller test ---------------------------------------------
+
+class EventNode:
+    def fileno(self):
+        return 99
+
+
+def rumble_hub(monkeypatch, wire, hid=None, hid_file=None):
+    played = []
+
+    def fake_play(fd, effect_id, strong, weak, ms):
+        played.append((strong, weak, ms))
+        return 0 if strong or weak else effect_id
+
+    monkeypatch.setattr(gamepad, "play_rumble", fake_play)
+    hub = Hub(wire.send, wire.broadcast)
+    pad = Normaliser(HID_GAMEPAD, BT_RANGES)
+    hub.opened(_Open(Controller("pad1", "8BitDo", "event25"), pad, EventNode(), hid, hid_file))
+    return hub, pad, played
+
+
+def test_the_rumble_struct_is_the_kernels_ff_effect():
+    effect = gamepad.rumble_effect(-1, 0xC000, 0x4000, 70000)
+    assert len(effect) == 48
+    assert struct.unpack_from("HhHHHHH", effect, 0) == (gamepad.FF_RUMBLE, -1, 0, 0, 0, 65535, 0)
+    assert struct.unpack_from("HH", effect, 16) == (0xC000, 0x4000)
+
+
+def test_rumble_from_the_target_plays_on_the_real_controller(monkeypatch):
+    wire = Wire()
+    hub, _, played = rumble_hub(monkeypatch, wire)
+    hub.set_target("deck")
+    hub.rumble("sage", {"type": "gamepad_rumble", "id": "pad1", "strong": 1, "weak": 1, "ms": 100})
+    hub.rumble("deck", {"type": "gamepad_rumble", "id": "pad1", "strong": 40000, "weak": 20000, "ms": 250})
+    assert played == [(40000, 20000, 250)]
+
+    # Handing the controller to another computer stops a rumble left playing.
+    hub.set_target("sage")
+    assert played[-1] == (0, 0, 0)
+
+
+def test_a_passed_through_controller_rumbles_by_output_report_instead(monkeypatch, tmp_path):
+    wire = Wire()
+    with open(tmp_path / "hidraw", "w+b", buffering=0) as hid_file:
+        hub, _, played = rumble_hub(monkeypatch, wire, HID, hid_file)
+        hub.hello("deck", ["hid"])
+        hub.set_target("deck")
+        hub.rumble("deck", {"type": "gamepad_rumble", "id": "pad1", "strong": 1, "weak": 1, "ms": 1})
+    assert played == []
+
+
+def test_the_dashboard_can_vibrate_a_controller_and_hears_when_it_cant(monkeypatch):
+    wire = Wire()
+    hub, _, played = rumble_hub(monkeypatch, wire)
+    assert hub.test_rumble("pad1") is None and played == [(0xC000, 0xC000, 600)]
+    assert "isn't connected" in hub.test_rumble("ghost")
+
+    def no_ff(*_):
+        raise OSError(22, "Invalid argument")
+
+    monkeypatch.setattr(gamepad, "play_rumble", no_ff)
+    assert "can't vibrate" in hub.test_rumble("pad1")
+
+
+def test_the_controller_test_gets_live_state_only_while_it_watches(monkeypatch):
+    wire = Wire()
+    hub, pad, _ = rumble_hub(monkeypatch, wire)
+    seen = []
+    hub.watch_broadcast = seen.append
+    pad.feed(EV_KEY, 304, 1)
+    hub.input("pad1")
+    assert seen == []  # nobody is looking
+
+    states = hub.watch()
+    assert states[0]["id"] == "pad1" and states[0]["buttons"] == ["a"]
+    hub.input("pad1")
+    assert seen[0]["type"] == "gamepad_state" and seen[0]["buttons"] == ["a"]
+
+
+def test_the_dashboard_routes_for_the_controller_test(monkeypatch, session):
+    wire = Wire()
+    hub, pad, played = rumble_hub(monkeypatch, wire)
+    monkeypatch.setattr(gamepad, "hub", hub)
+    client = TestClient(app)
+    assert client.post("/gamepads/watch").json()["controllers"][0]["name"] == "8BitDo"
+    assert client.post("/gamepads/pad1/rumble?strength=light").json() == {"ok": True}
+    assert played == [(0x4000, 0x8000, 600)]
+    response = client.post("/gamepads/ghost/rumble")
+    assert response.status_code == 400 and "isn't connected" in response.json()["detail"]

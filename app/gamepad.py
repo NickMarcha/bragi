@@ -25,6 +25,7 @@ import os
 import re
 import struct
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -40,7 +41,8 @@ _EVENT_FMT = "llHHi"
 _EVENT_SIZE = struct.calcsize(_EVENT_FMT)
 _RESCAN_SECONDS = 2
 
-EV_SYN, EV_KEY, EV_ABS = 0, 1, 3
+EV_SYN, EV_KEY, EV_ABS, EV_FF = 0, 1, 3, 0x15
+FF_RUMBLE = 0x50
 ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ = 0, 1, 2, 3, 4, 5
 ABS_GAS, ABS_BRAKE, ABS_HAT0X, ABS_HAT0Y = 9, 10, 16, 17
 
@@ -273,6 +275,42 @@ def set_report(fd: int, rtype: int, data: bytes) -> None:
     fcntl.ioctl(fd, _hidioc(nr, len(data)), bytearray(data), True)
 
 
+# --- rumble -----------------------------------------------------------------
+# A virtual Xbox pad (the client's "xbox" mode) has no controller behind it
+# to vibrate, so its rumble comes back as gamepad_rumble and is played here
+# through evdev force feedback, which xpad supports. (In "hid" mode rumble
+# is an output report, carried by hid_output.)
+
+# struct ff_effect on 64-bit: type, id, direction, trigger (button,
+# interval), replay (length, delay), padding, then a 32-byte union whose
+# rumble member is strong_magnitude, weak_magnitude.
+_FF_EFFECT_SIZE = 48
+_EVIOCSFF = (1 << 30) | (_FF_EFFECT_SIZE << 16) | (ord("E") << 8) | 0x80
+
+
+def rumble_effect(effect_id: int, strong: int, weak: int, ms: int) -> bytearray:
+    """A rumble struct ff_effect; ms 0 plays until stopped."""
+    effect = bytearray(_FF_EFFECT_SIZE)
+    struct.pack_into("HhHHHHH", effect, 0, FF_RUMBLE, effect_id, 0, 0, 0, max(0, min(65535, ms)), 0)
+    struct.pack_into("HH", effect, 16, max(0, min(65535, strong)), max(0, min(65535, weak)))
+    return effect
+
+
+def play_rumble(fd: int, effect_id: int, strong: int, weak: int, ms: int) -> int:
+    """Plays (or with no strength, stops) a rumble on an evdev node, reusing
+    one effect slot. Returns the slot, -1 if none was ever made."""
+    import fcntl
+    if strong <= 0 and weak <= 0:
+        if effect_id >= 0:
+            os.write(fd, struct.pack(_EVENT_FMT, 0, 0, EV_FF, effect_id, 0))
+        return effect_id
+    effect = rumble_effect(effect_id, strong, weak, ms)
+    fcntl.ioctl(fd, _EVIOCSFF, effect, True)
+    effect_id = struct.unpack_from("h", effect, 2)[0]
+    os.write(fd, struct.pack(_EVENT_FMT, 0, 0, EV_FF, effect_id, 1))
+    return effect_id
+
+
 @dataclass
 class _Open:
     controller: Controller
@@ -280,6 +318,8 @@ class _Open:
     event_file: object
     hid: dict | None = None      # hid_info() without the hidraw name
     hid_file: object | None = None
+    ff_id: int = -1               # the rumble effect slot on event_file
+    rumbling: bool = False
 
 
 class Hub:
@@ -293,6 +333,78 @@ class Hub:
         self._target = target()
         # What each connected tray app can play: "hid" and/or "xbox".
         self._modes: dict[str, set[str]] = {}
+        # The dashboard's controller test: live state while it's open.
+        self._watch_until = 0.0
+        self._watch_sent: dict[str, float] = {}
+        self._watch_pending: set[str] = set()
+        self.watch_broadcast = broadcast
+
+    # --- rumble and the controller test ---
+
+    def _rumble(self, entry: _Open, strong: int, weak: int, ms: int) -> str | None:
+        """Plays a rumble on the real controller. An error message, or None."""
+        try:
+            entry.ff_id = play_rumble(entry.event_file.fileno(), entry.ff_id, strong, weak, ms)
+        except (OSError, ValueError) as exc:
+            logger.debug("gamepad: rumble on %s failed: %s", entry.controller.id, exc)
+            return f"{entry.controller.name} can't vibrate from here ({exc.strerror or exc})."
+        entry.rumbling = strong > 0 or weak > 0
+        return None
+
+    def _stop_rumble(self) -> None:
+        for entry in self._open.values():
+            if entry.rumbling:
+                self._rumble(entry, 0, 0, 0)
+
+    def rumble(self, peer: str, message: dict) -> None:
+        """gamepad_rumble from the target's virtual Xbox pad."""
+        entry = self._open.get(message.get("id")) if isinstance(message.get("id"), str) else None
+        if peer != self._target or entry is None or self._passthrough(peer, entry):
+            return
+        try:
+            strong, weak, ms = (int(message.get(k) or 0) for k in ("strong", "weak", "ms"))
+        except (TypeError, ValueError):
+            return
+        self._rumble(entry, strong, weak, ms)
+
+    def test_rumble(self, controller_id: str, strong: int = 0xC000, weak: int = 0xC000, ms: int = 600) -> str | None:
+        """The dashboard's "Vibrate", whoever has the controller."""
+        entry = self._open.get(controller_id)
+        if entry is None:
+            return "That controller isn't connected."
+        return self._rumble(entry, strong, weak, ms)
+
+    def watch(self, seconds: float = 15) -> list[dict]:
+        """The controller test is open: send live state for a while (the page
+        asks again before it runs out). Returns every controller's state now."""
+        self._watch_until = time.monotonic() + seconds
+        return [{"id": e.controller.id, "name": e.controller.name, **e.normaliser.state()} for e in self._open.values()]
+
+    _WATCH_INTERVAL = 0.03  # at most ~30 frames a second per controller
+
+    def _watched(self, controller_id: str) -> None:
+        if time.monotonic() > self._watch_until or controller_id in self._watch_pending:
+            return
+        wait = self._watch_sent.get(controller_id, 0) + self._WATCH_INTERVAL - time.monotonic()
+        if wait <= 0:
+            self._send_watched(controller_id)
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._send_watched(controller_id)
+            return
+        # The last change in a burst still goes out, just a moment later.
+        self._watch_pending.add(controller_id)
+        loop.call_later(wait, self._send_watched, controller_id)
+
+    def _send_watched(self, controller_id: str) -> None:
+        self._watch_pending.discard(controller_id)
+        entry = self._open.get(controller_id)
+        if entry is None:
+            return
+        self._watch_sent[controller_id] = time.monotonic()
+        self.watch_broadcast({"type": "gamepad_state", "id": controller_id, **entry.normaliser.state()})
 
     def status(self) -> dict:
         return {"type": "gamepads", "target": self._target,
@@ -318,12 +430,15 @@ class Hub:
 
     def forget(self, peer: str) -> None:
         self._modes.pop(peer, None)
+        if peer == self._target:
+            self._stop_rumble()  # nothing there to stop it any more
 
     def set_target(self, name: str | None) -> None:
         if name == self._target:
             return
         old, self._target = self._target, name
         _save_target(name)
+        self._stop_rumble()
         for entry in self._open.values():
             if old:
                 self._send(old, {"type": "gamepad_detach", "id": entry.controller.id}, False)
@@ -354,6 +469,8 @@ class Hub:
     def input(self, controller_id: str) -> None:
         """An evdev change report: goes to a target playing the Xbox layout."""
         entry = self._open.get(controller_id)
+        if entry:
+            self._watched(controller_id)
         if entry and self._target and not self._passthrough(self._target, entry):
             # Droppable: a newer state replaces it if the socket falls behind.
             self._send(self._target, {"type": "gamepad", "id": controller_id, **entry.normaliser.state()}, True)
@@ -414,11 +531,14 @@ def _close(loop, entry: _Open | None) -> None:
             handle.close()
 
 
-async def supervise(send, broadcast) -> None:
+async def supervise(send, broadcast, watch_broadcast=None) -> None:
     """Runs forever: opens controllers as they appear, sends their input to
-    the target, and closes them when they go."""
+    the target, and closes them when they go. watch_broadcast carries the
+    controller test's live state (droppable, to the dashboards)."""
     global hub
     hub = Hub(send, broadcast)
+    if watch_broadcast is not None:
+        hub.watch_broadcast = watch_broadcast
     loop = asyncio.get_running_loop()
 
     def gone(controller: Controller) -> None:
@@ -468,7 +588,11 @@ async def supervise(send, broadcast) -> None:
                     if controller.id in hub.open_ids():
                         continue
                     try:
-                        f = open(_device_path(controller.event), "rb", buffering=0)
+                        # Read-write for rumble (force feedback is written to the node).
+                        try:
+                            f = open(_device_path(controller.event), "r+b", buffering=0)
+                        except PermissionError:
+                            f = open(_device_path(controller.event), "rb", buffering=0)
                     except OSError as exc:
                         logger.warning("gamepad: could not open %s: %s", controller.event, exc)
                         continue

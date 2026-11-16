@@ -1211,3 +1211,88 @@ dialog h2 {
   padding: 2px 6px;
   line-height: 1;
 }
+
+/* --- controller test dialog --- */
+
+#controller-test-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.ct-pad {
+  display: grid;
+  gap: 14px;
+  margin: 12px 0;
+}
+
+.ct-sticks {
+  display: flex;
+  gap: 24px;
+}
+
+.ct-stick {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--raised);
+}
+
+.ct-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.ct-triggers {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.ct-triggers label {
+  display: grid;
+  grid-template-columns: 2.5em 1fr;
+  align-items: center;
+}
+
+.ct-bar {
+  display: block;
+  height: 10px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.ct-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+}
+
+.ct-dpad, .ct-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ct-chip {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ct-chip.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #0b0d10;
+}

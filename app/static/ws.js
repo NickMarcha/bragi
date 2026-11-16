@@ -103,6 +103,7 @@
         htmx.ajax("GET", "/updates", { target: "#updates", swap: "innerHTML" });
       }
       else if (msg.type === "kvm") htmx.ajax("GET", "/kvm", { target: "#kvm-bar", swap: "innerHTML" });
+      else if (msg.type === "gamepad_state") document.dispatchEvent(new CustomEvent("bragi:gamepad", { detail: msg }));
       else if (msg.type === "levels") applyLevels(msg);
       else if (msg.type === "viz_settings") applyVizSettings(msg);
       else if (msg.type === "nightly_reset") applyNightlyReset(msg);

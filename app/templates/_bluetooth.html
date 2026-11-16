@@ -21,6 +21,20 @@
     </select>
   </form>
   <p class="form-note">Or choose "Use … here" in that computer's Bragi Client tray.</p>
+  {% if controllers %}
+  <ul class="controller-list">
+    {% for c in controllers %}
+    <li>
+      <span class="dot online"></span>
+      <span class="controller-name">{{ c.name }}</span>
+      <span class="form-note">connected to the box</span>
+      <button type="button" data-controller-test="{{ c.id }}">Test</button>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="form-note">No controller connected to the box right now (USB dongle or Bluetooth).</p>
+  {% endif %}
 </section>
 
 <section class="security-section">

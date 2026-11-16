@@ -136,6 +136,8 @@ def _desktop_message(name: str, raw: str) -> None:
         gamepad.hub.release(name)
     elif kind in ('hid_output', 'hid_get_report', 'hid_set_report'):
         gamepad.hub.hid_request(name, message)
+    elif kind == 'gamepad_rumble':
+        gamepad.hub.rumble(name, message)
 
 
 def _kvm_switch(name: str, raw: str) -> None:
