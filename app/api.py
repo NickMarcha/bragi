@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, model_validator
 
-from . import kvm, views, ws
+from . import hardware, kvm, modules, views, ws
 
 router = APIRouter(prefix="/api/v1")
 
@@ -85,7 +85,14 @@ def explainer(request: Request):
 
 @router.get("")
 def root():
-    return {"help": "/api/v1/help", "devices": "/api/v1/devices", "kvm": "/api/v1/kvm", "websocket": "/ws"}
+    return {"help": "/api/v1/help", "devices": "/api/v1/devices", "hardware": "/api/v1/hardware",
+            "kvm": "/api/v1/kvm", "websocket": "/ws", "modules": modules.enabled()}
+
+
+@router.get("/hardware")
+async def list_hardware():
+    """Every USB and Bluetooth device on the box: kind, owning module, battery."""
+    return {"hardware": await asyncio.to_thread(hardware.inventory, modules.enabled())}
 
 
 class KvmSwitch(BaseModel):
@@ -288,6 +295,22 @@ or nothing to change.
 
 Switch a headset on or off: `{"enabled": false}`. Off releases the USB
 device entirely (no audio nodes), not just mute. Returns the device.
+
+### GET /api/v1/hardware
+
+Every USB and Bluetooth device on this host, whichever module looks after
+it:
+
+```json
+{"hardware": [{"id": "usb:usb-0000:01:00.0-1.4", "name": "Logitech USB Receiver", "bus": "usb",
+               "kinds": ["keyboard", "mouse"], "owner": "kvm", "connected": true, "battery": null},
+              {"id": "receiver:MX Master 3S", "name": "MX Master 3S", "bus": "receiver",
+               "kinds": ["mouse"], "owner": "kvm", "battery": {"percent": 65, "charging": false}}]}
+```
+
+`kinds` is any of `keyboard`, `mouse`, `controller`, `headset`. `owner` is
+the module in charge (`audio`, `kvm`, `controllers`) or null. `GET /api/v1`
+also lists which modules run on this host (`modules`).
 
 ### GET /api/v1/kvm
 
