@@ -5,6 +5,7 @@ tests/data/pi_input_devices.txt is sagepi's /proc/bus/input/devices."""
 from __future__ import annotations
 
 import json
+import os
 import socket
 import threading
 from pathlib import Path
@@ -25,7 +26,7 @@ H: Handlers=event25 js0
 '''
 ALL = {"audio": True, "kvm": True, "controllers": True, "bluetooth": True}
 HEADSET = {"serial": "C1V5340J99", "name": "HyperX Cloud III S Wireless", "vendor": "03f0", "product": "06be",
-           "battery": {"percent": 80, "charging": False}}
+           "battery": {"percent": 80, "charging": "no"}}
 STATUS = {"hidpp": [{"device": "MX Master 3S", "battery": {"percent": 65, "state": "discharging"}}]}
 
 
@@ -46,12 +47,14 @@ def test_the_inventory_merges_headsets_receiver_devices_and_paired_bluetooth():
     paired = [Device("E4:17:D8:3B:34:01", "8BitDo Ultimate 3mode Xbox", "input-gaming", True, True, False),
               Device("AA:BB:CC:DD:EE:04", "K380", "input-keyboard", True, True, False)]
     devices = by_name(hardware.inventory(ALL, proc_text=PI, headsets=[HEADSET], engine_status=STATUS,
-                                         bluetooth=paired))
+                                         bluetooth=paired, batteries=[]))
 
     headset = devices["HyperX Cloud III S Wireless"]
-    assert (headset["kinds"], headset["owner"], headset["battery"]) == (["headset"], "audio", {"percent": 80, "charging": False})
+    assert (headset["kinds"], headset["owner"], headset["battery"]) == (
+        ["headset"], "audio", {"percent": 80, "charging": False, "low": False})
     mouse = devices["MX Master 3S"]
-    assert (mouse["bus"], mouse["owner"], mouse["battery"]) == ("receiver", "kvm", {"percent": 65, "charging": False})
+    assert (mouse["bus"], mouse["owner"], mouse["battery"]) == (
+        "receiver", "kvm", {"percent": 65, "charging": False, "low": False})
     assert devices["Logitech USB Receiver"]["owner"] == "kvm"
     # Paired but switched off: still listed, as not connected.
     assert (devices["8BitDo Ultimate 3mode Xbox"]["connected"], devices["8BitDo Ultimate 3mode Xbox"]["owner"]) == (False, "controllers")
@@ -59,7 +62,8 @@ def test_the_inventory_merges_headsets_receiver_devices_and_paired_bluetooth():
 
 
 def test_a_module_that_is_off_owns_nothing():
-    devices = by_name(hardware.inventory({**ALL, "kvm": False}, proc_text=PI, headsets=[], engine_status={}, bluetooth=[]))
+    devices = by_name(hardware.inventory({**ALL, "kvm": False}, proc_text=PI, headsets=[], engine_status={}, bluetooth=[],
+                                         batteries=[]))
     assert devices["Logitech USB Receiver"]["owner"] is None
 
 
@@ -143,3 +147,37 @@ def test_commands_go_straight_to_deskflow_core(engine):
     finally:
         server.close()
     assert lines == ["switch=sage", "keystroke=Control+Shift+Alt+M,sage", "switch=sage-dev"]
+
+
+def test_a_keyboard_battery_is_remembered_between_reports_and_marked_low(session):
+    keyboards = lambda devices: [d for d in devices if d["name"] == "Lenovo TrackPoint Keyboard II"]  # noqa: E731
+    reported = [{"key": "1-1.1.2", "model": "Lenovo TrackPoint Keyboard II", "percent": 15, "charging": False}]
+    first = keyboards(hardware.inventory(ALL, proc_text=PI, headsets=[], engine_status={}, bluetooth=[],
+                                         batteries=reported, now=1000))
+    assert [k["battery"] for k in first if k["id"].endswith("1.1.2")] == [
+        {"percent": 15, "charging": False, "low": True, "seen": 1000}]
+
+    # The kernel has nothing right now (ENODATA): the last value stays, with when it was seen.
+    silent = [{"key": "1-1.1.2", "model": "Lenovo TrackPoint Keyboard II", "percent": None, "charging": None}]
+    later = keyboards(hardware.inventory(ALL, proc_text=PI, headsets=[], engine_status={}, bluetooth=[],
+                                         batteries=silent, now=5000))
+    assert [k["battery"]["seen"] for k in later if k["id"].endswith("1.1.2")] == [1000]
+    # The other TrackPoint connection has no battery.
+    assert [k["battery"] for k in later if k["id"].endswith("1.1.3")] == [None]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="sysfs paths have colons, which Windows doesn't allow")
+def test_kernel_batteries_are_read_from_sysfs(tmp_path):
+    hid = tmp_path / "devices" / "platform" / "usb1" / "1-1" / "1-1.1" / "1-1.1.2" / "1-1.1.2:1.1" / "0003:17EF:60EE.0013"
+    hid.mkdir(parents=True)
+    ps = tmp_path / "class" / "power_supply" / "hid-0003:17EF:60EE.0013-battery"
+    ps.mkdir(parents=True)
+    for name, value in {"type": "Battery", "scope": "Device", "model_name": "Lenovo TrackPoint Keyboard II",
+                        "capacity": "15", "status": "Discharging"}.items():
+        (ps / name).write_text(value + "\n")
+    try:
+        (ps / "device").symlink_to(hid, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks not allowed here")
+    assert hardware.kernel_batteries(str(tmp_path)) == [
+        {"key": "1-1.1.2", "model": "Lenovo TrackPoint Keyboard II", "percent": 15, "charging": False}]

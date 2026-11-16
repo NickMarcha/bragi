@@ -24,6 +24,7 @@ from . import microphone
 from . import mic_monitor
 from . import eq_presets
 from . import gamepad
+from . import hardware
 from . import headset_hid
 from . import knob_watcher
 from . import kvm
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(mic_monitor.supervise()),
         asyncio.create_task(gamepad.supervise(peer_control.send, peer_control.broadcast_desktop)),
         asyncio.create_task(kvm.supervise(_kvm_changed)),
+        asyncio.create_task(hardware.watch_batteries()),
     ]
     bluetooth.start(_bluetooth_changed)
     yield

@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import audio_state, auth, bluetooth, eq_presets, gamepad, modules, headset_hid, layout, level_meter, macro_button, mic_monitor, peers as peers_module, pipewire, viz_settings, ws  # noqa: E402
+from app import audio_state, auth, bluetooth, eq_presets, gamepad, hardware, modules, headset_hid, layout, level_meter, macro_button, mic_monitor, peers as peers_module, pipewire, viz_settings, ws  # noqa: E402
 
 from . import fake_pipewire  # noqa: E402
 
@@ -39,6 +39,7 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(gamepad, "hub", None)
     monkeypatch.setattr(bluetooth, "manager", None)
     modules.reset_cache()
+    monkeypatch.setattr(hardware, "BATTERIES_FILE", tmp_path / "batteries.json")
     peers_module.save_peers(fake_pipewire.demo_peers())
     return tmp_path
 
