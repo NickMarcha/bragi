@@ -1,36 +1,41 @@
-{# Settings > Updates (app/updates.py). Reloaded while the updater runs. #}
+{# Settings > Updates (app/updates.py). One action at a time: while the
+   updater runs there's no button, and the section polls until it's done.
+   Reloaded by itself while it polls; the page reloads on a new version. #}
 {% set u = updates %}
 <h3>Updates</h3>
 {% if not u.available %}
 <p class="form-note">This Bragi wasn't installed as a package, so it updates the way it was installed (git pull, Docker).</p>
 {% else %}
-<p class="form-note">
-  Bragi {{ u.running or "?" }}{% if u.packages.deskflow and u.packages.deskflow.installed %}, Deskflow {{ u.packages.deskflow.installed }}{% endif %}.
-  {% if u.state == "running" %}
-    {{ "Installing the update…" if u.action == "upgrade" else "Checking for updates…" }}
-    {% if u.action == "upgrade" %}Bragi restarts on the new version and this page reloads by itself.{% endif %}
-  {% elif u.state == "failed" %}
-    <span class="form-error">{{ u.message }}</span>
-  {% elif u.newer %}
-    New:
-    {% for name, p in u.packages.items() %}{% if p.installed and p.candidate and p.installed != p.candidate %}{{ name }} {{ p.candidate }} {% endif %}{% endfor %}
-  {% elif u.at %}
-    Up to date (checked {{ u.at|int|datetimeformat }}).
-  {% else %}
-    Not checked yet.
-  {% endif %}
-</p>
+{% set new = [] %}
+{% for name, p in u.packages.items() %}{% if p.installed and p.candidate and p.installed != p.candidate %}{% set _ = new.append(name ~ " " ~ p.candidate) %}{% endif %}{% endfor %}
+<p class="form-note">Installed: Bragi {{ u.running or "?" }}{% if u.packages.deskflow and u.packages.deskflow.installed %}, Deskflow {{ u.packages.deskflow.installed }}{% endif %}.</p>
 {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
-<div class="dialog-actions">
-  <button type="button" hx-post="/updates/check" hx-target="#updates" hx-swap="innerHTML"
-          {% if u.state == "running" %}disabled{% endif %}>Check now</button>
-  {% if u.newer %}
-  <button type="button" class="primary" hx-post="/updates/upgrade" hx-target="#updates" hx-swap="innerHTML"
-          hx-confirm="Install the update now? Bragi restarts on the new version; the page reconnects by itself."
-          {% if u.state == "running" %}disabled{% endif %}>Update now</button>
-  {% endif %}
-</div>
+
 {% if u.state == "running" %}
-<div hx-get="/updates?since={{ since or u.running }}" hx-trigger="every 3s" hx-target="#updates" hx-swap="innerHTML"></div>
+  {% if u.action == "upgrade" %}
+  <p><strong>Installing the update…</strong> Bragi restarts on the new version and this page reloads by itself, in about a minute.</p>
+  {% else %}
+  <p><strong>Checking for updates…</strong></p>
+  {% endif %}
+  <div hx-get="/updates?since={{ since or u.running }}" hx-trigger="every 3s" hx-target="#updates" hx-swap="innerHTML"></div>
+
+{% elif u.state == "failed" %}
+  <p class="form-error">{{ u.message }}</p>
+  <div class="dialog-actions">
+    <button type="button" hx-post="/updates/check" hx-target="#updates" hx-swap="innerHTML" hx-disabled-elt="this">Check again</button>
+  </div>
+
+{% elif new %}
+  <p>Available: {{ new|join(", ") }}.</p>
+  <div class="dialog-actions">
+    <button type="button" class="primary" hx-post="/updates/upgrade" hx-target="#updates" hx-swap="innerHTML" hx-disabled-elt="this"
+            hx-confirm="Install {{ new|join(', ') }}? Bragi restarts for a moment and this page reloads.">Install update</button>
+  </div>
+
+{% else %}
+  <p class="form-note">{% if u.at %}Up to date (checked {{ u.at|int|datetimeformat }}).{% else %}Not checked yet.{% endif %}</p>
+  <div class="dialog-actions">
+    <button type="button" hx-post="/updates/check" hx-target="#updates" hx-swap="innerHTML" hx-disabled-elt="this">Check for updates</button>
+  </div>
 {% endif %}
 {% endif %}
