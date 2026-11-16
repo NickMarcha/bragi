@@ -62,11 +62,11 @@ def test_a_newer_package_offers_install_which_asks_the_updater(state, session):
     assert (state / "update-request").read_text() == "upgrade\n"
 
 
-def test_while_the_updater_runs_nothing_else_is_asked_and_the_page_polls(state, session):
+def test_while_the_updater_runs_nothing_else_is_asked(state, session):
     write_status(state, state="running", action="upgrade")
     client = TestClient(app)
     page = client.post("/updates/check").text
-    assert "already running" in page and 'hx-trigger="every 3s"' in page
+    assert "already running" in page and "Installing the update" in page and "<button" not in page
     assert (state / "update-request").read_text() == ""
 
 
@@ -120,12 +120,12 @@ def test_the_updater_script_writes_its_status(tmp_path):
 
 
 def test_a_request_shows_as_queued_until_the_updater_answers(state, session):
-    """The path unit takes a moment to start the updater: the page polls from
-    the click on, and a second click is refused."""
+    """The path unit takes a moment to start the updater: the page says it's
+    on from the click on, and a second click is refused."""
     write_status(state, packages={"bragi": {"installed": "0.1.0", "candidate": "0.2.0"}})
     client = TestClient(app)
     page = client.post("/updates/upgrade").text
-    assert "Installing the update" in page and 'hx-trigger="every 3s"' in page
+    assert "Installing the update" in page
     assert "already running" in client.post("/updates/check").text
 
     write_status(state, at=int(time.time()) + 5, message="upgraded", action="upgrade")
@@ -138,20 +138,15 @@ def test_a_request_nobody_picks_up_says_so(state, session):
     old = time.time() - updates.QUEUE_TIMEOUT - 5
     os.utime(state / "update-request", (old, old))
     page = TestClient(app).get("/updates").text
-    assert "The updater didn" in page and "every 3s" not in page
+    assert "The updater didn" in page and "Check again" in page
 
 
-def test_the_polling_page_reloads_once_a_new_version_runs(state, session):
+def test_a_polling_page_from_an_older_version_reloads_once_a_new_one_runs(state, session):
+    """0.3.1 and 0.3.2 pages poll /updates?since=; they still reload."""
     write_status(state, state="running", action="upgrade")
     client = TestClient(app)
-    page = client.get("/updates").text
-    assert "/updates?since=0.1.0" in page
-
-    # Restarted on the new version while the updater finishes: keep polling,
-    # still against the version the page was loaded on.
     (state / "VERSION").write_text("0.2.0\n")
-    response = client.get("/updates?since=0.1.0")
-    assert "HX-Refresh" not in response.headers and "/updates?since=0.1.0" in response.text
+    assert "HX-Refresh" not in client.get("/updates?since=0.1.0").headers
 
     write_status(state, action="upgrade", message="upgraded", at=int(time.time()) + 5)
     assert client.get("/updates?since=0.1.0").headers.get("HX-Refresh") == "true"
@@ -172,3 +167,33 @@ def test_one_action_at_a_time(state, session):
 
     page = client.post("/updates/upgrade").text
     assert "<button" not in page and "Installing the update" in page
+
+
+def test_dashboards_hear_when_the_section_changes(state, session):
+    """No polling: updates.watch broadcasts "updates" when the section would
+    look different, and ws.js reloads it."""
+    import asyncio
+    write_status(state)
+    heard = []
+
+    async def run():
+        task = asyncio.create_task(updates.watch(heard.append, every=0.01))
+        await asyncio.sleep(0.05)
+        assert heard == []
+        (state / "update-request").write_text("check\n")  # queued
+        await asyncio.sleep(0.05)
+        write_status(state, at=int(time.time()) + 5)  # done
+        await asyncio.sleep(0.05)
+        task.cancel()
+
+    asyncio.run(run())
+    assert heard == [{"type": "updates", "state": "running"}, {"type": "updates", "state": "done"}]
+
+
+def test_the_dashboard_socket_says_which_version_runs(state, session):
+    """A page rendered by another version reloads itself (ws.js)."""
+    client = TestClient(app)
+    assert 'data-version="0.1.0"' in client.get("/").text
+    with client.websocket_connect("/ws") as socket:
+        assert socket.receive_json()["type"] == "state"
+        assert socket.receive_json() == {"type": "hello", "version": "0.1.0"}

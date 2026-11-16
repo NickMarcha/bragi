@@ -76,6 +76,8 @@ public partial class App : Application
         _kvm = new KvmService { Send = _presenceClient.SendAsync };
         _presenceClient.MessageReceived += _kvm.OnMessage;
         _presenceClient.Disconnected += _kvm.OnDisconnected;
+        // "Identify" in the dashboard's KVM setup: this computer's name on its screens.
+        _presenceClient.MessageReceived += IdentifyOverlay.OnMessage;
         _trayIconManager = new TrayIconManager(_statusService!, _gamepads, _kvm);
         _trayIconManager.SetupRequested += ShowSetup;
         _presenceClient.SetEnabled(_statusService!.Current.State == TrayState.Enabled);

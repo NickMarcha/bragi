@@ -1,6 +1,7 @@
 {# Settings > Updates (app/updates.py). One action at a time: while the
-   updater runs there's no button, and the section polls until it's done.
-   Reloaded by itself while it polls; the page reloads on a new version. #}
+   updater runs there's no button. ws.js reloads this section on the
+   websocket's "updates" event, and the whole page when Bragi comes back on
+   a new version ("hello"). #}
 {% set u = updates %}
 <h3>Updates</h3>
 {% if not u.available %}
@@ -17,7 +18,6 @@
   {% else %}
   <p><strong>Checking for updates…</strong></p>
   {% endif %}
-  <div hx-get="/updates?since={{ since or u.running }}" hx-trigger="every 3s" hx-target="#updates" hx-swap="innerHTML"></div>
 
 {% elif u.state == "failed" %}
   <p class="form-error">{{ u.message }}</p>

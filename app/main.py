@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(gamepad.supervise(peer_control.send, peer_control.broadcast_desktop)),
         asyncio.create_task(kvm.supervise(_kvm_changed)),
         asyncio.create_task(hardware.watch_batteries()),
+        asyncio.create_task(updates.watch(ws.manager.broadcast_nowait)),
     ]
     bluetooth.start(_bluetooth_changed)
     yield
@@ -262,6 +263,16 @@ async def kvm_switch(request: Request, computer: str = Form(..., max_length=64))
     return _kvm_bar(request)
 
 
+@app.post("/kvm/identify")
+async def kvm_identify():
+    """Shows each computer's name on its own screens (via its tray app)."""
+    try:
+        computers = (await asyncio.to_thread(kvm_config.read))["computers"]
+    except kvm_config.ConfigError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return peer_control.identify(computers)
+
+
 # --- KVM settings (app/kvm_config.py), for the dashboard's KVM setup ---
 
 def _kvm_config_call(fn, *args):
@@ -315,7 +326,8 @@ def _updates_section(request: Request, error: str | None = None, since: str | No
     response = templates.TemplateResponse(request, "_updates.html",
                                           {"updates": status, "error": error, "since": since})
     if since and status["running"] and since != status["running"] and status["state"] != "running":
-        # The page was rendered by the old version: reload it on the new one.
+        # Pages from 0.3.1/0.3.2 poll with ?since=; reload them on the new
+        # version. Newer pages reload on the websocket's "hello" instead.
         response.headers["HX-Refresh"] = "true"
     return response
 

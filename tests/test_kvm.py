@@ -165,3 +165,20 @@ def test_a_tray_app_gets_the_kvm_on_connect_and_can_switch(engine, monkeypatch, 
         socket.receive_json()  # the second error shows the first switch has run
     assert switched == ["sage"]
 
+
+
+def test_identify_asks_each_tray_app_to_show_its_computer(engine, monkeypatch, session):
+    """Like Windows' "Identify": each connected tray app is told which KVM
+    computer it is (by peer name or alias); the dashboard hears who wasn't
+    there to show it."""
+    from app import kvm_config
+    monkeypatch.setattr(kvm_config, "read", lambda: {"computers": [
+        {"name": "sage", "aliases": []}, {"name": "sagedeck", "aliases": ["deck"]},
+        {"name": "sage-dev", "aliases": []}]})
+    client = TestClient(app)
+    with client.websocket_connect("/ws/peer/deck") as deck, client.websocket_connect("/ws/peer/laptop") as laptop:
+        deck.receive_json(), laptop.receive_json()  # the "kvm" view on connect
+        answer = client.post("/kvm/identify").json()
+        assert deck.receive_json() == {"type": "kvm_identify", "computer": "sagedeck", "peer": "deck"}
+        assert laptop.receive_json() == {"type": "kvm_identify", "computer": None, "peer": "laptop"}
+    assert answer == {"shown": {"deck": "sagedeck", "laptop": None}, "missing": ["sage", "sage-dev"]}

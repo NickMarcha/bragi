@@ -12,9 +12,11 @@ dashboard says so instead of offering a button.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 STATE_DIR = Path(os.environ.get("BRAGI_UPDATE_DIR", "/var/lib/bragi"))
@@ -81,6 +83,19 @@ def _queued(view: dict) -> None:
     else:
         view["state"] = "failed"
         view["message"] = "The updater didn't start. Is bragi-update.path running? (systemctl status bragi-update.path)"
+
+
+async def watch(broadcast: Callable[[dict], None], every: float = 1.0) -> None:
+    """Tells dashboards (over their websocket) whenever the section would
+    look different: a request queued, the updater starting or done, a
+    request nobody picked up. They reload the section on "updates"."""
+    last = status()
+    while True:
+        await asyncio.sleep(every)
+        now = await asyncio.to_thread(status)
+        if now != last:
+            last = now
+            broadcast({"type": "updates", "state": now["state"]})
 
 
 def request(action: str) -> None:

@@ -83,7 +83,7 @@ async def test_broadcasts_during_the_snapshot_are_not_lost(session, real_manager
 
     await run_connection(sock)
 
-    assert [m["type"] for m in sock.sent] == ["state", "levels"]
+    assert [m["type"] for m in sock.sent] == ["state", "hello", "levels"]
 
 
 async def test_connecting_wakes_the_level_meters(session, real_manager):

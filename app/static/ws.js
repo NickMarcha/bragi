@@ -94,6 +94,14 @@
       }
       else if (msg.type === "microphone") htmx.ajax("GET", "/audio/microphone", { target: "#microphone-routing", swap: "innerHTML" });
       else if (msg.type === "bluetooth" || msg.type === "gamepads") refreshBluetooth();
+      else if (msg.type === "hello") {
+        // Bragi restarted on another version (an update): this page is the old one's.
+        const page = document.body.dataset.version;
+        if (page && msg.version && page !== msg.version) location.reload();
+      }
+      else if (msg.type === "updates" && document.getElementById("updates")) {
+        htmx.ajax("GET", "/updates", { target: "#updates", swap: "innerHTML" });
+      }
       else if (msg.type === "kvm") htmx.ajax("GET", "/kvm", { target: "#kvm-bar", swap: "innerHTML" });
       else if (msg.type === "levels") applyLevels(msg);
       else if (msg.type === "viz_settings") applyVizSettings(msg);
