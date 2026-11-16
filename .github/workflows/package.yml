@@ -8,6 +8,14 @@ on:
   push:
     tags:
       - "bragi-v*.*.*"
+  # A change to the packaging or the app gets a test build.
+  pull_request:
+    paths:
+      - "packaging/**"
+      - "host/**"
+      - "app/**"
+      - "requirements.txt"
+      - ".github/workflows/package.yml"
   workflow_dispatch:
     inputs:
       version:
@@ -38,7 +46,7 @@ jobs:
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             echo "version=${GITHUB_REF_NAME#bragi-v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "version=${{ inputs.version || '0.0.0~test' }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build
