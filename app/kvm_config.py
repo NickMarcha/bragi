@@ -322,6 +322,11 @@ def _input() -> dict[str, str]:
     return out
 
 
+def _hotkey_actions() -> dict:
+    from . import hotkey_actions
+    return hotkey_actions.load()
+
+
 def read() -> dict:
     """Everything the KVM setup shows."""
     sections = _sections()
@@ -332,6 +337,7 @@ def read() -> dict:
         "computers": [c for c in _computers(sections) if c["name"] != primary],
         "cells": cells,
         "hotkeys": options,
+        "hotkey_actions": _hotkey_actions(),
         "input": _input(),
     }
 
@@ -423,14 +429,20 @@ def _check_hotkeys(hotkeys) -> list[str]:
     return out
 
 
-def save_layout(cells, hotkeys) -> str:
+def save_layout(cells, hotkeys, hotkey_actions_wanted=None) -> str:
     """Writes the links and hotkeys and reloads them in the running server
-    (clients stay connected). Puts the old file back if it's refused."""
+    (clients stay connected). Puts the old file back if it's refused.
+    Hotkeys that run Bragi actions (notify(bragi-N)) save their actions too."""
+    from . import hotkey_actions
     with _lock:
         sections = _sections()
         names = {c["name"] for c in _computers(sections)} - {_primary(sections)}
         cells = _check_cells(cells, names)
         hotkeys = _check_hotkeys(hotkeys)
+        try:
+            bragi_actions = hotkey_actions.check(hotkeys, hotkey_actions_wanted)
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
         conf_path = _conf_path(sections)
         layout_path = config_dir() / "webui-layout.json"
         old_conf, old_layout = _read(conf_path), _read(layout_path)
@@ -440,6 +452,7 @@ def save_layout(cells, hotkeys) -> str:
         _atomic_write(layout_path, json.dumps({"cells": cells}, indent=2) + "\n")
         problem = _reload()
         if problem is None:
+            hotkey_actions.save(bragi_actions)
             return "Applied; the computers stayed connected."
         _restore(conf_path, old_conf)
         _restore(layout_path, old_layout)

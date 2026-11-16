@@ -119,6 +119,7 @@
 
   // keystroke(KEYS) = ACTION, parsed into a form when it's one of these.
   const ACTIONS = [
+    ["bragi", "Bragi action (next computer, keys through the Bragi apps, ...)"],
     ["switch", "Switch to computer"],
     ["next", "Next computer"],
     ["send", "Send keys to computers"],
@@ -135,6 +136,9 @@
     if ((a = action.match(/^switchToScreen\(([^)]+)\)$/))) return { kind: "switch", keys, target: a[1].trim() };
     if (action === "switchToNextScreen") return { kind: "next", keys };
     if (action === "lockCursorToScreen(toggle)") return { kind: "lock", keys };
+    if ((a = action.match(/^notify\((bragi-\d+)\)$/))) {
+      return { kind: "bragi", keys, id: a[1], action: (config.hotkey_actions || {})[a[1]] || { type: "kvm_next" } };
+    }
     if ((a = action.match(/^keystroke\(([^,()]+),([A-Za-z0-9._:-]+)\)$/))) {
       return { kind: "send", keys, send: a[1].trim(), targets: a[2].split(":") };
     }
@@ -149,6 +153,7 @@
     if (kind === "switch") return `keystroke(${keys}) = switchToScreen(${row.querySelector(".kvm-target").value})`;
     if (kind === "next") return `keystroke(${keys}) = switchToNextScreen`;
     if (kind === "lock") return `keystroke(${keys}) = lockCursorToScreen(toggle)`;
+    if (kind === "bragi") return `keystroke(${keys}) = notify(${row.dataset.bragiId})`;
     const send = row.querySelector(".kvm-send").value.trim();
     const targets = [...row.querySelectorAll(".kvm-targets input:checked")].map((i) => i.value);
     return send && targets.length ? `keystroke(${keys}) = keystroke(${send},${targets.join(":")})` : "";
@@ -170,16 +175,30 @@
     const raw = el("input", { type: "text", class: "kvm-raw", value: h.raw || "", "aria-label": "Hotkey line",
                               placeholder: "keystroke(...) = ..." });
     const remove = el("button", { type: "button", onclick: () => row.remove() }, "Remove");
+    // A Bragi action: the same choices as the mouse buttons (app/actions.py).
+    const ba = h.action || { type: "kvm_next" };
+    const bragiChoice = el("select", { class: "kvm-bragi", "aria-label": "Bragi action" },
+      el("option", { value: "kvm_next", selected: ba.type === "kvm_next" }, "Next computer"),
+      names().map((n) => el("option", { value: `switch:${n}`, selected: ba.type === "kvm_switch" && ba.computer === n }, `Switch to ${n}`)),
+      el("option", { value: "kvm_keys", selected: ba.type === "kvm_keys" }, "Press keys on computers"));
+    const bragiKeys = el("input", { type: "text", class: "kvm-send kvm-bragi-keys", value: ba.keys || "",
+                                    placeholder: "Control+Shift+Alt+M", "aria-label": "Keys to press" });
+    const bragiTargets = el("span", { class: "kvm-targets kvm-bragi-targets" }, names().map((n) => el("label", {},
+      el("input", { type: "checkbox", value: n, checked: (ba.computers || []).includes(n) }), n)));
+    row.dataset.bragiId = h.id || "";
+    bragiChoice.addEventListener("change", () => show());
     const show = () => {
       const k = action.value;
       keys.hidden = k === "raw";
       target.hidden = k !== "switch";
       send.hidden = targets.hidden = k !== "send";
+      bragiChoice.hidden = k !== "bragi";
+      bragiKeys.hidden = bragiTargets.hidden = k !== "bragi" || bragiChoice.value !== "kvm_keys";
       raw.hidden = k !== "raw";
       if (k === "raw" && !raw.value) raw.value = line;
     };
     action.addEventListener("change", show);
-    row.append(keys, action, target, send, targets, raw, remove);
+    row.append(keys, action, target, send, targets, bragiChoice, bragiKeys, bragiTargets, raw, remove);
     show();
     return row;
   }
@@ -349,7 +368,7 @@
     const send = el("input", { type: "text", class: "kvm-send", placeholder: "Control+Super+Right", "aria-label": "Send instead" });
     const pick = (label, keys) => el("button", { type: "button", onclick: () => { send.value = keys; } }, label);
     const hotkeyPicks = (config ? config.hotkeys : []).map(parseHotkey).filter((h) => h.keys && h.kind !== "raw")
-      .map((h) => pick(`${h.keys} (${h.kind === "switch" ? `switch to ${h.target}` : h.kind === "next" ? "next computer" : h.kind === "lock" ? "lock cursor" : "send keys"})`, h.keys));
+      .map((h) => pick(`${h.keys} (${h.kind === "switch" ? `switch to ${h.target}` : h.kind === "next" ? "next computer" : h.kind === "lock" ? "lock cursor" : h.kind === "bragi" ? "Bragi action" : "send keys"})`, h.keys));
     const only = el("input", { type: "checkbox", checked: true });
     box.replaceChildren(
       el("p", {}, "Pressed ", el("strong", {}, capture.input), ` on ${capture.device || "an unnamed device"}. `,
@@ -429,9 +448,35 @@
     }
   });
   $("#kvm-add-hotkey").addEventListener("click", () => $("#kvm-hotkeys").append(hotkeyRow()));
+  // The Bragi action of a hotkey row, and an id for it (bragi-N) if it has none yet.
+  function bragiAction(row, used) {
+    if (!row.dataset.bragiId) {
+      let n = 1;
+      while (used.has(`bragi-${n}`)) n++;
+      row.dataset.bragiId = `bragi-${n}`;
+    }
+    used.add(row.dataset.bragiId);
+    const v = row.querySelector(".kvm-bragi").value;
+    if (v.startsWith("switch:")) return { type: "kvm_switch", computer: v.slice(7) };
+    if (v === "kvm_keys") {
+      return { type: v, keys: row.querySelector(".kvm-bragi-keys").value.trim(),
+               computers: [...row.querySelectorAll(".kvm-bragi-targets input:checked")].map((i) => i.value) };
+    }
+    return { type: v };
+  }
+
   const saveLayout = (e) => {
-    const hotkeys = [...dialog.querySelectorAll("#kvm-hotkeys li")].map(hotkeyLine).filter(Boolean);
-    save(e.target.dataset.section, "/kvm/config/layout", { cells: config.cells, hotkeys }, e.target);
+    const rows = [...dialog.querySelectorAll("#kvm-hotkeys li")];
+    const used = new Set(rows.map((r) => r.dataset.bragiId).filter(Boolean));
+    const hotkey_actions = {};
+    for (const row of rows) {
+      if (row.querySelector(".kvm-action").value === "bragi" && row.querySelector(".kvm-keys").value.trim()) {
+        const action = bragiAction(row, used);
+        hotkey_actions[row.dataset.bragiId] = action;
+      }
+    }
+    const hotkeys = rows.map(hotkeyLine).filter(Boolean);
+    save(e.target.dataset.section, "/kvm/config/layout", { cells: config.cells, hotkeys, hotkey_actions }, e.target);
   };
   $("#kvm-save-layout").addEventListener("click", saveLayout);
   $("#kvm-save-hotkeys").addEventListener("click", saveLayout);
