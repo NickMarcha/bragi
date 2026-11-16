@@ -6,6 +6,8 @@ Each gesture can have one action, saved per dongle serial in
 data/macro_button.yaml:
 
 - nothing (the default),
+- one of the KVM actions (actions.py): switch to a computer, the next
+  computer, or press keys on some computers (Discord's mute on all),
 - an HTTP request, to an http(s) URL or to a unix socket on the host,
 - turning Bragi's own mic monitoring (mic_monitor.py) on or off.
 
@@ -36,7 +38,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from . import headset_hid, headsets, mic_monitor, peers, pipewire
+from . import actions, headset_hid, headsets, mic_monitor, peers, pipewire
 
 logger = logging.getLogger("bragi.macro_button")
 
@@ -76,7 +78,7 @@ def _load() -> dict:
 def actions_for(serial: str) -> dict[str, dict]:
     with _settings_lock:
         saved = _load().get(serial) or {}
-    return {gesture: saved.get(gesture) or dict(NOTHING) for gesture in GESTURES}
+    return {gesture: actions.migrate_webui_keystroke(saved.get(gesture) or dict(NOTHING)) for gesture in GESTURES}
 
 
 def view(serial: str) -> dict:
@@ -105,6 +107,8 @@ def valid_action(action) -> dict:
         return dict(NOTHING)
     if kind == "toggle_mic_monitor":
         return {"type": kind}
+    if kind in actions.KVM_KINDS:
+        return actions.valid_kvm(action)
     if kind != "http":
         raise ValueError(f"unknown action type {kind!r}")
 
@@ -269,6 +273,8 @@ async def press(serial: str, gesture: str, action: dict | None = None) -> dict |
     try:
         if action["type"] == "http":
             ok, text = await asyncio.to_thread(send_http, action, TIMEOUT_SECONDS)
+        elif action["type"] in actions.KVM_KINDS:
+            ok, text = await actions.run_kvm(action)
         else:
             ok, text = await _toggle_mic_monitor(serial)
     except Exception as exc:
