@@ -98,6 +98,33 @@ def keystroke(keys: str, computers: list[str] | None = None) -> None:
     core_command(f"keystroke={keys}" + (f",{':'.join(computers)}" if computers else ""))
 
 
+async def listen_actions(on_action) -> None:
+    """Keeps a connection to deskflow-core's IPC socket open and calls
+    on_action(name) for each `action=name` it broadcasts (a notify(name)
+    hotkey fired, hotkey_actions.py). Reconnects when the server restarts."""
+    path = engine_dir() / "core.sock"
+    while True:
+        try:
+            if getattr(socket, "AF_UNIX", None) is None:
+                return  # a dev machine without Unix sockets
+            reader, writer = await asyncio.open_unix_connection(str(path))
+            try:
+                while line := await reader.readline():
+                    text = line.decode(errors="replace").strip()
+                    if text.startswith("action="):
+                        name = text[len("action="):]
+                        asyncio.get_running_loop().create_task(on_action(name))
+            finally:
+                writer.close()
+        except asyncio.CancelledError:
+            raise
+        except (OSError, ValueError):
+            pass
+        except Exception:
+            logger.exception("kvm action listener failed")
+        await asyncio.sleep(2)
+
+
 async def supervise(broadcast) -> None:
     """Broadcasts {"type": "kvm", ...} whenever the computers or the active
     one change. Polls the status file's mtime, which is cheap."""

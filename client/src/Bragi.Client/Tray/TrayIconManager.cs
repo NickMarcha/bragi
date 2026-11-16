@@ -97,7 +97,12 @@ public sealed class TrayIconManager : IDisposable
             }
         };
 
-        var menu = new NativeMenu { _statusItem, new NativeMenuItemSeparator() };
+        var menu = new NativeMenu
+        {
+            new NativeMenuItem { Header = $"Bragi Client {Version}", IsEnabled = false },
+            _statusItem,
+            new NativeMenuItemSeparator(),
+        };
         if (OperatingSystem.IsWindows())
         {
             // No link of our own to switch: Voicemeeter carries the audio.
@@ -133,7 +138,7 @@ public sealed class TrayIconManager : IDisposable
         _trayIcon = new TrayIcon
         {
             Icon = _disabledIcon,
-            ToolTipText = "Bragi Client - checking status...",
+            ToolTipText = $"Bragi Client {Version} - checking status...",
             Menu = menu,
             IsVisible = true,
         };
@@ -154,6 +159,12 @@ public sealed class TrayIconManager : IDisposable
         // Render whatever the service's initial (pre-first-poll) state is immediately.
         Render(_statusService.Current);
     }
+
+    /// <summary>This app's version (the csproj's Version, e.g. 0.1.18), for the menu and tooltip.</summary>
+    public static string Version { get; } = FormatVersion(typeof(TrayIconManager).Assembly.GetName().Version);
+
+    public static string FormatVersion(System.Version? version) =>
+        version is null ? "?" : $"{version.Major}.{version.Minor}.{Math.Max(version.Build, 0)}";
 
     /// <summary>The Voicemeeter VBAN settings this peer needs, for the Windows menu.</summary>
     public static string[] VbanMenuLines(RocLinkConfig? config) =>
@@ -223,7 +234,7 @@ public sealed class TrayIconManager : IDisposable
     private void Render(StatusSnapshot snapshot)
     {
         _statusItem.Header = $"Status: {snapshot.Detail}";
-        _trayIcon.ToolTipText = $"Bragi Client - {snapshot.Detail}";
+        _trayIcon.ToolTipText = $"Bragi Client {Version} - {snapshot.Detail}";
 
         switch (snapshot.State)
         {

@@ -35,6 +35,7 @@ from . import updates
 from . import level_meter
 from . import peer_control
 from . import key_bindings
+from . import hotkey_actions
 from . import actions
 from . import hidpp
 from . import peers as peers_module
@@ -63,6 +64,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(kvm.supervise(_kvm_changed)),
         asyncio.create_task(hardware.watch_batteries()),
         asyncio.create_task(hidpp.supervise()),
+        asyncio.create_task(kvm.listen_actions(hotkey_actions.run)),
         asyncio.create_task(updates.watch(ws.manager.broadcast_nowait)),
     ]
     bluetooth.start(_bluetooth_changed)
@@ -297,7 +299,8 @@ async def kvm_config_read():
 
 @app.post("/kvm/config/layout")
 async def kvm_config_layout(body: dict):
-    return await asyncio.to_thread(_kvm_config_call, kvm_config.save_layout, body.get("cells"), body.get("hotkeys"))
+    return await asyncio.to_thread(_kvm_config_call, kvm_config.save_layout, body.get("cells"), body.get("hotkeys"),
+                                   body.get("hotkey_actions"))
 
 
 @app.post("/kvm/config/computers")
