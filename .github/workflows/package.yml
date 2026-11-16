@@ -74,5 +74,7 @@ jobs:
         run: |
           apt-get install -y -qq --no-install-recommends gh >/dev/null 2>&1 || true
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          gh release create "$GITHUB_REF_NAME" dist/*.deb --title "Bragi ${{ steps.version.outputs.version }}" \
+          # --latest=false: "Latest" stays with the tray app's releases
+          # (client-v*), which is what people download by hand.
+          gh release create "$GITHUB_REF_NAME" dist/*.deb --latest=false --title "Bragi ${{ steps.version.outputs.version }}" \
             --notes "Bragi ${{ steps.version.outputs.version }} for Raspberry Pi OS / Debian trixie (arm64). Install from the apt repository (docs/deployment.md) or with \`sudo apt install ./bragi_*.deb\`."
