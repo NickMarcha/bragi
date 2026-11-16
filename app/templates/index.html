@@ -19,13 +19,15 @@
     <div id="microphone-routing">
       {% include "_microphone.html" %}
     </div>
+    {% if modules.kvm %}
     <div id="kvm-bar">
       {% include "_kvm.html" %}
     </div>
+    {% endif %}
     <div class="top-bar-actions">
       {% include "_audio_reset.html" %}
       <button id="add-peer-toggle" type="button">Add peer</button>
-      <button id="bluetooth-toggle" type="button" title="Bluetooth: pair controllers, keyboards and other devices with the box">Bluetooth</button>
+      {% if modules.bluetooth %}<button id="bluetooth-toggle" type="button" title="Bluetooth: pair controllers, keyboards and other devices with the box">Bluetooth</button>{% endif %}
       <button id="settings-toggle" type="button" title="Settings">{{ icons.settings() }}</button>
       <button id="security-toggle" type="button" title="Security: password and API connections">{{ icons.lock() }}</button>
       <button id="unit-toggle" type="button" title="Toggle volume readout between % and dB">%</button>
@@ -49,7 +51,7 @@
       </select>
     </label>
     <p class="form-note">Reset times are in the Bragi host's time zone.</p>
-    <p class="form-note"><a href="/kvm/setup/" target="_blank" rel="noopener">KVM setup</a>: the computers, their layout, hotkeys and input devices.</p>
+    {% if modules.kvm %}<p class="form-note"><a href="/kvm/setup/" target="_blank" rel="noopener">KVM setup</a>: the computers, their layout, hotkeys and input devices.</p>{% endif %}
     <button id="viz-settings-close" type="button">Close</button>
   </dialog>
 

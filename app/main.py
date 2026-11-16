@@ -27,6 +27,7 @@ from . import gamepad
 from . import headset_hid
 from . import knob_watcher
 from . import kvm
+from . import modules
 from . import level_meter
 from . import peer_control
 from . import peers as peers_module
@@ -103,7 +104,7 @@ templates.env.globals["eq_preset_store"] = eq_presets
 def dashboard(request: Request):
     state = views.build_state()
     return templates.TemplateResponse(request, "index.html", {**state, "password_set": auth.password_set(),
-                                                              "kvm": kvm.read_view()})
+                                                              "kvm": kvm.read_view(), "modules": modules.enabled()})
 
 
 @app.websocket("/ws")
