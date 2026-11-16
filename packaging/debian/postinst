@@ -1,0 +1,23 @@
+#!/bin/sh
+# Enables Bragi's user units for every user and (re)starts them for the
+# users whose service manager is running (the box's user, with lingering).
+set -e
+
+UNITS="bragi.service bragi-peers.service bragi-peers.path bragi-audio-reset.path bragi-audio-reset-nightly.timer"
+
+if [ "$1" = "configure" ]; then
+    udevadm control --reload-rules 2>/dev/null || true
+    udevadm trigger --subsystem-match=hidraw 2>/dev/null || true
+
+    # shellcheck disable=SC2086
+    systemctl --global enable $UNITS >/dev/null 2>&1 || true
+
+    for user in $(loginctl list-users --no-legend 2>/dev/null | awk '{print $2}'); do
+        systemctl --user -M "$user@" daemon-reload 2>/dev/null || continue
+        systemctl --user -M "$user@" start bragi-peers.path bragi-audio-reset.path bragi-audio-reset-nightly.timer 2>/dev/null || true
+        # A fresh install starts Bragi; an upgrade restarts it on the new code.
+        systemctl --user -M "$user@" restart bragi.service 2>/dev/null || true
+    done
+fi
+
+exit 0

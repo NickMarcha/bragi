@@ -1,0 +1,78 @@
+name: Bragi package
+
+# Builds the bragi .deb for Raspberry Pi OS / Debian trixie (arm64). On a
+# bragi-v* tag the package is attached to a GitHub release; from the
+# Actions tab (workflow_dispatch) it's built as an artifact only, for
+# testing. See docs/deployment.md.
+on:
+  push:
+    tags:
+      - "bragi-v*.*.*"
+  # A change to the packaging or the app gets a test build.
+  pull_request:
+    paths:
+      - "packaging/**"
+      - "host/**"
+      - "app/**"
+      - "requirements.txt"
+      - ".github/workflows/package.yml"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version for a test build"
+        default: "0.0.0~test"
+
+permissions:
+  contents: write
+
+jobs:
+  deb-trixie-arm64:
+    runs-on: ubuntu-24.04-arm
+    container: debian:trixie
+    timeout-minutes: 30
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends git ca-certificates python3 python3-venv \
+            python3-dev build-essential >/dev/null
+
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#bragi-v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version || '0.0.0~test' }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        run: packaging/build-deb.sh "${{ steps.version.outputs.version }}"
+
+      - name: Check the package
+        run: |
+          deb=$(ls dist/*.deb)
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb" | grep -E 'opt/bragi/venv/bin/uvicorn|usr/lib/systemd/user/bragi.service|udev/rules.d'
+          # The bundled environment must run the app on this Python.
+          dpkg -i "$deb" || apt-get install -y -qq -f >/dev/null
+          cd /opt/bragi && BRAGI_DATA_DIR=/tmp/bragi-data venv/bin/python -c "import app.main; print('app imports')"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bragi-${{ steps.version.outputs.version }}-trixie-arm64
+          path: dist/*.deb
+
+      - name: Release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apt-get install -y -qq --no-install-recommends gh >/dev/null 2>&1 || true
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          gh release create "$GITHUB_REF_NAME" dist/*.deb --title "Bragi ${{ steps.version.outputs.version }}" \
+            --notes "Bragi ${{ steps.version.outputs.version }} for Raspberry Pi OS / Debian trixie (arm64). Install from the apt repository (docs/deployment.md) or with \`sudo apt install ./bragi_*.deb\`."

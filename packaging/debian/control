@@ -1,0 +1,20 @@
+Package: bragi
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: NickMarcha <https://github.com/NickMarcha/bragi>
+Installed-Size: @SIZE@
+Depends: python3.13, pipewire-bin, wireplumber, systemd, udev
+Recommends: deskflow, bluez, tailscale
+Section: sound
+Priority: optional
+Homepage: https://github.com/NickMarcha/bragi
+Description: desk hub: shared headset, keyboard, mouse and controllers for several computers
+ Bragi runs on a small box at the desk (a Raspberry Pi) and owns the shared
+ devices: it mixes and routes a USB headset's audio to and from the
+ computers over the network, switches the keyboard and mouse between them
+ through the headless Deskflow server (package deskflow, optional), passes
+ game controllers through, pairs Bluetooth devices, and serves a dashboard
+ and an API for all of it.
+ .
+ It runs as a systemd user service (bragi.service) of the box's user, on
+ 127.0.0.1:8000; expose it with `tailscale serve`.

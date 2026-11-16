@@ -1,0 +1,12 @@
+#!/bin/sh
+# Disables the user units once the package is gone. The data in
+# ~/.local/share/bragi stays: it's the user's, and a reinstall picks it up.
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    systemctl --global disable bragi.service bragi-peers.service bragi-peers.path \
+        bragi-audio-reset.path bragi-audio-reset-nightly.timer >/dev/null 2>&1 || true
+    udevadm control --reload-rules 2>/dev/null || true
+fi
+
+exit 0

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Stops Bragi before it's removed. An upgrade leaves it running; postinst
+# restarts it on the new code.
+set -e
+
+if [ "$1" = "remove" ]; then
+    for user in $(loginctl list-users --no-legend 2>/dev/null | awk '{print $2}'); do
+        systemctl --user -M "$user@" stop bragi.service bragi-peers.path bragi-audio-reset.path \
+            bragi-audio-reset-nightly.timer 2>/dev/null || true
+    done
+fi
+
+exit 0

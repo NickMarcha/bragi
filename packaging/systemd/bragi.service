@@ -1,0 +1,16 @@
+[Unit]
+Description=Bragi: the desk hub (audio, KVM, controllers, Bluetooth)
+Documentation=https://github.com/NickMarcha/bragi/blob/main/docs/deployment.md
+# Bragi talks to the user's PipeWire; it starts without it, the audio
+# module is then off until it appears.
+After=pipewire.service wireplumber.service
+
+[Service]
+Environment=BRAGI_DATA_DIR=%h/.local/share/bragi/data
+WorkingDirectory=/opt/bragi
+ExecStart=/opt/bragi/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
