@@ -2,8 +2,43 @@
 
 Bragi is built for one shape of host: a Linux box (a Raspberry Pi 4 in
 practice) running PipeWire as a user session, with one or more USB headsets
-plugged in, and peers reachable over Tailscale. PipeWire, WirePlumber and
-the Roc and VBAN modules run bare metal. Only the web UI runs in Docker.
+plugged in, and peers reachable over Tailscale. Everything runs bare metal
+as the PipeWire user: Bragi itself as the `bragi` systemd user service from
+a Debian package, next to PipeWire, WirePlumber and, optionally, the
+headless Deskflow server.
+
+The Docker setup further down still works, but the package is the way to
+run it: Bragi manages host services (Deskflow, the peers, the audio reset)
+and devices, which a container can only reach through more and more
+mounts.
+
+## Install from the apt repository (Raspberry Pi OS / Debian trixie, arm64)
+
+```bash
+curl -fsSL https://nickmarcha.github.io/apt/install.sh | sh
+```
+
+That adds the signed repository (<https://nickmarcha.github.io/apt/>, key
+fingerprint `753F 00FA D4D7 15C2 CB5B 6FFD EE31 EA61 CD9C F9A5`) and runs
+`sudo apt install bragi`. The package puts the app and its own Python
+environment in `/opt/bragi`, the user units (`bragi.service`, the peers and
+audio-reset units) in `/usr/lib/systemd/user`, and the udev rules in
+`/usr/lib/udev/rules.d`, enables the units for every user and starts them
+for logged-in ones. Bragi listens on `127.0.0.1:8000`; data stays in
+`~/.local/share/bragi/data`, so an install that ran in Docker carries over.
+
+It recommends `deskflow` (the headless Deskflow server, from the same
+repository) for the KVM and `bluez` for Bluetooth; without them those
+modules are off.
+
+Updating is apt's job: `sudo apt update && sudo apt upgrade`. Moving from
+Docker: stop the container (or the Komodo Stack) first, since both use
+port 8000, then install the package.
+
+Building it yourself: `packaging/build-deb.sh <version>` in a Debian trixie
+container (see `.github/workflows/package.yml`, which does it on every
+`bragi-v*` tag and attaches the `.deb` to the release; the apt repository
+picks releases up within the hour).
 
 ## What the host needs
 
@@ -14,7 +49,7 @@ the Roc and VBAN modules run bare metal. Only the web UI runs in Docker.
   peers, and `libpipewire-module-vban-send`/`-recv` for VBAN peers. Check
   they're installed with `find /usr/lib -name 'libpipewire-module-roc-*'
   -o -name 'libpipewire-module-vban-*'`.
-- Docker with the Compose plugin.
+- Docker with the Compose plugin, only for the Docker setup.
 - Tailscale, if peers are elsewhere on your tailnet. Bragi itself doesn't
   care how peers reach it, but the Android app only accepts tailnet
   addresses and HTTPS server URLs.
@@ -24,7 +59,7 @@ the Roc and VBAN modules run bare metal. Only the web UI runs in Docker.
   a kernel quirk and a udev rule. See
   [HyperX Cloud III S Wireless controls](#hyperx-cloud-iii-s-wireless-controls).
 
-## Install
+## Install with Docker (older setup)
 
 Clone the repo on the host, as the PipeWire user, and run the installer:
 
@@ -290,7 +325,7 @@ listens on a socket.
 Bragi doesn't know what's behind the socket. Whatever answers there
 decides what the request does.
 
-## Updating
+## Updating a Docker install
 
 ```bash
 git pull
