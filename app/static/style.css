@@ -1035,6 +1035,24 @@ dialog h2 {
   display: none;
 }
 
+.hid-macro-gesture:not(:has([data-macro-field="type"] option[value="kvm_switch"]:checked)) .hid-macro-switch,
+.hid-macro-gesture:not(:has([data-macro-field="type"] option[value="kvm_keys"]:checked)) .hid-macro-keys {
+  display: none;
+}
+
+.hid-macro-switch, .hid-macro-keys {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.hid-macro-computers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+}
+
 .hid-macro-http:has([data-macro-field="target"] option[value="url"]:checked) .socket-only,
 .hid-macro-http:has([data-macro-field="target"] option[value="socket"]:checked) .url-only {
   display: none;

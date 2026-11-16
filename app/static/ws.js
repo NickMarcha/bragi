@@ -523,6 +523,13 @@
   function macroAction(row) {
     const field = (name) => row.querySelector(`[data-macro-field="${name}"]`).value;
     const type = field("type");
+    if (type === "kvm_switch") return [{ type, computer: field("computer") }, null];
+    if (type === "kvm_keys") {
+      const keys = field("keys").trim();
+      if (!keys || /[,()=]/.test(keys)) return [null, 'keys look like "Control+Shift+Alt+M"'];
+      const computers = [...row.querySelectorAll('[data-macro-field="computers"] input:checked')].map((i) => i.value);
+      return [{ type, keys, computers }, null];
+    }
     if (type !== "http") return [{ type }, null];
     const action = {
       type, method: field("method"), target: field("target"), url: field("url").trim(),
@@ -558,8 +565,29 @@
     note.classList.toggle("macro-failed", failed);
   }
 
-  function applyMacro(dialog, macro) {
+  // The KVM actions' computer fields, made again when the KVM's computers change.
+  function macroComputers(row, computers) {
+    const select = row.querySelector('[data-macro-field="computer"]');
+    const boxes = row.querySelector('[data-macro-field="computers"]');
+    const have = [...select.options].map((o) => o.value).join("\n");
+    if (have === computers.join("\n")) return;
+    const picked = select.value;
+    const ticked = new Set([...boxes.querySelectorAll("input:checked")].map((i) => i.value));
+    select.replaceChildren(...computers.map((name) => new Option(name, name, false, name === picked)));
+    boxes.replaceChildren(...computers.map((name) => {
+      const label = document.createElement("label");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = name;
+      box.checked = ticked.has(name);
+      label.append(box, " " + name);
+      return label;
+    }));
+  }
+
+  function applyMacro(dialog, macro, computers) {
     dialog.querySelectorAll("[data-macro]").forEach((row) => {
+      if (computers) macroComputers(row, computers);
       // A gesture holding an edit that couldn't be saved keeps it, and
       // says why, until it's fixed.
       if (row.dataset.unsaved === "1") return;
@@ -571,10 +599,16 @@
       const values = {
         type: a.type, method: a.method || "POST", target: a.target || "url", url: a.url || "",
         socket: a.socket || "", path: a.path || "/", headers: headersText(a.headers), body: a.body || "",
+        keys: a.keys || "",
       };
       for (const [name, value] of Object.entries(values)) {
         row.querySelector(`[data-macro-field="${name}"]`).value = value;
       }
+      const computer = row.querySelector('[data-macro-field="computer"]');
+      if (a.computer) computer.value = a.computer;
+      row.querySelectorAll('[data-macro-field="computers"] input').forEach((box) => {
+        box.checked = (a.computers || []).includes(box.value);
+      });
       row.querySelector("[data-macro-test]").disabled = a.type === "none";
     });
   }
@@ -583,6 +617,7 @@
     dialog.querySelectorAll("[data-macro]").forEach((row) => {
       const gesture = row.dataset.macro;
       const test = row.querySelector("[data-macro-test]");
+      // The computers' checkboxes sit inside their field; a change bubbles to it.
       row.querySelectorAll("[data-macro-field]").forEach((input) => {
         input.addEventListener("change", () => {
           test.disabled = row.querySelector('[data-macro-field="type"]').value === "none";
@@ -675,7 +710,7 @@
       ? "The headset can't report its EQ. This is what Bragi last set."
       : "The headset can't report its EQ, and Bragi hasn't set one yet, so these sliders don't show what it's using now.";
 
-    applyMacro(dialog, c.macro);
+    applyMacro(dialog, c.macro, c.computers);
   }
 
   function wireHeadsetControls(root) {

@@ -148,11 +148,31 @@
         <span class="hid-macro-label">{{ label }}</span>
         <select data-macro-field="type" aria-label="{{ label }} action">
           <option value="none" {% if a.type == 'none' %}selected{% endif %}>Nothing</option>
+          <option value="kvm_keys" {% if a.type == 'kvm_keys' %}selected{% endif %}>Press keys on computers</option>
+          <option value="kvm_next" {% if a.type == 'kvm_next' %}selected{% endif %}>Next computer</option>
+          <option value="kvm_switch" {% if a.type == 'kvm_switch' %}selected{% endif %}>Switch to a computer</option>
           <option value="http" {% if a.type == 'http' %}selected{% endif %}>HTTP request</option>
           <option value="toggle_mic_monitor" {% if a.type == 'toggle_mic_monitor' %}selected{% endif %}>Mic monitoring on/off</option>
         </select>
         <button type="button" data-macro-test {% if a.type == 'none' %}disabled{% endif %}
                 title="Run this action once, as it is in the form">Test</button>
+      </div>
+      <div class="hid-macro-switch">
+        <select data-macro-field="computer" aria-label="Computer">
+          {% for name in c.computers or [] %}
+          <option {% if a.computer == name %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="hid-macro-keys">
+        <input type="text" data-macro-field="keys" value="{{ a.keys or '' }}" maxlength="100"
+               placeholder="Control+Shift+Alt+M" aria-label="Keys" title="Modifiers and a key joined with +" />
+        <span class="hid-macro-computers" data-macro-field="computers" aria-label="On these computers">
+          {% for name in c.computers or [] %}
+          <label><input type="checkbox" value="{{ name }}" {% if name in (a.computers or []) %}checked{% endif %} /> {{ name }}</label>
+          {% endfor %}
+        </span>
+        <span class="form-note">None ticked: the active computer.</span>
       </div>
       <div class="hid-macro-http">
         <div class="hid-macro-pair">

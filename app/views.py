@@ -5,6 +5,7 @@ the initial server-rendered page (main.py) and every WebSocket broadcast
 
 from __future__ import annotations
 
+from . import actions
 from . import audio_reset
 from . import microphone
 from . import audio_state
@@ -144,6 +145,8 @@ def headset_controls_view(card_id: str) -> dict | None:
     view["monitor"] = mic_monitor.settings_for(card_id)
     # The macro button's actions and their last results (macro_button.py).
     view["macro"] = macro_button.view(hs.serial)
+    # For the KVM actions' computer fields.
+    view["computers"] = actions.computers()
     return view
 
 
