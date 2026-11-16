@@ -90,4 +90,12 @@ public class KvmTests
         keys.OnMessage(Json("""{"type":"kvm","available":true,"active":null,"computers":[]}"""));
         Assert.Equal(["""{"type":"client_hello","features":[]}"""], sent);
     }
+
+    [Fact]
+    public void The_menu_shows_the_apps_version_in_three_parts()
+    {
+        Assert.Equal("0.1.18", TrayIconManager.FormatVersion(new Version(0, 1, 18, 0)));
+        Assert.Equal("?", TrayIconManager.FormatVersion(null));
+        Assert.Matches(@"^\d+\.\d+\.\d+$", TrayIconManager.Version);
+    }
 }
