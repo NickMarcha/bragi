@@ -11,6 +11,7 @@
   <script src="/static/htmx.min.js"></script>
   <script src="/static/ws.js" defer></script>
   <script src="/static/passkeys.js" defer></script>
+  <script src="/static/kvm-setup.js" defer></script>
   <script src="/static/security.js" defer></script>
 </head>
 <body class="{{ 'viz-enabled' if viz_settings.enabled }}">
@@ -54,7 +55,8 @@
     <section id="updates" class="settings-updates">
       {% include "_updates.html" %}
     </section>
-    {% if modules.kvm %}<p class="form-note"><a href="/kvm/setup/" target="_blank" rel="noopener">KVM setup</a>: the computers, their layout, hotkeys and input devices.</p>{% endif %}
+    {% if modules.kvm %}<p class="form-note"><button type="button" data-open-kvm-setup>KVM setup</button> the computers, their layout, hotkeys and input options.
+      Button bindings are still on the <a href="/kvm/setup/" target="_blank" rel="noopener">old setup page</a> for now.</p>{% endif %}
     <button id="viz-settings-close" type="button">Close</button>
   </dialog>
 
@@ -123,6 +125,69 @@
       <button id="security-close" type="button">Close</button>
     </div>
   </dialog>
+
+  {% if modules.kvm %}
+  <dialog id="kvm-setup-dialog">
+    <h2>KVM setup</h2>
+    <p class="form-note">The computers that share this box's keyboard and mouse. This box is <strong id="kvm-host"></strong>.</p>
+    <p data-msg="load" hidden></p>
+
+    <section class="security-section">
+      <h3>Computers</h3>
+      <p class="form-note">The name each computer's Deskflow client connects with. Aliases are other names it may use.</p>
+      <ul id="kvm-computers" class="kvm-list"></ul>
+      <div class="dialog-actions">
+        <button type="button" id="kvm-add-computer">Add computer</button>
+        <button type="button" id="kvm-save-computers" class="primary">Save computers</button>
+      </div>
+      <p data-msg="computers" hidden></p>
+    </section>
+
+    <section class="security-section">
+      <h3>Layout</h3>
+      <p class="form-note">Click a computer, then a place. Computers next to each other share that edge: the mouse crosses over it.</p>
+      <div id="kvm-grid" class="kvm-grid"></div>
+      <p id="kvm-unplaced-note" class="form-note" hidden>Not placed yet:</p>
+      <div id="kvm-unplaced" class="kvm-chips"></div>
+      <div class="dialog-actions">
+        <button type="button" id="kvm-unplace">Take the selected one off</button>
+        <button type="button" id="kvm-save-layout" class="primary" data-section="layout">Save layout</button>
+      </div>
+      <p data-msg="layout" hidden></p>
+    </section>
+
+    <section class="security-section">
+      <h3>Hotkeys</h3>
+      <p class="form-note">Keys pressed on this box's keyboard. Saved with the layout; the computers stay connected.</p>
+      <ul id="kvm-hotkeys" class="kvm-list"></ul>
+      <div class="dialog-actions">
+        <button type="button" id="kvm-add-hotkey">Add hotkey</button>
+        <button type="button" id="kvm-save-hotkeys" class="primary" data-section="hotkeys">Save hotkeys</button>
+      </div>
+      <p data-msg="hotkeys" hidden></p>
+    </section>
+
+    <section class="security-section">
+      <h3>Input</h3>
+      <div class="kvm-input">
+        <label>Key repeat <input type="text" data-input="DESKFLOW_EVDEV_REPEAT" placeholder="500,30" /><span class="form-note">delay in ms, rate per second</span></label>
+        <label>Pointer speed <input type="text" data-input="DESKFLOW_EVDEV_ACCEL" placeholder="0" /><span class="form-note">-1 (slow) to 1 (fast)</span></label>
+        <label>Keyboard layout <input type="text" data-input="XKB_DEFAULT_LAYOUT" placeholder="us" /><span class="form-note">XKB name, e.g. us, no, de</span></label>
+        <label>Virtual screen <input type="text" data-input="DESKFLOW_EVDEV_SHAPE" placeholder="1920x1080" /><span class="form-note">this box's own screen size, for the layout</span></label>
+        <label>Only these devices <input type="text" data-input="DESKFLOW_EVDEV_MATCH" placeholder="all" /><span class="form-note">name parts, comma-separated</span></label>
+        <label>Ignore these devices <input type="text" data-input="DESKFLOW_EVDEV_IGNORE" placeholder="none" /><span class="form-note">name parts, comma-separated</span></label>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" id="kvm-save-input" class="primary">Save input options</button>
+      </div>
+      <p data-msg="input" hidden></p>
+    </section>
+
+    <div class="dialog-actions">
+      <button type="button" id="kvm-setup-close">Close</button>
+    </div>
+  </dialog>
+  {% endif %}
 
   <dialog id="bluetooth-dialog">
     <h2>Bluetooth</h2>
