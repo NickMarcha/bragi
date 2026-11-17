@@ -37,6 +37,7 @@ _PEER_PATTERNS = (
     re.compile(r"^/ws/peer/[^/]+$"),
     re.compile(r"^/api/peers/register$"),
     re.compile(r"^/api/peers/register-desktop$"),
+    re.compile(r"^/api/peers/pair$"),
     re.compile(r"^/api/peers/[^/]+/streams$"),
 )
 

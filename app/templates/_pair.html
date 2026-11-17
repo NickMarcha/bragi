@@ -1,0 +1,14 @@
+{# "Connect a device" in the Add peer dialog (app/pairing.py, POST /pair). #}
+{% if error %}
+<p class="form-error">{{ error }}</p>
+{% else %}
+<div class="pair-code">
+  <div class="pair-qr" aria-label="QR code to connect a device">{{ qr | safe }}</div>
+  <div>
+    <p>Scan it with the Bragi app's <strong>Scan QR code</strong> on a phone, or paste the link into the tray app's <strong>Connect to Bragi…</strong> window.</p>
+    <p class="pair-code-text">Code <strong>{{ code }}</strong></p>
+    <p><input type="text" readonly value="{{ link }}" aria-label="Connection link" onclick="this.select()"></p>
+    <p class="form-note">Works once, for 10 minutes. The tray app gets its own API key from it (listed under Security).</p>
+  </div>
+</div>
+{% endif %}
