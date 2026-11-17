@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, field_validator
 from . import access
 from . import api
 from . import audio_reset
+from . import downloads
 from . import auth
 from . import bluetooth
 from . import microphone
@@ -66,6 +67,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(hidpp.supervise()),
         asyncio.create_task(kvm.listen_actions(hotkey_actions.run)),
         asyncio.create_task(updates.watch(ws.manager.broadcast_nowait)),
+        asyncio.create_task(downloads.watch()),
     ]
     bluetooth.start(_bluetooth_changed)
     yield
@@ -119,7 +121,8 @@ def dashboard(request: Request):
     state = views.build_state()
     return templates.TemplateResponse(request, "index.html", {**state, "password_set": auth.password_set(),
                                                               "kvm": kvm.read_view(), "modules": modules.enabled(),
-                                                              "updates": updates.status()})
+                                                              "updates": updates.status(),
+                                                              "downloads": downloads.links()})
 
 
 @app.websocket("/ws")
