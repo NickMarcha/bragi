@@ -34,7 +34,7 @@ public class SetupWindowTests
         window.Closed += (_, _) => closed = true;
         window.Show();
 
-        Box(window, 3).Text = "bragi_key";
+        Box(window, 4).Text = "bragi_key";
         FindButton(window, "Connect").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await Settle();
 
@@ -79,6 +79,43 @@ public class SetupWindowTests
         FindButton(window, "Save and reconnect");
         Assert.Equal("Change Bragi connection...", TrayIconManager.SetupMenuLabel(alreadySetUp: true));
         Assert.Equal("Connect to Bragi...", TrayIconManager.SetupMenuLabel(alreadySetUp: false));
+    }
+
+    [AvaloniaFact]
+    public async Task A_pasted_link_fills_the_server_and_its_code_becomes_the_key()
+    {
+        (string, string, string, string?)? sent = null;
+        (Uri, string, string)? redeemed = null;
+        var window = new SetupWindow(Defaults with { Server = "" },
+            (server, name, ip, key) => { sent = (server, name, ip, key); return Task.CompletedTask; },
+            (server, code, name) => { redeemed = (server, code, name); return Task.FromResult("bragi_from_code"); });
+        window.Show();
+
+        Box(window, 0).Text = "bragi://connect?server=https%3A%2F%2Fbragi.example.ts.net%2F&code=K7F2-9QXM";
+        Assert.Equal("https://bragi.example.ts.net/", Box(window, 1).Text);
+        FindButton(window, "Connect").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Settle();
+
+        Assert.Equal((new Uri("https://bragi.example.ts.net/"), "K7F2-9QXM", "laptop"), redeemed);
+        Assert.Equal(("https://bragi.example.ts.net/", "laptop", "100.64.0.30", "bragi_from_code"), sent);
+    }
+
+    [AvaloniaFact]
+    public async Task A_typed_key_wins_over_the_code_and_a_bad_link_says_so()
+    {
+        var redeemed = false;
+        var window = new SetupWindow(Defaults, (_, _, _, _) => Task.CompletedTask,
+            (_, _, _) => { redeemed = true; return Task.FromResult("x"); });
+        window.Show();
+
+        Box(window, 0).Text = "https://bragi.example.ts.net/";
+        Assert.Contains(window.GetLogicalDescendants().OfType<TextBlock>(), t => t.Text == "That isn't a Bragi connection link.");
+        Box(window, 0).Text = "bragi://connect?server=https%3A%2F%2Fbragi.example.ts.net%2F&code=K7F2-9QXM";
+        Box(window, 4).Text = "bragi_typed";
+        FindButton(window, "Connect").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Settle();
+
+        Assert.False(redeemed);
     }
 
     private static TextBox Box(Window window, int index) => window.GetLogicalDescendants().OfType<TextBox>().ElementAt(index);

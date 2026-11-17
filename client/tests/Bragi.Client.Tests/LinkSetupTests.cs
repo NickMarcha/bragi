@@ -204,6 +204,41 @@ public class LinkSetupTests
         .Where(line => line.Contains('=') && !line.StartsWith('#'))
         .ToDictionary(line => line[..line.IndexOf('=')], line => line[(line.IndexOf('=') + 1)..].TrimEnd('\r'));
 
+    [Fact]
+    public void Connection_links_are_read_and_anything_else_is_not()
+    {
+        Assert.Equal(new ConnectLink("https://bragi.example.ts.net/", "K7F2-9QXM"),
+            LinkSetup.ParseConnectLink(" bragi://connect?server=https%3A%2F%2Fbragi.example.ts.net%2F&code=K7F2-9QXM "));
+        Assert.Equal(new ConnectLink("https://bragi.example.ts.net/", null),
+            LinkSetup.ParseConnectLink("BRAGI://connect?server=https%3A%2F%2Fbragi.example.ts.net%2F"));
+        Assert.Null(LinkSetup.ParseConnectLink("https://bragi.example.ts.net/"));
+        Assert.Null(LinkSetup.ParseConnectLink("bragi://connect?code=K7F2-9QXM"));
+        Assert.Null(LinkSetup.ParseConnectLink(null));
+    }
+
+    [Fact]
+    public async Task A_code_is_traded_for_a_key_and_a_refusal_says_why()
+    {
+        await using var server = await FakeServer.StartAsync(async context =>
+        {
+            var body = await System.Text.Json.JsonDocument.ParseAsync(context.Request.Body);
+            if (body.RootElement.GetProperty("code").GetString() == "GOOD-CODE" && body.RootElement.GetProperty("name").GetString() == "laptop")
+            {
+                await context.Response.WriteAsJsonAsync(new { api_key = "bragi_new" });
+            }
+            else
+            {
+                context.Response.StatusCode = 400;
+                await context.Response.WriteAsJsonAsync(new { detail = "That code is wrong or has run out." });
+            }
+        }, "/api/peers/pair");
+        using var http = new HttpClient();
+
+        Assert.Equal("bragi_new", await LinkSetup.RedeemCodeAsync(http, new Uri(server.Url), "GOOD-CODE", "laptop"));
+        var refused = await Assert.ThrowsAsync<LinkSetupException>(() => LinkSetup.RedeemCodeAsync(http, new Uri(server.Url), "BAD", "laptop"));
+        Assert.Equal("That code is wrong or has run out.", refused.Message);
+    }
+
     private sealed class FakeServer : IAsyncDisposable
     {
         private readonly WebApplication _app;
@@ -211,13 +246,13 @@ public class LinkSetupTests
 
         private FakeServer(WebApplication app, string url) { _app = app; Url = url; }
 
-        public static async Task<FakeServer> StartAsync(RequestDelegate register)
+        public static async Task<FakeServer> StartAsync(RequestDelegate register, string path = "/api/peers/register-desktop")
         {
             var builder = WebApplication.CreateBuilder();
             builder.Logging.ClearProviders();
             builder.WebHost.UseUrls("http://127.0.0.1:0");
             var app = builder.Build();
-            app.MapPost("/api/peers/register-desktop", register);
+            app.MapPost(path, register);
             await app.StartAsync();
             var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
             return new FakeServer(app, address + "/");
