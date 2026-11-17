@@ -267,7 +267,7 @@ public sealed class TrayIconManager : IDisposable
         var name = status.Controllers.Count == 1 ? status.Controllers[0] : $"{status.Controllers.Count} controllers";
         if (!status.HereSupported)
         {
-            return (true, $"{name}: not on Windows yet", false, false);
+            return (true, $"{name}: not supported here", false, false);
         }
         if (isHere && problem is not null)
         {

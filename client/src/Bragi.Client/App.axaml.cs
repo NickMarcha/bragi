@@ -66,11 +66,13 @@ public partial class App : Application
         _presenceClient = new PeerPresenceClient(config?.PeerName, config?.BragiWsBaseUrl);
         // Controllers on the Bragi host, played here. Linux recreates them
         // exactly with uhid, or falls back to a uinput Xbox 360 pad; Windows
-        // can't play them yet.
+        // plays them as a ViGEmBus Xbox 360 pad.
         _gamepads = OperatingSystem.IsLinux()
             ? new GamepadService(config?.PeerName, () => new UinputGamepad(),
                 File.Exists("/dev/uhid") ? d => new UhidDevice(d) : null)
-            : new GamepadService(config?.PeerName, null);
+            : OperatingSystem.IsWindows()
+                ? new GamepadService(config?.PeerName, () => new ViGEmGamepad())
+                : new GamepadService(config?.PeerName, null);
         _presenceClient.MessageReceived += _gamepads.OnMessage;
         _presenceClient.Disconnected += _gamepads.OnDisconnected;
         _gamepads.Send = _presenceClient.SendAsync;
