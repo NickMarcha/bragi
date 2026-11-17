@@ -417,3 +417,11 @@ def test_the_dashboard_saves_the_extra_buttons(monkeypatch, session):
                                                  "share_keys": "Control+Banana"}).text
     assert "Share: Unknown key" in page
     assert hub.extras()["p1"] == {"keys": "Super+Alt+Print"}  # nothing saved
+
+
+def test_share_on_the_dongle_is_key_record():
+    pad = Normaliser(XPAD, {})
+    pad.feed(EV_KEY, 167, 1)
+    assert pad.feed(EV_SYN, 0, 0) is True
+    assert pad.take_pressed() == ["share"]
+    assert pad.raw_state()["buttons"] == ["share"]

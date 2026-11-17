@@ -57,7 +57,11 @@ BUTTONS = {304: "a", 305: "b", 307: "x", 308: "y", 310: "lb", 311: "rb",
 # above, like an Elite controller's paddles, or press keys on the computer
 # that has the controller. A computer that gets the controller itself
 # (HID passthrough) sees them as they are.
-EXTRAS = {306: "p1", 309: "p2", 319: "share"}
+# Over Bluetooth (hid-generic) the paddles are 306 and 309 and share 319.
+# On the 2.4G dongle (xpad) share is KEY_RECORD (167), as on Xbox Series
+# pads, and the paddles never arrive: the controller turns them into
+# d-pad presses itself (8BitDo Ultimate Software can change that).
+EXTRAS = {306: "p1", 309: "p2", 319: "share", 167: "share"}
 EXTRA_LABELS = {"p1": "P1 (back)", "p2": "P2 (back)", "share": "Share"}
 # Win+Alt+PrtScn is the Xbox Game Bar's screenshot on Windows.
 DEFAULT_EXTRAS = {"p1": {"button": "a"}, "p2": {"button": "b"}, "share": {"keys": "Super+Alt+Print"}}
