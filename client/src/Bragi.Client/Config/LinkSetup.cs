@@ -38,8 +38,79 @@ public sealed class LinkSetupException(string message) : Exception(message);
 /// tailnet address and Roc modules, registering with the server, and turning
 /// the answer into roc-link.env.
 /// </summary>
+/// <summary>The dashboard's "Connect a device" link: bragi://connect?server=...&amp;code=... (app/pairing.py).</summary>
+public sealed record ConnectLink(string Server, string? Code);
+
 public static partial class LinkSetup
 {
+    /// <summary>A pasted connection link, or null if the text isn't one.</summary>
+    public static ConnectLink? ParseConnectLink(string? text)
+    {
+        if (!Uri.TryCreate(text?.Trim(), UriKind.Absolute, out var uri) ||
+            !uri.Scheme.Equals("bragi", StringComparison.OrdinalIgnoreCase) ||
+            !uri.Host.Equals("connect", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        var values = new Dictionary<string, string>();
+        foreach (var part in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = part.IndexOf('=');
+            if (eq > 0)
+            {
+                values[part[..eq]] = Uri.UnescapeDataString(part[(eq + 1)..].Replace('+', ' '));
+            }
+        }
+        if (!values.TryGetValue("server", out var server) || string.IsNullOrWhiteSpace(server))
+        {
+            return null;
+        }
+        return new ConnectLink(server, values.TryGetValue("code", out var code) && !string.IsNullOrWhiteSpace(code) ? code : null);
+    }
+
+    /// <summary>
+    /// Trades a one-time code from "Connect a device" for an API key of this
+    /// computer's own (app/main.py, /api/peers/pair).
+    /// </summary>
+    public static async Task<string> RedeemCodeAsync(HttpClient http, Uri server, string code, string peerName,
+        CancellationToken cancellationToken = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await http.PostAsJsonAsync(new Uri(server, "api/peers/pair"), new { code, name = peerName }, cancellationToken);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new LinkSetupException($"Could not reach Bragi at {server}: {ex.Message}");
+        }
+        catch (TaskCanceledException)
+        {
+            throw new LinkSetupException($"Bragi at {server} did not answer.");
+        }
+        using (response)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                throw new LinkSetupException("This Bragi server is too old for connection codes. Update it, or paste an API key instead.");
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new LinkSetupException(ErrorDetail(body) ?? $"Bragi refused the code ({(int)response.StatusCode}).");
+            }
+            try
+            {
+                return JsonDocument.Parse(body).RootElement.GetProperty("api_key").GetString()
+                       ?? throw new LinkSetupException("Bragi answered the code without a key.");
+            }
+            catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+            {
+                throw new LinkSetupException("Bragi answered the code without a key.");
+            }
+        }
+    }
+
     public const string DefaultSinkName = "bragi-headset-sink";
     public const string DefaultSourceName = "bragi-mic";
 
