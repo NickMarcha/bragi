@@ -6,8 +6,8 @@ android {
         applicationId = "com.nickmarcha.bragi"
         minSdk = 29
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.1.14"
+        versionCode = 16
+        versionName = "0.1.15"
         // Empty: each user enters their own Bragi URL on first launch.
         buildConfigField("String", "DEFAULT_SERVER", "\"\"")
         // Where update checks and "Report a problem" go. GitHub Actions sets
@@ -47,6 +47,10 @@ dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // "Scan QR code": Google Play services' scanner, which needs no camera permission.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    // It brings androidx.fragment 1.0, whose activity results break registerForActivityResult.
+    implementation("androidx.fragment:fragment-ktx:1.8.6")
     implementation("org.roc-streaming.roctoolkit:roc-android:0.2.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
