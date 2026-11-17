@@ -8,7 +8,8 @@ Client over its /ws/peer socket. The client there creates a virtual Xbox
 360 controller (client/src/Bragi.Client/Gamepad/).
 
 Which computer gets the controllers is saved in data/gamepad.yaml as
-`target`, set from that computer's tray ("Use controller here").
+`target`, set from that computer's tray ("Use controller here"). What the
+extra buttons do in the Xbox layout is saved there as `extras`.
 
 The wire state is xpad's convention, so a Linux client can hand it to uinput
 unchanged: sticks -32768..32767 with Y pointing down, triggers 0..255, d-pad
@@ -47,10 +48,19 @@ ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ = 0, 1, 2, 3, 4, 5
 ABS_GAS, ABS_BRAKE, ABS_HAT0X, ABS_HAT0Y = 9, 10, 16, 17
 
 # Same codes under xpad and under hid-generic for the 8BitDo Ultimate 3-mode
-# (checked button by button). Its extra buttons (306, 309, 319: share and
-# the back paddles) have no Xbox 360 equivalent and are left out.
+# (checked button by button).
 BUTTONS = {304: "a", 305: "b", 307: "x", 308: "y", 310: "lb", 311: "rb",
            314: "back", 315: "start", 316: "guide", 317: "ls", 318: "rs"}
+
+# Its extra buttons: the back paddles and share. An Xbox 360 pad has no
+# place for them, so in the Xbox layout each can copy one of the buttons
+# above, like an Elite controller's paddles, or press keys on the computer
+# that has the controller. A computer that gets the controller itself
+# (HID passthrough) sees them as they are.
+EXTRAS = {306: "p1", 309: "p2", 319: "share"}
+EXTRA_LABELS = {"p1": "P1 (back)", "p2": "P2 (back)", "share": "Share"}
+# Win+Alt+PrtScn is the Xbox Game Bar's screenshot on Windows.
+DEFAULT_EXTRAS = {"p1": {"button": "a"}, "p2": {"button": "b"}, "share": {"keys": "Super+Alt+Print"}}
 
 
 @dataclass(frozen=True)
@@ -123,6 +133,9 @@ class Normaliser:
     layout: Layout
     ranges: dict[int, tuple[int, int]]
     buttons: set[str] = field(default_factory=set)
+    extras: set[str] = field(default_factory=set)
+    # Extras pressed since the last take_pressed(), for the ones that press keys.
+    pressed: list[str] = field(default_factory=list)
     axes: dict[str, int] = field(default_factory=lambda: {
         "lx": 0, "ly": 0, "rx": 0, "ry": 0, "lt": 0, "rt": 0, "dx": 0, "dy": 0})
     changed: bool = False
@@ -133,6 +146,13 @@ class Normaliser:
             name = BUTTONS[code]
             if (value != 0) != (name in self.buttons):
                 (self.buttons.add if value else self.buttons.discard)(name)
+                self.changed = True
+        elif etype == EV_KEY and code in EXTRAS:
+            name = EXTRAS[code]
+            if (value != 0) != (name in self.extras):
+                (self.extras.add if value else self.extras.discard)(name)
+                if value:
+                    self.pressed.append(name)
                 self.changed = True
         elif etype == EV_ABS:
             self._axis(code, value)
@@ -157,8 +177,21 @@ class Normaliser:
             self.axes[key] = new
             self.changed = True
 
-    def state(self) -> dict:
-        return {"buttons": sorted(self.buttons), **self.axes}
+    def state(self, extras: dict[str, dict] | None = None) -> dict:
+        """The wire state, with the extras that copy a button pressing it."""
+        buttons = set(self.buttons)
+        for name in self.extras:
+            if copy := (extras or {}).get(name, {}).get("button"):
+                buttons.add(copy)
+        return {"buttons": sorted(buttons), **self.axes}
+
+    def raw_state(self) -> dict:
+        """As read, extras by their own names: the controller test."""
+        return {"buttons": sorted(self.buttons | self.extras), **self.axes}
+
+    def take_pressed(self) -> list[str]:
+        pressed, self.pressed = self.pressed, []
+        return pressed
 
 
 # --- target -----------------------------------------------------------------
@@ -166,20 +199,94 @@ class Normaliser:
 _settings_lock = threading.Lock()
 
 
+def _load() -> dict:
+    if not SETTINGS_FILE.exists():
+        return {}
+    data = yaml.safe_load(SETTINGS_FILE.read_text()) or {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save(**changes) -> None:
+    with _settings_lock:
+        data = {**_load(), **changes}
+        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        pending = SETTINGS_FILE.with_suffix(".tmp")
+        pending.write_text(yaml.safe_dump(data, sort_keys=False))
+        pending.replace(SETTINGS_FILE)
+
+
 def target() -> str | None:
     with _settings_lock:
-        if not SETTINGS_FILE.exists():
-            return None
-        value = (yaml.safe_load(SETTINGS_FILE.read_text()) or {}).get("target")
+        value = _load().get("target")
         return value if isinstance(value, str) and value else None
 
 
 def _save_target(name: str | None) -> None:
+    _save(target=name)
+
+
+def valid_extra(value) -> dict:
+    """One extra button's setting as it's saved: {"button": name},
+    {"keys": combo} or {} for nothing. ValueError for anything else."""
+    from . import key_bindings
+    if not value:
+        return {}
+    if not isinstance(value, dict) or len(value) != 1:
+        raise ValueError("An extra button copies a button or presses keys.")
+    if "button" in value:
+        if value["button"] not in BUTTONS.values():
+            raise ValueError(f"Unknown button {value['button']!r}.")
+        return {"button": value["button"]}
+    if "keys" in value:
+        keys = str(value["keys"]).strip()
+        try:
+            key_bindings.parse_combo(keys)
+        except key_bindings.BindingError as exc:
+            raise ValueError(str(exc)) from exc
+        return {"keys": keys}
+    raise ValueError("An extra button copies a button or presses keys.")
+
+
+def extras() -> dict[str, dict]:
+    """What each extra button does in the Xbox layout: the defaults for any
+    not set, and nothing for a setting that no longer reads."""
     with _settings_lock:
-        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        pending = SETTINGS_FILE.with_suffix(".tmp")
-        pending.write_text(yaml.safe_dump({"target": name}, sort_keys=False))
-        pending.replace(SETTINGS_FILE)
+        saved = _load().get("extras")
+    saved = saved if isinstance(saved, dict) else {}
+    result = {}
+    for name in EXTRAS.values():
+        if name not in saved:
+            result[name] = dict(DEFAULT_EXTRAS[name])
+            continue
+        try:
+            result[name] = valid_extra(saved[name])
+        except ValueError:
+            result[name] = {}
+    return result
+
+
+def computer_for_peer(peer: str) -> str:
+    """The KVM computer a tray app runs on: the one whose name or alias is
+    the peer's name, else the peer's name itself."""
+    from . import kvm_config
+    try:
+        setup = kvm_config.read()["computers"]
+    except Exception:
+        setup = []
+    for computer in setup:
+        if peer.lower() in {n.lower() for n in [computer["name"], *computer.get("aliases", [])]}:
+            return computer["name"]
+    return peer
+
+
+async def _press_keys(peer: str, keys: str) -> None:
+    """An extra button's keys, pressed on the computer that has the
+    controller, like "Press keys on computers" (by its tray app if it can,
+    otherwise through the KVM)."""
+    from . import actions
+    worked, what = await actions.run_kvm({"type": "kvm_keys", "keys": keys, "computers": [computer_for_peer(peer)]})
+    if not worked:
+        logger.warning("gamepad: extra button keys %s on %s: %s", keys, peer, what)
 
 
 # --- live controllers and sending ---------------------------------------------
@@ -331,6 +438,9 @@ class Hub:
         self._broadcast = broadcast
         self._open: dict[str, _Open] = {}
         self._target = target()
+        self._extras = extras()
+        # (peer, keys) -> None: presses an extra button's keys over there.
+        self.press_keys = self._schedule_keys
         # What each connected tray app can play: "hid" and/or "xbox".
         self._modes: dict[str, set[str]] = {}
         # The dashboard's controller test: live state while it's open.
@@ -378,7 +488,8 @@ class Hub:
         """The controller test is open: send live state for a while (the page
         asks again before it runs out). Returns every controller's state now."""
         self._watch_until = time.monotonic() + seconds
-        return [{"id": e.controller.id, "name": e.controller.name, **e.normaliser.state()} for e in self._open.values()]
+        return [{"id": e.controller.id, "name": e.controller.name, **e.normaliser.raw_state()}
+                for e in self._open.values()]
 
     _WATCH_INTERVAL = 0.03  # at most ~30 frames a second per controller
 
@@ -404,7 +515,7 @@ class Hub:
         if entry is None:
             return
         self._watch_sent[controller_id] = time.monotonic()
-        self.watch_broadcast({"type": "gamepad_state", "id": controller_id, **entry.normaliser.state()})
+        self.watch_broadcast({"type": "gamepad_state", "id": controller_id, **entry.normaliser.raw_state()})
 
     def status(self) -> dict:
         return {"type": "gamepads", "target": self._target,
@@ -417,7 +528,8 @@ class Hub:
         if self._passthrough(peer, entry):
             self._send(peer, {"type": "hid_create", "id": entry.controller.id, **entry.hid}, False)
         else:
-            self._send(peer, {"type": "gamepad", "id": entry.controller.id, **entry.normaliser.state()}, False)
+            self._send(peer, {"type": "gamepad", "id": entry.controller.id,
+                              **entry.normaliser.state(self._extras)}, False)
 
     def hello(self, peer: str, modes: list) -> None:
         """A tray app says what it can play. Its current controllers are made
@@ -466,14 +578,35 @@ class Hub:
         self._broadcast(self.status())
         return entry
 
+    def extras(self) -> dict[str, dict]:
+        return {name: dict(value) for name, value in self._extras.items()}
+
+    def set_extras(self, new: dict[str, dict]) -> None:
+        """Saves what the extra buttons do (each already through valid_extra)."""
+        self._extras = {**self._extras, **new}
+        _save(extras=self._extras)
+
+    def _schedule_keys(self, peer: str, keys: str) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(_press_keys(peer, keys))
+
     def input(self, controller_id: str) -> None:
         """An evdev change report: goes to a target playing the Xbox layout."""
         entry = self._open.get(controller_id)
-        if entry:
-            self._watched(controller_id)
-        if entry and self._target and not self._passthrough(self._target, entry):
+        if entry is None:
+            return
+        self._watched(controller_id)
+        pressed = entry.normaliser.take_pressed()
+        if self._target and not self._passthrough(self._target, entry):
+            for name in pressed:
+                if keys := self._extras.get(name, {}).get("keys"):
+                    self.press_keys(self._target, keys)
             # Droppable: a newer state replaces it if the socket falls behind.
-            self._send(self._target, {"type": "gamepad", "id": controller_id, **entry.normaliser.state()}, True)
+            self._send(self._target, {"type": "gamepad", "id": controller_id,
+                                      **entry.normaliser.state(self._extras)}, True)
 
     def hid_input(self, controller_id: str, report: bytes) -> None:
         """A raw input report: goes to a target passing the controller through."""

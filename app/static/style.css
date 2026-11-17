@@ -1314,3 +1314,21 @@ dialog h2 {
   background: var(--accent);
   color: #0b0d10;
 }
+
+/* The Bluetooth dialog's extra buttons (app/templates/_bluetooth.html). */
+.extras-form {
+  display: grid;
+  gap: 0.5rem;
+}
+.extras-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.extras-row label {
+  min-width: 6rem;
+}
+.extras-row input[type="text"] {
+  flex: 1 1 10rem;
+}

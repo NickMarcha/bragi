@@ -228,9 +228,10 @@ def select_microphone(request: Request, source: str = Form(...)):
     return microphone_controls(request)
 
 
-async def _bluetooth_view(request: Request):
-    """The Bluetooth dialog: paired devices, pairing new ones, and which
-    computer the controllers play on (app/bluetooth.py, app/gamepad.py)."""
+async def _bluetooth_view(request: Request, extras_error: str | None = None):
+    """The Bluetooth dialog: paired devices, pairing new ones, which
+    computer the controllers play on and what their extra buttons do
+    (app/bluetooth.py, app/gamepad.py)."""
     if bluetooth.manager is None:
         view = {"powered": False, "scanning": False, "paired": [], "found": [], "pairing": None,
                 "error": "Bluetooth isn't running in this Bragi."}
@@ -240,7 +241,9 @@ async def _bluetooth_view(request: Request):
     status = gamepad.hub.status() if gamepad.hub is not None else {"target": gamepad.target(), "controllers": []}
     return templates.TemplateResponse(request, "_bluetooth.html", {
         "bt": view, "computers": computers, "target": status["target"],
-        "controllers": status["controllers"], "playing": {c["id"] for c in status["controllers"]}})
+        "controllers": status["controllers"], "playing": {c["id"] for c in status["controllers"]},
+        "extras": gamepad.hub.extras() if gamepad.hub is not None else gamepad.extras(),
+        "extra_labels": gamepad.EXTRA_LABELS, "extras_error": extras_error})
 
 
 def _bluetooth() -> bluetooth.Manager:
@@ -463,6 +466,32 @@ async def bluetooth_target(request: Request, target: str = Form("")):
         raise HTTPException(503, "Controllers aren't running in this Bragi.")
     gamepad.hub.set_target(target or None)
     return await _bluetooth_view(request)
+
+
+@app.post("/bluetooth/extras", response_class=HTMLResponse)
+async def bluetooth_extras(request: Request):
+    """What the controllers' extra buttons do: each field is "" (nothing),
+    a button's name, or "keys" with the combination in <name>_keys."""
+    hub = _hub()
+    form = await request.form()
+    current = hub.extras()
+    new, error = {}, None
+    for name, label in gamepad.EXTRA_LABELS.items():
+        choice = str(form.get(name, ""))
+        if choice == "keys":
+            # Just switched to keys: start from what it pressed before, or the screenshot.
+            keys = str(form.get(f"{name}_keys", "")).strip() or current.get(name, {}).get("keys") \
+                or gamepad.DEFAULT_EXTRAS["share"]["keys"]
+            value = {"keys": keys}
+        else:
+            value = {"button": choice} if choice else {}
+        try:
+            new[name] = gamepad.valid_extra(value)
+        except ValueError as exc:
+            error = f"{label}: {exc}"
+    if error is None:
+        hub.set_extras(new)
+    return await _bluetooth_view(request, extras_error=error)
 
 
 @app.get("/audio/reset", response_class=HTMLResponse)

@@ -8,7 +8,8 @@
   if (!dialog) return;
 
   const BUTTONS = [["a", "A"], ["b", "B"], ["x", "X"], ["y", "Y"], ["lb", "LB"], ["rb", "RB"],
-                   ["back", "View"], ["start", "Menu"], ["guide", "Xbox"], ["ls", "L stick"], ["rs", "R stick"]];
+                   ["back", "View"], ["start", "Menu"], ["guide", "Xbox"], ["ls", "L stick"], ["rs", "R stick"],
+                   ["p1", "P1"], ["p2", "P2"], ["share", "Share"]];
   const $ = (sel) => dialog.querySelector(sel);
   let current = null; // controller id
   let timer = null;
