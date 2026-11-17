@@ -1332,3 +1332,19 @@ dialog h2 {
 .extras-row input[type="text"] {
   flex: 1 1 10rem;
 }
+
+/* Download links for the Bragi apps (app/templates/_downloads.html). */
+.downloads h3 {
+  margin-bottom: 0.25rem;
+}
+.download-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+  display: grid;
+  gap: 0.25rem;
+}
+.download-list a {
+  font-weight: 600;
+  margin-right: 0.5rem;
+}

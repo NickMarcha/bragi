@@ -1,0 +1,14 @@
+{# Download links for the Bragi apps (app/downloads.py). Included in the
+   Add peer and Settings dialogs. #}
+<section class="downloads">
+  <h3>Get the Bragi apps</h3>
+  <ul class="download-list">
+    <li><a href="{{ downloads.windows }}" rel="noopener">Windows</a>
+      <span class="form-note">tray app{% if downloads.client_version %} {{ downloads.client_version }}{% endif %}: audio with Voicemeeter, KVM, controllers. Updates itself.</span></li>
+    <li><a href="{{ downloads.linux }}" rel="noopener">Linux</a>
+      <span class="form-note">tray app (AppImage){% if downloads.client_version %} {{ downloads.client_version }}{% endif %}. Make it executable and run it; it updates itself.</span></li>
+    <li><a href="{{ downloads.android }}" rel="noopener">Android</a>
+      <span class="form-note">{% if downloads.android_version %}app {{ downloads.android_version }} (APK){% else %}the app's releases{% endif %}. Allow installing from your browser when Android asks.</span></li>
+  </ul>
+  <p class="form-note">All releases: <a href="{{ downloads.releases }}" rel="noopener">GitHub</a>. Then connect the app to this Bragi from the app itself.</p>
+</section>
