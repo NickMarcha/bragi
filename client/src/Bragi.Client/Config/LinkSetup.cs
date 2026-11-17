@@ -353,8 +353,8 @@ public static partial class LinkSetup
     }
 
     /// <summary>
-    /// The Windows client's link.env. Voicemeeter carries the audio for now,
-    /// so the VBAN values are there to show and to set Voicemeeter to.
+    /// The Windows client's link.env. The tray app carries the audio itself
+    /// (Audio/VbanLink.cs) with these VBAN port and stream names.
     /// </summary>
     public static string BuildVbanEnv(LinkSettings settings, VbanStreams streams)
     {

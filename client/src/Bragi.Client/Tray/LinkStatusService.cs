@@ -82,9 +82,9 @@ public sealed class LinkStatusService : IDisposable
 
         if (OperatingSystem.IsWindows())
         {
-            // Voicemeeter carries the audio, so there's no link of ours to
-            // check yet. Set up counts as on: it keeps the presence dot live.
-            return new StatusSnapshot(TrayState.Enabled, $"Audio over VBAN (Voicemeeter) to Bragi @ {config.BragiHostIp}");
+            // The audio link reports in its own lines in the Audio menu
+            // (Tray/AudioMenu.cs). Set up counts as on: it keeps the presence dot live.
+            return new StatusSnapshot(TrayState.Enabled, $"Linked to Bragi @ {config.BragiHostIp}");
         }
 
         var unitState = await _controller.GetStateAsync();
