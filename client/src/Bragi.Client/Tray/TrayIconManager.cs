@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
@@ -89,6 +90,44 @@ public sealed class TrayIconManager : IDisposable
             _autostartItem.IsChecked = AutostartService.IsEnabled();
         };
 
+        // KDE: let Deskflow control this computer without the "Remote control" question
+        // on every start (Tray/RemoteControlPermission.cs). Off until chosen here.
+        NativeMenuItem? remoteControlItem = null;
+        if (RemoteControlPermission.Applies())
+        {
+            var item = new NativeMenuItem
+            {
+                Header = "Let Deskflow control this computer without asking",
+                ToggleType = MenuItemToggleType.CheckBox,
+            };
+            async Task RefreshRemoteControl()
+            {
+                try
+                {
+                    var granted = await RemoteControlPermission.IsGrantedAsync();
+                    Dispatcher.UIThread.Post(() => item.IsChecked = granted);
+                }
+                catch (Exception ex) when (ex is ProcessRunException or System.ComponentModel.Win32Exception or InvalidOperationException)
+                {
+                    Dispatcher.UIThread.Post(() => item.IsEnabled = false);
+                }
+            }
+            item.Click += async (_, _) =>
+            {
+                try
+                {
+                    await RemoteControlPermission.SetAsync(!item.IsChecked);
+                }
+                catch (Exception ex) when (ex is ProcessRunException or System.ComponentModel.Win32Exception)
+                {
+                    // shown by the state the refresh reads back
+                }
+                await RefreshRemoteControl();
+            };
+            _ = RefreshRemoteControl();
+            remoteControlItem = item;
+        }
+
         var quitItem = new NativeMenuItem { Header = "Quit" };
         quitItem.Click += (_, _) =>
         {
@@ -136,12 +175,16 @@ public sealed class TrayIconManager : IDisposable
             setupItem,
             checkForUpdatesItem,
             _autostartItem,
-            new NativeMenuItemSeparator(),
-            quitItem,
         })
         {
             menu.Add(item);
         }
+        if (remoteControlItem is not null)
+        {
+            menu.Add(remoteControlItem);
+        }
+        menu.Add(new NativeMenuItemSeparator());
+        menu.Add(quitItem);
 
         _trayIcon = new TrayIcon
         {
