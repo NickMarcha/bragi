@@ -11,10 +11,17 @@
     <application android:name=".BragiApplication" android:label="Bragi" android:theme="@style/AppTheme"
                  android:allowBackup="false" android:usesCleartextTraffic="false"
                  android:icon="@mipmap/ic_launcher">
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- The dashboard's "Connect a device" link, also from the phone's own camera. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="bragi" android:host="connect" />
             </intent-filter>
         </activity>
         <service android:name=".BragiService" android:exported="false"

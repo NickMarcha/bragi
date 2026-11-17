@@ -23,6 +23,9 @@ import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import java.io.File
 import java.net.NetworkInterface
 import kotlinx.coroutines.launch
@@ -82,6 +85,8 @@ class MainActivity : ComponentActivity() {
             text(label)
             return EditText(this).apply { setText(initial); inputType = type; setSingleLine(); panel.addView(this) }
         }
+        Button(this).apply { text = "Scan QR code"; panel.addView(this); setOnClickListener { scanCode() } }
+        text("In the Bragi dashboard: Add peer, Connect a device. Or type the address below.", 13f)
         server = field("Bragi server", preferences.getString("server", BuildConfig.DEFAULT_SERVER)!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
             .apply { hint = "https://bragi.your-tailnet.ts.net/" }
         val defaultName = Build.MODEL.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(35).let { if (it.firstOrNull()?.isLetter() == true) it else "phone-$it" }.take(40)
@@ -136,6 +141,7 @@ class MainActivity : ComponentActivity() {
                     state.error).joinToString("\n")
             }
         }
+        useConnectLink(intent)
         // A release APK cannot replace a debug build, so debug builds only check when asked.
         if (!BuildConfig.DEBUG && System.currentTimeMillis() - preferences.getLong("updateCheck", 0) >= 24 * 60 * 60 * 1000L) checkUpdates(false)
     }
@@ -284,6 +290,45 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
         pendingInstall = null
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        useConnectLink(intent)
+    }
+
+    /** "Scan QR code": Google's scanner, then the same as opening the link. */
+    private fun scanCode() {
+        val options = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+        GmsBarcodeScanning.getClient(this, options).startScan()
+            .addOnSuccessListener { code -> fillFrom(code.rawValue ?: "") }
+            .addOnFailureListener { status.text = "Couldn't scan: ${it.message ?: "Google Play services' scanner isn't available"}. Type the address instead." }
+    }
+
+    /** A bragi://connect link that opened the app (a camera app, a browser). */
+    private fun useConnectLink(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (intent.action == Intent.ACTION_VIEW) fillFrom(data.toString())
+    }
+
+    private fun fillFrom(text: String) {
+        val link = ConnectLink.parse(text)
+        if (link == null) {
+            status.text = "That isn't a Bragi connection code. In the dashboard: Add peer, Connect a device."
+            return
+        }
+        if (BragiService.state.value.running) {
+            status.text = "Stop the audio service first, then scan again."
+            return
+        }
+        val url = runCatching { serverUrl(link.server) }.getOrElse {
+            status.text = it.message ?: "That server address doesn't work here."
+            return
+        }
+        server.setText(url.toString())
+        preferences.edit().putString("server", url.toString()).apply()
+        Diagnostics.record("Server filled in from a connection code")
+        status.text = "Server filled in: ${url.host}. Check the name and address, then start."
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()

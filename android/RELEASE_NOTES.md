@@ -147,3 +147,11 @@ says so instead of failing on an invalid URL. Update checks and Report on
 GitHub use the repository the APK was built from, so a fork's builds point at
 the fork. Phones that already have a saved address keep it. Nothing about
 audio changed since 0.1.13.
+
+## 0.1.15 scan to connect
+
+"Scan QR code" fills in the Bragi server from the code the dashboard shows
+under Add peer, Connect a device. It uses Google Play services' scanner, so the
+app asks for no camera permission. Scanning the code with the phone's own camera
+opens the app with the server filled in as well. The name and Tailscale address
+are found on the phone as before. Nothing about audio changed since 0.1.14.
