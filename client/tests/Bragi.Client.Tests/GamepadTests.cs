@@ -142,9 +142,33 @@ public class GamepadTests
         Assert.Equal((false, "", false, false), TrayIconManager.GamepadMenu(new GamepadStatus([], null, true), false, null));
         Assert.Equal((true, "Use 8BitDo here (now on sage)", false, true), TrayIconManager.GamepadMenu(one, false, null));
         Assert.Equal((true, "Use 8BitDo here", true, true), TrayIconManager.GamepadMenu(one with { Target = "deck" }, true, null));
-        Assert.Equal((true, "8BitDo: not on Windows yet", false, false), TrayIconManager.GamepadMenu(one with { HereSupported = false }, false, null));
+        Assert.Equal((true, "8BitDo: not supported here", false, false), TrayIconManager.GamepadMenu(one with { HereSupported = false }, false, null));
         Assert.Equal((true, "2 controllers: no uinput", true, true),
             TrayIconManager.GamepadMenu(new GamepadStatus(["a", "b"], "deck", true), true, "no uinput"));
+    }
+
+    [Fact]
+    public void Windows_pad_reports_buttons_dpad_and_flips_stick_y()
+    {
+        var state = new GamepadState(new HashSet<string> { "a", "lb", "guide", "rs", "nope" },
+            Lx: -32768, Ly: -32768, Rx: 1234, Ry: 32767, Lt: 255, Rt: 7, Dx: 1, Dy: -1);
+        var report = XusbReport.From(state);
+        Assert.Equal(XusbReport.A | XusbReport.LeftShoulder | XusbReport.Guide | XusbReport.RightThumb
+            | XusbReport.Up | XusbReport.Right, report.Buttons);
+        Assert.Equal((short)-32768, report.Lx);
+        Assert.Equal((short)32767, report.Ly);   // pushed up: xpad -32768, XInput +32767
+        Assert.Equal((short)1234, report.Rx);
+        Assert.Equal((short)-32767, report.Ry);
+        Assert.Equal((byte)255, report.Lt);
+        Assert.Equal((byte)7, report.Rt);
+        Assert.Equal(new XusbReport(0, 0, 0, 0, 0, 0, 0), XusbReport.From(GamepadState.Neutral));
+    }
+
+    [Fact]
+    public void Windows_pad_rumble_scales_motors_and_lasts_until_changed()
+    {
+        Assert.Equal(new Rumble(65535, 257, 0), XusbReport.RumbleFrom(255, 1));
+        Assert.Equal(Rumble.Stop, XusbReport.RumbleFrom(0, 0));
     }
 
     private sealed class FakeHid : IHidDevice

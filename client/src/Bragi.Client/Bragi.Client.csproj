@@ -8,7 +8,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Bumped + tagged as client-vX.Y.Z to cut a release - see
          .github/workflows/client-release.yml and client/README.md. -->
-    <Version>0.1.21</Version>
+    <Version>0.1.22</Version>
     <AssemblyName>Bragi.Client</AssemblyName>
     <!-- The exe's own icon (Explorer, taskbar, installer); only Windows builds carry one. -->
     <ApplicationIcon Condition="$(RuntimeIdentifier.StartsWith('win')) Or '$(OS)' == 'Windows_NT'">Assets/bragi.ico</ApplicationIcon>
@@ -41,6 +41,8 @@
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <!-- Gamepad/ViGEmGamepad.cs: the virtual Xbox pad on Windows (MIT; needs the ViGEmBus driver). -->
+    <PackageReference Include="Nefarius.ViGEm.Client" Version="1.21.256" />
     <PackageReference Include="Velopack" Version="1.2.0" />
   </ItemGroup>
 </Project>
