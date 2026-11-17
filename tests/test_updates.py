@@ -119,6 +119,42 @@ def test_the_updater_script_writes_its_status(tmp_path):
     assert log.count("apt-get update") == 2 and "--only-upgrade" in log
 
 
+@pytest.mark.skipif(os.name == "nt" or not shutil.which("bash"), reason="runs the updater script with bash")
+def test_an_upgrade_of_deskflow_restarts_the_headless_server(tmp_path):
+    """Deskflow's package leaves the old binary running in the user unit;
+    the updater restarts it, but only when Deskflow's version changed."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls"
+    version = tmp_path / "deskflow-version"
+    version.write_text("1.0")
+    for name, body in {
+        # Installing bumps Deskflow's version, as a real upgrade would.
+        "apt-get": f'echo "apt-get $*" >> {calls}; [[ "$*" == *only-upgrade* ]] && echo -n 1.1 > {version}; true',
+        "apt-cache": 'echo "  Candidate: 1.1"',
+        "dpkg-query": f'[[ "$*" == *deskflow* ]] && cat {version} || echo -n 0.1.0',
+        "loginctl": 'echo "1000 sage"',
+        "systemctl": f'echo "systemctl $*" >> {calls}',
+    }.items():
+        (bin_dir / name).write_text("#!/bin/bash\n" + body + "\n")
+        (bin_dir / name).chmod(0o755)
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "update-request").write_text("upgrade\n")
+    script = (ROOT / "packaging" / "bragi-update").read_text().replace("STATE=/var/lib/bragi", f"STATE={state}")
+    (tmp_path / "bragi-update").write_text(script)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+
+    subprocess.run(["bash", str(tmp_path / "bragi-update")], check=True, env=env)
+    assert "systemctl --user -M sage@ try-restart deskflow-headless.service" in calls.read_text()
+    assert json.loads((state / "update.json").read_text())["message"] == "upgraded; Deskflow restarted on 1.1"
+
+    # Upgrading again with nothing new for Deskflow leaves it running.
+    calls.write_text("")
+    subprocess.run(["bash", str(tmp_path / "bragi-update")], check=True, env=env)
+    assert "try-restart" not in calls.read_text()
+
+
 def test_a_request_shows_as_queued_until_the_updater_answers(state, session):
     """The path unit takes a moment to start the updater: the page says it's
     on from the click on, and a second click is refused."""
