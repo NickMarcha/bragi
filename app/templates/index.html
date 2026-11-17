@@ -254,6 +254,14 @@
   <dialog id="add-peer-dialog">
     <h2>Add peer</h2>
     {% include "_downloads.html" %}
+    <section class="pair">
+      <h3>Connect a device</h3>
+      <p class="form-note">A QR code and link that fill in the app's connection for you.</p>
+      <button type="button" hx-post="/pair" hx-vals='js:{"origin": location.origin}'
+              hx-target="#pair-body" hx-swap="innerHTML">Show a connection code</button>
+      <div id="pair-body"></div>
+    </section>
+    <h3>Or add one by hand</h3>
     <form id="add-peer" hx-post="/peers" hx-target="#peers" hx-swap="innerHTML">
       <label>Name <input type="text" name="name" placeholder="laptop" required /></label>
       <label>Tailscale IP <input type="text" name="tailscale_ip" placeholder="100.x.x.x" required pattern="^100\.\d+\.\d+\.\d+$" /></label>

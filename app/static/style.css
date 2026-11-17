@@ -1348,3 +1348,32 @@ dialog h2 {
   font-weight: 600;
   margin-right: 0.5rem;
 }
+
+/* "Connect a device" in the Add peer dialog (app/templates/_pair.html). */
+.pair-code {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-top: 0.5rem;
+}
+.pair-qr svg {
+  display: block;
+  background: #fff;
+  border-radius: 4px;
+  max-width: 100%;
+  height: auto;
+}
+.pair-code > div:last-child {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.pair-code input[type="text"] {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+}
+.pair-code-text strong {
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.1em;
+}

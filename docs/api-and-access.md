@@ -14,7 +14,7 @@ groups:
 | Group | Paths | Needs |
 |---|---|---|
 | public | `/static/*`, `/login`, `/auth/login`, `/api/v1/help` | nothing |
-| peer | `/ws/peer/{name}`, `/api/peers/register`, `/api/peers/register-desktop`, `/api/peers/{name}/streams` | nothing |
+| peer | `/ws/peer/{name}`, `/api/peers/register`, `/api/peers/register-desktop`, `/api/peers/pair`, `/api/peers/{name}/streams` | nothing (`/api/peers/pair` a one-time code) |
 | api | `/api/v1`, `/api/v1/*` | an API key, always |
 | web | everything else, including `/ws` | a session cookie, but only once a password is set |
 
@@ -125,3 +125,7 @@ the HTTP response.
 
 The broadcast carries `ts: null`. The dashboard always shows a `null`-ts
 broadcast unless the user is mid-drag on that same fader.
+
+## Connecting with a code
+
+The Add peer dialog's "Connect a device" makes a one-time code (`app/pairing.py`) and shows it as a QR code and a link, `bragi://connect?server=<dashboard address>&code=<code>`. The apps take the server from it. The tray app also posts `{"code", "name"}` to `/api/peers/pair` and gets an API key named "<name> (connected with a code)", which it saves as `BRAGI_API_KEY`. A code works once, for ten minutes, and lives only in memory. Twenty wrong codes in a row throw away every open one.

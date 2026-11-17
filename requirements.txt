@@ -5,3 +5,4 @@ python-multipart>=0.0.12
 pyyaml>=6.0
 dbus-fast>=2.21
 webauthn>=3.0,<4
+segno>=1.6

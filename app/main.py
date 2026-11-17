@@ -20,6 +20,7 @@ from . import access
 from . import api
 from . import audio_reset
 from . import downloads
+from . import pairing
 from . import auth
 from . import bluetooth
 from . import microphone
@@ -189,6 +190,34 @@ async def register_desktop_peer(settings: DesktopLinkRegistration):
         return {'name': peer.name, 'vban': {'port': peer.vban_port, 'stream_send': peer.stream_send,
                                             'stream_receive': peer.stream_receive}}
     return {'name': peer.name, 'ports': asdict(peer.ports)}
+
+
+class PairRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=20)
+    name: str = Field(min_length=1, max_length=40)
+
+
+@app.post("/api/peers/pair")
+def pair_with_code(body: PairRequest):
+    """A tray app redeems a code from "Connect a device" for its own API key
+    (app/pairing.py)."""
+    try:
+        return {"api_key": pairing.redeem(body.code, body.name)}
+    except pairing.PairingError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/pair", response_class=HTMLResponse)
+def pair_new(request: Request, origin: str = Form(...)):
+    """"Connect a device": a one-time code as a QR code and a link."""
+    try:
+        server = pairing.server_url(origin)
+    except pairing.PairingError as exc:
+        return templates.TemplateResponse(request, "_pair.html", {"error": str(exc)})
+    code = pairing.new_code()
+    link = pairing.link(server, code)
+    return templates.TemplateResponse(request, "_pair.html", {
+        "code": code, "link": link, "qr": pairing.qr_svg(link)})
 
 
 @app.post("/api/peers/register")
