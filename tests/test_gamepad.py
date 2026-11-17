@@ -52,7 +52,7 @@ def test_bluetooth_input_becomes_the_xbox_layout():
 
     pad.feed(EV_KEY, 304, 1)        # A
     pad.feed(EV_KEY, 310, 1)        # LB
-    pad.feed(EV_KEY, 306, 1)        # a back paddle: no Xbox 360 equivalent
+    pad.feed(EV_KEY, 306, 1)        # a back paddle: an extra, not in the plain state
     pad.feed(EV_ABS, ABS_Z, 255)    # right stick fully right
     pad.feed(EV_ABS, ABS_Y, 0)      # left stick fully up
     pad.feed(EV_ABS, ABS_BRAKE, 255)  # left trigger
@@ -314,3 +314,106 @@ def test_the_dashboard_routes_for_the_controller_test(monkeypatch, session):
     assert played == [(0x4000, 0x8000, 600)]
     response = client.post("/gamepads/ghost/rumble")
     assert response.status_code == 400 and "isn't connected" in response.json()["detail"]
+
+
+# --- extra buttons (back paddles, share) ---
+
+def test_extras_copy_a_button_and_the_test_sees_them_raw():
+    pad = Normaliser(HID_GAMEPAD, BT_RANGES)
+    pad.feed(EV_KEY, 306, 1)        # P1
+    pad.feed(EV_KEY, 319, 1)        # share
+    assert pad.feed(EV_SYN, 0, 0) is True
+
+    mapping = {"p1": {"button": "a"}, "p2": {"button": "b"}, "share": {"keys": "Super+Alt+Print"}}
+    assert pad.state(mapping)["buttons"] == ["a"]
+    assert pad.state()["buttons"] == []
+    assert pad.raw_state()["buttons"] == ["p1", "share"]
+    assert pad.take_pressed() == ["p1", "share"]
+    assert pad.take_pressed() == []
+
+    pad.feed(EV_KEY, 306, 1)        # still held: no new press
+    pad.feed(EV_KEY, 306, 0)
+    pad.feed(EV_SYN, 0, 0)
+    assert pad.take_pressed() == []
+    assert pad.state(mapping)["buttons"] == []
+
+
+def test_extras_default_and_survive_the_target_being_saved():
+    assert gamepad.extras() == gamepad.DEFAULT_EXTRAS
+    wire = Wire()
+    hub, _ = opened_hub(wire)
+    hub.set_extras({"p1": {"button": "y"}, "p2": {}})
+    hub.set_target("sage")          # rewrites the file
+    assert gamepad.target() == "sage"
+    assert gamepad.extras() == {"p1": {"button": "y"}, "p2": {}, "share": {"keys": "Super+Alt+Print"}}
+
+
+def test_extra_settings_are_checked():
+    assert gamepad.valid_extra({}) == {}
+    assert gamepad.valid_extra({"button": "rb"}) == {"button": "rb"}
+    assert gamepad.valid_extra({"keys": " Control+Shift+M "}) == {"keys": "Control+Shift+M"}
+    for bad in ({"button": "p1"}, {"keys": "Control+Banana"}, {"button": "a", "keys": "A"}, "a"):
+        with pytest.raises(ValueError):
+            gamepad.valid_extra(bad)
+
+
+def test_an_extra_that_presses_keys_presses_them_on_the_target_once():
+    wire = Wire()
+    hub, pad = opened_hub(wire)
+    pressed = []
+    hub.press_keys = lambda peer, keys: pressed.append((peer, keys))
+    pad.feed(EV_KEY, 319, 1)
+    pad.feed(EV_SYN, 0, 0)
+    hub.input("pad1")
+    assert pressed == []            # nobody has the controller: nothing pressed later either
+
+    hub.set_target("sage")
+    pad.feed(EV_KEY, 319, 0)
+    pad.feed(EV_SYN, 0, 0)
+    hub.input("pad1")
+    pad.feed(EV_KEY, 319, 1)
+    pad.feed(EV_SYN, 0, 0)
+    hub.input("pad1")
+    pad.feed(EV_KEY, 306, 1)        # P1 copies A: no keys
+    pad.feed(EV_SYN, 0, 0)
+    hub.input("pad1")
+    assert pressed == [("sage", "Super+Alt+Print")]
+
+
+def test_a_passed_through_controller_keeps_its_extras_to_itself(tmp_path):
+    wire = Wire()
+    hid_file = open(tmp_path / "hidraw", "wb")
+    try:
+        hub, pad = opened_hub(wire, HID, hid_file)
+        hub.hello("deck", ["hid", "xbox"])
+        hub.set_target("deck")
+        pressed = []
+        hub.press_keys = lambda peer, keys: pressed.append((peer, keys))
+        pad.feed(EV_KEY, 319, 1)
+        pad.feed(EV_SYN, 0, 0)
+        hub.input("pad1")
+        assert pressed == []
+    finally:
+        hid_file.close()
+
+
+def test_the_dashboard_saves_the_extra_buttons(monkeypatch, session):
+    wire = Wire()
+    hub, _ = opened_hub(wire)
+    monkeypatch.setattr(gamepad, "hub", hub)
+    client = TestClient(app)
+
+    page = client.get("/bluetooth").text
+    assert "Extra buttons" in page and 'value="Super+Alt+Print"' in page
+
+    client.post("/bluetooth/extras", data={"p1": "x", "p2": "", "share": "keys", "share_keys": "Control+Shift+M"})
+    assert hub.extras() == {"p1": {"button": "x"}, "p2": {}, "share": {"keys": "Control+Shift+M"}}
+
+    # Switching to keys without any yet starts from the screenshot.
+    client.post("/bluetooth/extras", data={"p1": "keys", "p2": "", "share": "keys", "share_keys": "Control+Shift+M"})
+    assert hub.extras()["p1"] == {"keys": "Super+Alt+Print"}
+
+    page = client.post("/bluetooth/extras", data={"p1": "x", "p2": "", "share": "keys",
+                                                 "share_keys": "Control+Banana"}).text
+    assert "Share: Unknown key" in page
+    assert hub.extras()["p1"] == {"keys": "Super+Alt+Print"}  # nothing saved

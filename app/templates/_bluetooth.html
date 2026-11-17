@@ -38,6 +38,35 @@
 </section>
 
 <section class="security-section">
+  <h3>Extra buttons</h3>
+  <p class="form-note">An Xbox controller has no back paddles or share button, so here each can copy another button or press keys on the computer that has the controller. Linux computers that get the controller itself see them as they are.</p>
+  {% if extras_error %}<p class="form-error">{{ extras_error }}</p>{% endif %}
+  {% set choices = [("a", "A"), ("b", "B"), ("x", "X"), ("y", "Y"), ("lb", "LB"), ("rb", "RB"),
+                    ("ls", "Left stick click"), ("rs", "Right stick click"), ("back", "View"),
+                    ("start", "Menu"), ("guide", "Xbox")] %}
+  <form class="extras-form" hx-post="/bluetooth/extras" hx-target="#bluetooth-body" hx-swap="innerHTML" hx-trigger="change">
+    {% for name, label in extra_labels.items() %}
+    {% set current = extras.get(name, {}) %}
+    <div class="extras-row">
+      <label for="extra-{{ name }}">{{ label }}</label>
+      <select id="extra-{{ name }}" name="{{ name }}">
+        <option value="" {% if not current %}selected{% endif %}>Nothing</option>
+        {% for value, text in choices %}
+        <option value="{{ value }}" {% if current.get("button") == value %}selected{% endif %}>Same as {{ text }}</option>
+        {% endfor %}
+        <option value="keys" {% if current.get("keys") %}selected{% endif %}>Press keys…</option>
+      </select>
+      {% if current.get("keys") %}
+      <input type="text" name="{{ name }}_keys" value="{{ current.get("keys") }}" aria-label="Keys {{ label }} presses"
+             placeholder="Super+Alt+Print" maxlength="100">
+      {% endif %}
+    </div>
+    {% endfor %}
+  </form>
+  <p class="form-note">Keys are written like Control+Shift+M; Super+Alt+Print is Windows' Game Bar screenshot.</p>
+</section>
+
+<section class="security-section">
   <h3>Paired</h3>
   {% if bt.paired %}
   <ul class="controller-list">
