@@ -51,13 +51,52 @@ public class VbanTests
             Enumerable.Range(0, 4).Select(i => BitConverter.ToInt16(pcm, 2 * i)).ToArray());
     }
 
+    private static LinkReport Report(AudioDevices devices, bool receiving = false, float received = 0, float sent = 0,
+        string? playbackName = "Speakers", string? captureName = "Steam Streaming Speakers", string? problem = null) =>
+        new(devices, devices.Playback is null ? null : playbackName, devices.Capture is null ? null : captureName,
+            receiving, received, sent, 0, problem);
+
     [Fact]
-    public void The_menu_says_what_the_link_does()
+    public void The_menu_says_what_the_link_does_with_levels()
     {
-        Assert.Equal("Off: choose devices below", AudioMenu.StatusText(AudioDevices.Off, false, null));
-        Assert.Equal("Waiting for the headset mic, sending to the headset",
-            AudioMenu.StatusText(new AudioDevices("out", "in", false), false, null));
-        Assert.Equal("Hearing the headset mic", AudioMenu.StatusText(new AudioDevices("out", null, false), true, null));
-        Assert.Equal("port busy", AudioMenu.StatusText(new AudioDevices("out", null, false), true, "port busy"));
+        Assert.Equal(("Off: choose where the audio goes below", "", null),
+            AudioMenu.StatusLines(Report(AudioDevices.Off), false));
+
+        var both = new AudioDevices("out", "in", true);
+        var (mic, send, note) = AudioMenu.StatusLines(Report(both, receiving: true, received: 0.5f, sent: 0.05f), false);
+        Assert.Equal("Headset mic ■■■■■ on Speakers", mic);
+        Assert.Equal("To the headset ■■■□□ from Steam Streaming Speakers", send);
+        Assert.Null(note);
+
+        (mic, send, _) = AudioMenu.StatusLines(Report(both), false);
+        Assert.Equal("Headset mic: nothing arriving from Bragi", mic);
+        Assert.Equal("To the headset: nothing is playing on Steam Streaming Speakers", send);
+
+        (_, send, _) = AudioMenu.StatusLines(Report(new AudioDevices(null, "in", false), captureName: "Headset Microphone"), false);
+        Assert.Equal("To the headset: Headset Microphone is silent", send);
+
+        (mic, _, _) = AudioMenu.StatusLines(Report(new AudioDevices("out", null, false), playbackName: null), false);
+        Assert.Equal("Headset mic: its output device isn't plugged in", mic);
+    }
+
+    [Fact]
+    public void A_silent_loopback_with_Voicemeeter_running_points_at_its_MME_entry()
+    {
+        var loopback = Report(new AudioDevices(null, "in", true));
+        Assert.Contains("MME", AudioMenu.StatusLines(loopback, true).Note);
+        Assert.Null(AudioMenu.StatusLines(loopback, false).Note);
+        Assert.Equal("port busy", AudioMenu.StatusLines(loopback with { Problem = "port busy" }, true).Note);
+    }
+
+    [Fact]
+    public void Level_bars_step_every_12_dB()
+    {
+        Assert.Equal("□□□□□", VbanLink.Bars(0));
+        Assert.Equal("□□□□□", VbanLink.Bars(0.0005f));  // -66 dBFS
+        Assert.Equal("■□□□□", VbanLink.Bars(0.002f));   // -54
+        Assert.Equal("■■□□□", VbanLink.Bars(0.01f));    // -40
+        Assert.Equal("■■■□□", VbanLink.Bars(0.05f));    // -26
+        Assert.Equal("■■■■■", VbanLink.Bars(1f));
+        Assert.Equal("■■■■■", VbanLink.Bars(2f));
     }
 }

@@ -59,7 +59,7 @@ public sealed class SetupWindow : Window
                 (true, false) => "This computer is already linked to Bragi. Change the server, name or address here; the audio link restarts with the new settings. Keeping the same name keeps the same ports.",
                 (false, false) => "Registers this computer as a peer, then sets up and starts its audio link.",
                 (true, true) => "This computer is already linked to Bragi. Change the server, name or address here. Keeping the same name keeps the same VBAN stream names.",
-                (false, true) => "Registers this computer as a VBAN peer. Voicemeeter carries the audio: the tray menu shows the stream names to set it to.",
+                (false, true) => "Registers this computer with Bragi. The tray app carries the audio: choose the devices in its Audio menu.",
             },
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),

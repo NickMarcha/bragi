@@ -43,6 +43,17 @@ public sealed record AudioDevices(string? Playback, string? Capture, bool Captur
 /// <summary>A Windows audio endpoint, for the menu.</summary>
 public sealed record AudioEndpoint(string Id, string Name);
 
+/// <summary>What the link is doing right now, for the menu (Tray/AudioMenu.cs).</summary>
+public sealed record LinkReport(
+    AudioDevices Devices,
+    string? PlaybackName,
+    string? CaptureName,
+    bool Receiving,
+    float ReceiveLevel,
+    float SendLevel,
+    float SourceLevel,
+    string? Problem);
+
 /// <summary>
 /// The Windows tray app's own audio link to the Bragi host, instead of
 /// Voicemeeter's VBAN: it plays the host's headset mic (VBAN stream
@@ -51,29 +62,40 @@ public sealed record AudioEndpoint(string Id, string Name);
 /// VbanStreamReceive to the host. 48 kHz, 16-bit stereo, as the host's
 /// PipeWire modules expect. Voicemeeter's own VBAN must be off: both would
 /// want UDP port 6980.
+///
+/// Devices go away and come back (unplugged, or reopened when Voicemeeter
+/// changes a bus from WDM to MME), so a health check every half second
+/// restarts the link when a device stops, and when the captured device is
+/// playing sound but none of it reaches us.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class VbanLink : IDisposable
 {
     private const int Rate = 48000, Channels = 2;
+    private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(500);
+    private const int StuckTicks = 6; // 3 s of sound on the device and none captured
+
     private readonly IPAddress _host;
     private readonly int _port;
     private readonly string _receiveStream; // what the host sends us
     private readonly string _sendStream;    // what we send the host
     private readonly object _lock = new();
-    private UdpClient? _udp;
-    private CancellationTokenSource? _stop;
-    private WasapiOut? _output;
-    private BufferedWaveProvider? _playBuffer;
-    private IWaveIn? _capture;
-    private BufferedWaveProvider? _captureBuffer;
-    private ISampleProvider? _captureChain;
-    private readonly List<float> _pending = new();
-    private uint _counter;
-    private DateTime _lastReceived = DateTime.MinValue;
+    private readonly Timer _health;
+    private Session? _session;
+    private MMDevice? _meterDevice;
+    private string? _meterId;
+    private DateTime _retryAt = DateTime.MaxValue;
+    private int _stuck;
+    private int _stuckRestarts; // in a row, without sound getting through in between
+    private float _receiveLevel, _sendLevel, _sourceLevel;
+    private bool _disposed;
 
     public string? Problem { get; private set; }
     public AudioDevices Devices { get; private set; } = AudioDevices.Off;
+    public string? PlaybackName { get; private set; }
+    public string? CaptureName { get; private set; }
+
+    /// <summary>Raised from any thread when the report may have changed.</summary>
     public event Action? Changed;
 
     public VbanLink(string host, int port, string receiveStream, string sendStream)
@@ -82,9 +104,13 @@ public sealed class VbanLink : IDisposable
         _port = port;
         _receiveStream = receiveStream;
         _sendStream = sendStream;
+        _health = new Timer(_ => HealthCheck(), null, Tick, Tick);
     }
 
-    public bool Receiving => DateTime.UtcNow - _lastReceived < TimeSpan.FromSeconds(2);
+    public bool Receiving => _session is { } s && DateTime.UtcNow - s.LastReceived < TimeSpan.FromSeconds(2);
+
+    public LinkReport Report => new(Devices, PlaybackName, CaptureName, Receiving,
+        _receiveLevel, _sendLevel, _sourceLevel, Problem);
 
     public static IReadOnlyList<AudioEndpoint> Endpoints(DataFlow flow)
     {
@@ -98,192 +124,422 @@ public sealed class VbanLink : IDisposable
     {
         lock (_lock)
         {
-            StopAll();
+            if (_disposed)
+            {
+                return;
+            }
+            StopSession();
             Devices = devices;
             Problem = null;
+            _retryAt = DateTime.MaxValue;
+            _stuck = 0;
+            PlaybackName = devices.Playback is { } p ? NameOf(p) : null;
+            CaptureName = devices.Capture is { } c ? NameOf(c) : null;
+            if (devices.Playback is null && devices.Capture is null)
+            {
+                Changed?.Invoke();
+                return;
+            }
+            var session = new Session(this);
             try
             {
-                if (devices.Playback is not null || devices.Capture is not null)
-                {
-                    // Bound even when only sending: the host's packets would otherwise get ICMP replies.
-                    _udp = new UdpClient(new IPEndPoint(IPAddress.Any, _port));
-                    _stop = new CancellationTokenSource();
-                }
-                if (devices.Playback is not null)
-                {
-                    StartPlayback(devices.Playback);
-                }
-                if (devices.Capture is not null)
-                {
-                    StartCapture(devices.Capture, devices.CaptureIsLoopback);
-                }
+                session.Start(devices);
+                _session = session;
             }
             catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
             {
-                Problem = $"UDP port {_port} is in use. Turn Voicemeeter's VBAN off (Menu > VBAN), then choose the devices again.";
-                StopAll();
+                session.Stop();
+                Problem = $"UDP port {_port} is in use. Turn Voicemeeter's VBAN off (Menu > VBAN); this retries by itself.";
+                _retryAt = DateTime.UtcNow.AddSeconds(10);
             }
             catch (Exception ex) when (ex is SocketException or System.Runtime.InteropServices.COMException or InvalidOperationException or ArgumentException)
             {
-                Problem = $"Audio didn't start: {ex.Message}";
-                StopAll();
+                session.Stop();
+                Problem = $"Audio didn't start ({ex.Message.Trim()}); trying again.";
+                _retryAt = DateTime.UtcNow.AddSeconds(5);
             }
         }
         Changed?.Invoke();
     }
 
-    private static MMDevice Device(string id)
+    private static string? NameOf(string id)
     {
-        using var enumerator = new MMDeviceEnumerator();
-        return enumerator.GetDevice(id);
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            return enumerator.GetDevice(id).FriendlyName;
+        }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or ArgumentException)
+        {
+            return null; // not plugged in right now
+        }
     }
 
-    private void StartPlayback(string id)
+    /// <summary>A device stopped under us: start over shortly (from the health check).</summary>
+    private void SessionFailed(Session session, string what)
     {
-        _playBuffer = new BufferedWaveProvider(new WaveFormat(Rate, 16, Channels))
+        lock (_lock)
         {
-            BufferDuration = TimeSpan.FromMilliseconds(400),
-            DiscardOnBufferOverflow = true,
-            ReadFully = true, // silence while nothing arrives
-        };
-        _output = new WasapiOut(Device(id), AudioClientShareMode.Shared, true, 40);
-        _output.Init(_playBuffer);
-        _output.Play();
-        var udp = _udp!;
-        var token = _stop!.Token;
-        _ = Task.Run(() => ReceiveLoop(udp, token), token);
-    }
-
-    private async Task ReceiveLoop(UdpClient udp, CancellationToken token)
-    {
-        while (!token.IsCancellationRequested)
-        {
-            UdpReceiveResult result;
-            try
+            if (_session != session || _disposed)
             {
-                result = await udp.ReceiveAsync(token);
+                return; // already replaced or stopped on purpose
             }
-            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+            StopSession();
+            Problem = $"{what} stopped; restarting.";
+            _retryAt = DateTime.UtcNow.AddSeconds(2);
+        }
+        Changed?.Invoke();
+    }
+
+    private void HealthCheck()
+    {
+        AudioDevices? restart = null;
+        bool changed;
+        lock (_lock)
+        {
+            if (_disposed)
             {
                 return;
             }
-            catch (SocketException)
+            var before = (Bars(_receiveLevel), Bars(_sendLevel), Bars(_sourceLevel), Receiving);
+            var session = _session;
+            _receiveLevel = session?.TakeReceivePeak() ?? 0;
+            _sendLevel = session?.TakeSendPeak() ?? 0;
+            _sourceLevel = SourcePeak();
+
+            // Sound on the captured device, nothing reaching us: the capture
+            // is stuck on a device that was reopened. Start it again.
+            if (session is not null && Devices.Capture is not null && _sourceLevel > 0.01f && _sendLevel < 0.0005f)
             {
-                continue; // e.g. an ICMP "port unreachable" from the host while it restarts
-            }
-            if (!result.RemoteEndPoint.Address.Equals(_host))
-            {
-                continue;
-            }
-            var packet = Vban.Decode(result.Buffer);
-            if (packet is null || packet.Stream != _receiveStream || packet.SampleRate != Rate || packet.Channels != Channels)
-            {
-                continue;
-            }
-            var wasReceiving = Receiving;
-            _lastReceived = DateTime.UtcNow;
-            // Keep latency low: if the buffer has run far ahead, start over from now.
-            if (_playBuffer is { } buffer)
-            {
-                if (buffer.BufferedDuration > TimeSpan.FromMilliseconds(200))
+                if (++_stuck >= StuckTicks && _stuckRestarts < 3)
                 {
-                    buffer.ClearBuffer();
+                    _stuckRestarts++;
+                    restart = Devices;
                 }
-                buffer.AddSamples(packet.Pcm.ToArray(), 0, packet.Pcm.Length);
+                else if (_stuck >= StuckTicks && Problem is null)
+                {
+                    Problem = $"Sound plays on {CaptureName ?? "the device"}, but none of it can be captured. Is something using it in exclusive mode?";
+                }
             }
-            if (!wasReceiving)
+            else
             {
-                Changed?.Invoke();
+                _stuck = 0;
+                if (_sendLevel >= 0.0005f)
+                {
+                    _stuckRestarts = 0;
+                    if (Problem?.StartsWith("Sound plays on", StringComparison.Ordinal) == true)
+                    {
+                        Problem = null;
+                    }
+                }
             }
+            if (DateTime.UtcNow >= _retryAt)
+            {
+                restart = Devices;
+            }
+            changed = before != (Bars(_receiveLevel), Bars(_sendLevel), Bars(_sourceLevel), Receiving);
+        }
+        if (restart is not null)
+        {
+            Apply(restart);
+        }
+        else if (changed)
+        {
+            Changed?.Invoke();
         }
     }
 
-    private void StartCapture(string id, bool loopback)
+    /// <summary>The peak the captured device itself shows (what's playing on it), 0 when unknown.</summary>
+    private float SourcePeak()
     {
-        var device = Device(id);
-        _capture = loopback ? new WasapiLoopbackCapture(device) : new WasapiCapture(device, true, 20);
-        var format = _capture.WaveFormat;
-        _captureBuffer = new BufferedWaveProvider(format) { BufferDuration = TimeSpan.FromSeconds(1), DiscardOnBufferOverflow = true, ReadFully = false };
-        ISampleProvider chain = _captureBuffer.ToSampleProvider();
-        chain = chain.WaveFormat.Channels switch
+        var id = Devices.Capture;
+        try
         {
-            1 => new MonoToStereoSampleProvider(chain),
-            2 => chain,
-            _ => new MultiplexingSampleProvider([chain], 2), // the first two channels
-        };
-        if (chain.WaveFormat.SampleRate != Rate)
-        {
-            chain = new WdlResamplingSampleProvider(chain, Rate);
-        }
-        _captureChain = chain;
-        _capture.DataAvailable += OnCaptured;
-        _capture.StartRecording();
-    }
-
-    private void OnCaptured(object? sender, WaveInEventArgs e)
-    {
-        if (_captureBuffer is null || _captureChain is null || _udp is null)
-        {
-            return;
-        }
-        _captureBuffer.AddSamples(e.Buffer, 0, e.BytesRecorded);
-        var chunk = new float[Vban.MaxFrames * Channels];
-        int read;
-        while (_captureBuffer.BufferedBytes > 0 && (read = _captureChain.Read(chunk, 0, chunk.Length)) > 0)
-        {
-            _pending.AddRange(chunk.AsSpan(0, read).ToArray());
-        }
-        var pcm = new byte[Vban.MaxFrames * Channels * 2];
-        while (_pending.Count >= Vban.MaxFrames * Channels)
-        {
-            Vban.FloatToPcm16(_pending.GetRange(0, Vban.MaxFrames * Channels).ToArray(), pcm);
-            _pending.RemoveRange(0, Vban.MaxFrames * Channels);
-            try
+            if (id != _meterId)
             {
-                var packet = Vban.Encode(_sendStream, Rate, Channels, _counter++, pcm);
-                _udp.Send(packet, packet.Length, new IPEndPoint(_host, _port));
+                _meterDevice?.Dispose();
+                _meterDevice = null;
+                _meterId = id;
+                if (id is not null)
+                {
+                    using var enumerator = new MMDeviceEnumerator();
+                    _meterDevice = enumerator.GetDevice(id);
+                }
             }
-            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
-            {
-                return;
-            }
+            return _meterDevice?.AudioMeterInformation.MasterPeakValue ?? 0;
+        }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or ArgumentException or InvalidCastException)
+        {
+            _meterDevice?.Dispose();
+            _meterDevice = null;
+            _meterId = null; // look it up again next time
+            return 0;
         }
     }
 
-    private void StopAll()
+    private void StopSession()
     {
-        _stop?.Cancel();
-        if (_capture is not null)
-        {
-            _capture.DataAvailable -= OnCaptured;
-            try
-            {
-                _capture.StopRecording();
-            }
-            catch (Exception)
-            {
-                // already stopped or the device went away
-            }
-            _capture.Dispose();
-        }
-        _output?.Stop();
-        _output?.Dispose();
-        _udp?.Dispose();
-        _capture = null;
-        _output = null;
-        _udp = null;
-        _playBuffer = null;
-        _captureBuffer = null;
-        _captureChain = null;
-        _pending.Clear();
-        _lastReceived = DateTime.MinValue;
+        _session?.Stop();
+        _session = null;
     }
 
     public void Dispose()
     {
         lock (_lock)
         {
-            StopAll();
+            _disposed = true;
+            StopSession();
+            _meterDevice?.Dispose();
+            _meterDevice = null;
+        }
+        _health.Dispose();
+    }
+
+    /// <summary>Level bars for a 0..1 peak: five steps over -60..0 dBFS.</summary>
+    public static string Bars(float peak)
+    {
+        var filled = peak <= 0 ? 0 : (int)Math.Clamp(Math.Ceiling((20 * Math.Log10(peak) + 60) / 12), 0, 5);
+        return new string('■', filled) + new string('□', 5 - filled);
+    }
+
+    /// <summary>
+    /// One run of the link with one set of devices. Everything the audio
+    /// threads touch lives here, so stopping a session can't pull state out
+    /// from under a callback that's still finishing.
+    /// </summary>
+    private sealed class Session
+    {
+        private readonly VbanLink _link;
+        private readonly CancellationTokenSource _stop = new();
+        private readonly List<float> _pending = new();
+        private UdpClient? _udp;
+        private WasapiOut? _output;
+        private BufferedWaveProvider? _playBuffer;
+        private IWaveIn? _capture;
+        private BufferedWaveProvider? _captureBuffer;
+        private ISampleProvider? _captureChain;
+        private uint _counter;
+        private float _receivePeak, _sendPeak;
+        private volatile bool _stopping;
+
+        public DateTime LastReceived { get; private set; } = DateTime.MinValue;
+
+        public Session(VbanLink link) => _link = link;
+
+        public float TakeReceivePeak() => Interlocked.Exchange(ref _receivePeak, 0);
+        public float TakeSendPeak() => Interlocked.Exchange(ref _sendPeak, 0);
+
+        public void Start(AudioDevices devices)
+        {
+            // Bound even when only sending: the host's packets would otherwise get ICMP replies.
+            _udp = new UdpClient(new IPEndPoint(IPAddress.Any, _link._port));
+            if (devices.Playback is not null)
+            {
+                StartPlayback(devices.Playback);
+            }
+            if (devices.Capture is not null)
+            {
+                StartCapture(devices.Capture, devices.CaptureIsLoopback);
+            }
+        }
+
+        private static MMDevice Device(string id)
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            return enumerator.GetDevice(id);
+        }
+
+        private void StartPlayback(string id)
+        {
+            _playBuffer = new BufferedWaveProvider(new WaveFormat(Rate, 16, Channels))
+            {
+                BufferDuration = TimeSpan.FromMilliseconds(400),
+                DiscardOnBufferOverflow = true,
+                ReadFully = true, // silence while nothing arrives
+            };
+            _output = new WasapiOut(Device(id), AudioClientShareMode.Shared, true, 40);
+            _output.Init(_playBuffer);
+            _output.PlaybackStopped += (_, _) =>
+            {
+                if (!_stopping)
+                {
+                    _link.SessionFailed(this, "Playing the headset mic");
+                }
+            };
+            _output.Play();
+            var udp = _udp!;
+            _ = Task.Run(() => ReceiveLoop(udp, _playBuffer, _stop.Token));
+        }
+
+        private async Task ReceiveLoop(UdpClient udp, BufferedWaveProvider buffer, CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                UdpReceiveResult result;
+                try
+                {
+                    result = await udp.ReceiveAsync(token);
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+                {
+                    return;
+                }
+                catch (SocketException)
+                {
+                    continue; // e.g. an ICMP "port unreachable" from the host while it restarts
+                }
+                if (!result.RemoteEndPoint.Address.Equals(_link._host))
+                {
+                    continue;
+                }
+                var packet = Vban.Decode(result.Buffer);
+                if (packet is null || packet.Stream != _link._receiveStream || packet.SampleRate != Rate || packet.Channels != Channels)
+                {
+                    continue;
+                }
+                var wasReceiving = DateTime.UtcNow - LastReceived < TimeSpan.FromSeconds(2);
+                LastReceived = DateTime.UtcNow;
+                var pcm = packet.Pcm.ToArray();
+                Peak(ref _receivePeak, Pcm16Peak(pcm));
+                // Keep latency low: if the buffer has run far ahead, start over from now.
+                if (buffer.BufferedDuration > TimeSpan.FromMilliseconds(200))
+                {
+                    buffer.ClearBuffer();
+                }
+                buffer.AddSamples(pcm, 0, pcm.Length);
+                if (!wasReceiving)
+                {
+                    _link.Changed?.Invoke();
+                }
+            }
+        }
+
+        private void StartCapture(string id, bool loopback)
+        {
+            var device = Device(id);
+            _capture = loopback ? new WasapiLoopbackCapture(device) : new WasapiCapture(device, true, 20);
+            var format = _capture.WaveFormat;
+            _captureBuffer = new BufferedWaveProvider(format) { BufferDuration = TimeSpan.FromSeconds(1), DiscardOnBufferOverflow = true, ReadFully = false };
+            ISampleProvider chain = _captureBuffer.ToSampleProvider();
+            chain = chain.WaveFormat.Channels switch
+            {
+                1 => new MonoToStereoSampleProvider(chain),
+                2 => chain,
+                _ => new MultiplexingSampleProvider([chain], 2), // the first two channels
+            };
+            if (chain.WaveFormat.SampleRate != Rate)
+            {
+                chain = new WdlResamplingSampleProvider(chain, Rate);
+            }
+            _captureChain = chain;
+            _capture.DataAvailable += OnCaptured;
+            _capture.RecordingStopped += (_, _) =>
+            {
+                if (!_stopping)
+                {
+                    _link.SessionFailed(this, loopback ? "Capturing what plays on the device" : "Capturing the input");
+                }
+            };
+            _capture.StartRecording();
+        }
+
+        private void OnCaptured(object? sender, WaveInEventArgs e)
+        {
+            if (_stopping || _captureBuffer is not { } buffer || _captureChain is not { } chain || _udp is not { } udp)
+            {
+                return;
+            }
+            buffer.AddSamples(e.Buffer, 0, e.BytesRecorded);
+            var chunk = new float[Vban.MaxFrames * Channels];
+            int read;
+            while (buffer.BufferedBytes > 0 && (read = chain.Read(chunk, 0, chunk.Length)) > 0)
+            {
+                var max = 0f;
+                for (var i = 0; i < read; i++)
+                {
+                    max = Math.Max(max, Math.Abs(chunk[i]));
+                }
+                Peak(ref _sendPeak, max);
+                _pending.AddRange(chunk.AsSpan(0, read).ToArray());
+            }
+            var pcm = new byte[Vban.MaxFrames * Channels * 2];
+            while (_pending.Count >= Vban.MaxFrames * Channels)
+            {
+                Vban.FloatToPcm16(_pending.GetRange(0, Vban.MaxFrames * Channels).ToArray(), pcm);
+                _pending.RemoveRange(0, Vban.MaxFrames * Channels);
+                try
+                {
+                    var packet = Vban.Encode(_link._sendStream, Rate, Channels, _counter++, pcm);
+                    udp.Send(packet, packet.Length, new IPEndPoint(_link._host, _link._port));
+                }
+                catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
+                {
+                    return;
+                }
+            }
+        }
+
+        private static float Pcm16Peak(byte[] pcm)
+        {
+            var max = 0;
+            for (var i = 0; i + 1 < pcm.Length; i += 2)
+            {
+                max = Math.Max(max, Math.Abs((int)BitConverter.ToInt16(pcm, i)));
+            }
+            return max / 32768f;
+        }
+
+        private static void Peak(ref float slot, float value)
+        {
+            float seen;
+            do
+            {
+                seen = Volatile.Read(ref slot);
+                if (value <= seen)
+                {
+                    return;
+                }
+            }
+            while (Interlocked.CompareExchange(ref slot, value, seen) != seen);
+        }
+
+        public void Stop()
+        {
+            _stopping = true;
+            _stop.Cancel();
+            if (_capture is not null)
+            {
+                _capture.DataAvailable -= OnCaptured;
+                try
+                {
+                    _capture.StopRecording();
+                }
+                catch (Exception)
+                {
+                    // already stopped or the device went away
+                }
+                // Disposing waits for the capture thread; do it off the caller's thread
+                // (which may hold the link's lock while a callback is finishing).
+                var capture = _capture;
+                _ = Task.Run(capture.Dispose);
+            }
+            if (_output is not null)
+            {
+                var output = _output;
+                try
+                {
+                    output.Stop();
+                }
+                catch (Exception)
+                {
+                    // the device went away
+                }
+                _ = Task.Run(output.Dispose);
+            }
+            _udp?.Dispose();
+            _capture = null;
+            _output = null;
+            _udp = null;
         }
     }
 }

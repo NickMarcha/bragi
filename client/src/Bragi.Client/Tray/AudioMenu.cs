@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.Versioning;
 using Avalonia.Controls;
 using Avalonia.Threading;
@@ -9,15 +10,17 @@ using NAudio.CoreAudioApi;
 namespace Bragi.Client.Tray;
 
 /// <summary>
-/// The Windows tray's Audio submenu: where the headset mic plays, what goes
-/// to the headset, and how the link is doing (Audio/VbanLink.cs). The device
-/// lists are read again each time the menu opens.
+/// The Windows tray's Audio submenu: what the link is doing, with levels
+/// (Audio/VbanLink.cs), then where the headset mic plays and what goes to
+/// the headset. The device lists are read again each time the menu opens.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class AudioMenu
 {
     private readonly VbanLink _link;
-    private readonly NativeMenuItem _status = new() { IsEnabled = false };
+    private readonly NativeMenuItem _mic = new() { IsEnabled = false };
+    private readonly NativeMenuItem _send = new() { IsEnabled = false };
+    private readonly NativeMenuItem _note = new() { IsEnabled = false, IsVisible = false };
     private readonly NativeMenu _playback = new();
     private readonly NativeMenu _capture = new();
 
@@ -28,10 +31,12 @@ public sealed class AudioMenu
         _link = link;
         var menu = new NativeMenu
         {
-            _status,
+            _mic,
+            _send,
+            _note,
             new NativeMenuItemSeparator(),
-            new NativeMenuItem { Header = "Headset mic plays on", Menu = _playback },
-            new NativeMenuItem { Header = "Sends to the headset", Menu = _capture },
+            new NativeMenuItem { Header = "Play the headset mic on", Menu = _playback },
+            new NativeMenuItem { Header = "Send to the headset", Menu = _capture },
         };
         menu.Opening += (_, _) => Refresh();
         Item = new NativeMenuItem { Header = "Audio", Menu = menu };
@@ -39,31 +44,77 @@ public sealed class AudioMenu
         Refresh();
     }
 
-    /// <summary>The status line for these devices and this link state.</summary>
-    public static string StatusText(AudioDevices devices, bool receiving, string? problem)
+    /// <summary>The status lines (headset mic, sending, note) for this report.</summary>
+    public static (string Mic, string Send, string? Note) StatusLines(LinkReport r, bool voicemeeterRunning)
     {
-        if (problem is not null)
+        if (r.Devices.Playback is null && r.Devices.Capture is null)
         {
-            return problem;
+            return ("Off: choose where the audio goes below", "", r.Problem);
         }
-        if (devices.Playback is null && devices.Capture is null)
+
+        var mic = r.Devices.Playback is null
+            ? "Headset mic: off"
+            : r.PlaybackName is null
+                ? "Headset mic: its output device isn't plugged in"
+                : r.Receiving
+                    ? $"Headset mic {VbanLink.Bars(r.ReceiveLevel)} on {r.PlaybackName}"
+                    : "Headset mic: nothing arriving from Bragi";
+
+        string send;
+        string? note = r.Problem;
+        if (r.Devices.Capture is null)
         {
-            return "Off: choose devices below";
+            send = "To the headset: off";
         }
-        var parts = new List<string>();
-        if (devices.Playback is not null)
+        else if (r.CaptureName is null)
         {
-            parts.Add(receiving ? "hearing the headset mic" : "waiting for the headset mic");
+            send = "To the headset: its device isn't plugged in";
         }
-        if (devices.Capture is not null)
+        else if (r.SendLevel >= 0.0005f)
         {
-            parts.Add("sending to the headset");
+            send = $"To the headset {VbanLink.Bars(r.SendLevel)} from {r.CaptureName}";
         }
-        var text = string.Join(", ", parts);
-        return char.ToUpperInvariant(text[0]) + text[1..];
+        else
+        {
+            send = r.Devices.CaptureIsLoopback
+                ? $"To the headset: nothing is playing on {r.CaptureName}"
+                : $"To the headset: {r.CaptureName} is silent";
+            // Voicemeeter's WDM and KS outputs skip the Windows mixer, so a
+            // loopback of the device they play to hears nothing.
+            if (note is null && r.Devices.CaptureIsLoopback && voicemeeterRunning)
+            {
+                note = "If Voicemeeter plays to it, pick the device's MME entry there, not WDM or KS";
+            }
+        }
+        return (mic, send, note);
     }
 
-    private void RenderStatus() => _status.Header = StatusText(_link.Devices, _link.Receiving, _link.Problem);
+    private void RenderStatus()
+    {
+        var (mic, send, note) = StatusLines(_link.Report, VoicemeeterRunning());
+        _mic.Header = mic;
+        _send.Header = send;
+        _send.IsVisible = send.Length > 0;
+        _note.Header = note ?? "";
+        _note.IsVisible = note is not null;
+    }
+
+    private static bool VoicemeeterRunning()
+    {
+        foreach (var name in new[] { "voicemeeter", "voicemeeterpro", "voicemeeter8", "voicemeeter8x64", "voicemeeterpro_x64", "voicemeeter_x64" })
+        {
+            var found = Process.GetProcessesByName(name);
+            foreach (var p in found)
+            {
+                p.Dispose();
+            }
+            if (found.Length > 0)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private void Refresh()
     {
@@ -80,17 +131,19 @@ public sealed class AudioMenu
 
         _capture.Items.Clear();
         _capture.Items.Add(Choice("Off", devices.Capture is null, () => Save(_link.Devices with { Capture = null })));
-        foreach (var input in SafeEndpoints(DataFlow.Capture))
-        {
-            _capture.Items.Add(Choice(input.Name, devices.Capture == input.Id && !devices.CaptureIsLoopback,
-                () => Save(_link.Devices with { Capture = input.Id, CaptureIsLoopback = false })));
-        }
         _capture.Items.Add(new NativeMenuItemSeparator());
-        _capture.Items.Add(new NativeMenuItem { Header = "What's playing on:", IsEnabled = false });
+        _capture.Items.Add(new NativeMenuItem { Header = "What plays on an output:", IsEnabled = false });
         foreach (var output in SafeEndpoints(DataFlow.Render))
         {
             _capture.Items.Add(Choice(output.Name, devices.Capture == output.Id && devices.CaptureIsLoopback,
                 () => Save(_link.Devices with { Capture = output.Id, CaptureIsLoopback = true })));
+        }
+        _capture.Items.Add(new NativeMenuItemSeparator());
+        _capture.Items.Add(new NativeMenuItem { Header = "A microphone or input:", IsEnabled = false });
+        foreach (var input in SafeEndpoints(DataFlow.Capture))
+        {
+            _capture.Items.Add(Choice(input.Name, devices.Capture == input.Id && !devices.CaptureIsLoopback,
+                () => Save(_link.Devices with { Capture = input.Id, CaptureIsLoopback = false })));
         }
     }
 
