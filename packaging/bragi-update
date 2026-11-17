@@ -65,6 +65,7 @@ if [[ "$action" == upgrade ]]; then
     for pkg in $PACKAGES; do
         dpkg-query -W "$pkg" >/dev/null 2>&1 && upgradable="$upgradable $pkg"
     done
+    deskflow_before="$(dpkg-query -W -f='${Version}' deskflow 2>/dev/null || true)"
     # Bragi's postinst restarts Bragi on the new code, so the dashboard
     # reconnects to a new version while this finishes.
     # shellcheck disable=SC2086
@@ -73,7 +74,18 @@ if [[ "$action" == upgrade ]]; then
         write_status failed "upgrade failed: $(echo "$out" | grep -E '^(E|W):' | head -3)"
         exit 1
     fi
-    write_status done "upgraded"
+    # Deskflow's package doesn't restart the headless server (a user unit),
+    # so it would keep running the old binary. Restart it where it runs;
+    # try-restart leaves it alone for users who don't run it.
+    message="upgraded"
+    deskflow_after="$(dpkg-query -W -f='${Version}' deskflow 2>/dev/null || true)"
+    if [[ -n "$deskflow_after" && "$deskflow_after" != "$deskflow_before" ]]; then
+        for user in $(loginctl list-users --no-legend 2>/dev/null | awk '{print $2}'); do
+            systemctl --user -M "$user@" try-restart deskflow-headless.service 2>/dev/null || true
+        done
+        message="upgraded; Deskflow restarted on $deskflow_after"
+    fi
+    write_status done "$message"
 else
     write_status done "checked"
 fi
