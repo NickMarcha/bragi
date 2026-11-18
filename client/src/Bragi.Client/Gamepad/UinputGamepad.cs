@@ -20,7 +20,9 @@ namespace Bragi.Client.Gamepad;
 [SupportedOSPlatform("linux")]
 public sealed unsafe class UinputGamepad : IVirtualGamepad
 {
-    private const int O_RDWR = 2, O_NONBLOCK = 0x800;
+    // O_CLOEXEC: the updater and the next version are started from this
+    // process, and an inherited uinput fd keeps the old virtual device alive.
+    private const int O_RDWR = 2, O_NONBLOCK = 0x800, O_CLOEXEC = 0x80000;
     private const ushort EV_SYN = 0, EV_KEY = 1, EV_ABS = 3, EV_FF = 0x15, EV_UINPUT = 0x0101;
     private const ushort FF_RUMBLE = 0x50, FF_GAIN = 0x60, UI_FF_UPLOAD = 1, UI_FF_ERASE = 2;
     private const int EffectsMax = 16;
@@ -68,7 +70,7 @@ public sealed unsafe class UinputGamepad : IVirtualGamepad
 
     public UinputGamepad(string name = "Bragi virtual Xbox 360 controller")
     {
-        _fd = open("/dev/uinput", O_RDWR | O_NONBLOCK);
+        _fd = open("/dev/uinput", O_RDWR | O_NONBLOCK | O_CLOEXEC);
         if (_fd < 0)
         {
             throw new InvalidOperationException($"Can't open /dev/uinput (errno {Marshal.GetLastPInvokeError()}). Is Steam's udev rule installed?");

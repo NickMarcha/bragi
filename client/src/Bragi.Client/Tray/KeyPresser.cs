@@ -128,7 +128,8 @@ public sealed class KeyPresser : IDisposable
 [SupportedOSPlatform("linux")]
 public sealed unsafe class UinputKeyboard : IKeyboard
 {
-    private const int O_WRONLY = 1, O_NONBLOCK = 0x800;
+    // O_CLOEXEC: see UinputGamepad.
+    private const int O_WRONLY = 1, O_NONBLOCK = 0x800, O_CLOEXEC = 0x80000;
     private const ushort EV_SYN = 0, EV_KEY = 1;
     private const nuint UI_SET_EVBIT = 0x40045564, UI_SET_KEYBIT = 0x40045565;
     private const nuint UI_DEV_SETUP = 0x405C5503, UI_DEV_CREATE = 0x5501, UI_DEV_DESTROY = 0x5502;
@@ -144,7 +145,7 @@ public sealed unsafe class UinputKeyboard : IKeyboard
 
     public UinputKeyboard(string name = "Bragi virtual keyboard")
     {
-        _fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+        _fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
         if (_fd < 0)
         {
             throw new InvalidOperationException($"Can't open /dev/uinput (errno {Marshal.GetLastPInvokeError()}).");
