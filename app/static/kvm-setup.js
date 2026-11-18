@@ -115,6 +115,40 @@
     renderLayout();
   }
 
+  // --- monitors (app/monitors.py) ------------------------------------------------
+
+  function monitorLine(m) {
+    const size = m.width_mm && m.height_mm
+      ? `, ${(Math.hypot(m.width_mm, m.height_mm) / 25.4).toFixed(0)}″ (${Math.round(m.width_mm / 10)}×${Math.round(m.height_mm / 10)} cm)`
+      : "";
+    const turned = m.rotation ? `, turned ${m.rotation}°` : "";
+    const mirrored = (m.mirrors || []).length ? `, mirrored on ${m.mirrors.map((r) => r.name).join(" and ")}` : "";
+    return `${m.name}: ${m.pixel_width}×${m.pixel_height} at ${Math.round(m.scale * 100)}%${turned}${size}${m.primary ? ", main" : ""}${mirrored}`;
+  }
+
+  function renderMonitors(view) {
+    const rows = view.computers.map((c) => {
+      const state = !c.peer ? "no Bragi tray app has reported yet"
+        : c.online ? `${c.monitors.length} monitor${c.monitors.length === 1 ? "" : "s"}`
+        : `offline; last seen ${new Date(c.seen * 1000).toLocaleString()}`;
+      return el("li", {},
+        el("strong", {}, c.computer), " ", el("span", { class: "form-note" }, state),
+        c.monitors.length ? el("ul", { class: "kvm-monitor-list" }, ...c.monitors.map((m) => el("li", {}, monitorLine(m)))) : "");
+    });
+    $("#kvm-monitors").replaceChildren(rows.length ? el("ul", { class: "kvm-monitor-computers" }, ...rows)
+      : el("p", { class: "form-note" }, "No computers yet."));
+  }
+
+  async function loadMonitors() {
+    try {
+      renderMonitors(await call("GET", "/kvm/monitors"));
+    } catch (err) {
+      $("#kvm-monitors").replaceChildren(el("p", { class: "form-error" }, err.message));
+    }
+  }
+
+  document.addEventListener("bragi:monitors", () => { if (dialog.open) loadMonitors(); });
+
   // --- hotkeys -----------------------------------------------------------------
 
   // keystroke(KEYS) = ACTION, parsed into a form when it's one of these.
@@ -494,6 +528,7 @@
       config = await call("GET", "/kvm/config");
       selected = null;
       render();
+      loadMonitors();
       loadMouse();
       loadBindings();
     } catch (err) {

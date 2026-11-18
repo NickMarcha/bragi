@@ -20,6 +20,7 @@ from . import access
 from . import api
 from . import audio_reset
 from . import downloads
+from . import monitors
 from . import pairing
 from . import auth
 from . import bluetooth
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI):
         await asyncio.to_thread(peers_module.sync_managed_conf)
     except peers_module.ConfigWriteError:
         logger.exception("managed peers config not written")
+    monitors.broadcast = ws.manager.broadcast_nowait
     tasks = [
         asyncio.create_task(watcher.watch(ws.on_node_changed)),
         asyncio.create_task(knob_watcher.watch(ws.broadcast_headset_volume_change)),
@@ -322,6 +324,16 @@ def _kvm_config_call(fn, *args):
         return {"ok": True, "note": fn(*args), "config": kvm_config.read()}
     except kvm_config.ConfigError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/kvm/monitors")
+async def kvm_monitors():
+    """Each KVM computer's monitors, as its tray app reported them (app/monitors.py)."""
+    try:
+        computers = (await asyncio.to_thread(kvm_config.read))["computers"]
+    except kvm_config.ConfigError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return await asyncio.to_thread(monitors.view, computers, peer_control.desktop_peers())
 
 
 @app.get("/kvm/config")

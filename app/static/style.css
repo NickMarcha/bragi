@@ -1377,3 +1377,17 @@ dialog h2 {
   font-family: ui-monospace, monospace;
   letter-spacing: 0.1em;
 }
+
+/* KVM setup's Monitors list (app/static/kvm-setup.js). */
+.kvm-monitor-computers {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.kvm-monitor-list {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 13px;
+}
