@@ -6,6 +6,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Bragi.Client.Config;
 using Bragi.Client.Gamepad;
+using Bragi.Client.Monitors;
 using Bragi.Client.Setup;
 using Bragi.Client.Tray;
 
@@ -19,6 +20,7 @@ public partial class App : Application
     private GamepadService? _gamepads;
     private KvmService? _kvm;
     private KeyPresser? _keys;
+    private MonitorReporter? _monitors;
     private Audio.VbanLink? _audio;
 
     public override void Initialize()
@@ -86,6 +88,14 @@ public partial class App : Application
         _keys = new KeyPresser(OperatingSystem.IsLinux() ? () => new UinputKeyboard() : null) { Send = _presenceClient.SendAsync };
         _presenceClient.MessageReceived += _keys.OnMessage;
         _presenceClient.Disconnected += _keys.OnDisconnected;
+        // This computer's monitors, for the KVM layout (app/monitors.py).
+        IMonitorSource? monitorSource = OperatingSystem.IsWindows() ? new WindowsMonitors()
+            : OperatingSystem.IsLinux() ? new KscreenMonitors() : null;
+        _monitors = new MonitorReporter(monitorSource, TimeSpan.FromSeconds(OperatingSystem.IsWindows() ? 3 : 5))
+            { Send = _presenceClient.SendAsync };
+        _presenceClient.MessageReceived += _monitors.OnMessage;
+        _presenceClient.Disconnected += _monitors.OnDisconnected;
+        _monitors.Start();
         // Windows: the app carries the audio itself, as VBAN (instead of Voicemeeter's).
         NativeMenuItem? audioItem = null;
         if (OperatingSystem.IsWindows() && config is { VbanPort: { } port, VbanStreamSend: { } fromHost, VbanStreamReceive: { } toHost })
@@ -106,6 +116,8 @@ public partial class App : Application
         _gamepads?.Dispose();
         _keys?.Dispose();
         _keys = null;
+        _monitors?.Dispose();
+        _monitors = null;
         _audio?.Dispose();
         _audio = null;
         _trayIconManager = null;

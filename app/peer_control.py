@@ -13,11 +13,14 @@ import asyncio
 import contextlib
 import ipaddress
 import json
+import logging
 from dataclasses import asdict
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from . import gamepad, kvm, peer_presence, peers, ws
+from . import gamepad, kvm, monitors, peer_presence, peers, ws
+
+logger = logging.getLogger("bragi.peer_control")
 
 _connections: dict[str, dict[WebSocket, asyncio.Queue]] = {}
 # Sockets of Android clients; every other connection is a desktop tray app.
@@ -111,6 +114,11 @@ def peer_for_computer(computer: str, computers: list[dict]) -> str | None:
                  if p.lower() in names and any(s not in _android for s in conns)), None)
 
 
+def desktop_peers() -> set[str]:
+    """The peers with a tray app connected now (not the Android app)."""
+    return {p for p, conns in _connections.items() if any(s not in _android for s in conns)}
+
+
 def press_keys(peer: str, codes: list[int]) -> None:
     """Asks a tray app to press and release these evdev key codes, in
     order, on its own computer."""
@@ -151,6 +159,13 @@ def _desktop_message(name: str, raw: str) -> None:
         return
     if message.get('type') == 'client_hello' and isinstance(message.get('features'), list):
         _features[name] = {f for f in message['features'] if f in ('keys',)}
+        return
+    if message.get('type') == 'monitors':
+        # This computer's monitors, for the KVM layout (app/monitors.py).
+        try:
+            monitors.report(name, message)
+        except monitors.MonitorError as exc:
+            logger.info("monitors from %s refused: %s", name, exc)
         return
     if gamepad.hub is None:
         return
