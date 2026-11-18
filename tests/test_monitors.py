@@ -30,6 +30,19 @@ def test_a_report_is_kept_and_only_a_change_counts(session):
     assert seen == [{"type": "monitors"}, {"type": "monitors"}]
 
 
+def test_a_mirrored_tv_has_no_area_but_is_known(session):
+    tv_mirror = {k: TV[k] for k in ("id", "name", "connector", "pixel_width", "pixel_height", "width_mm", "height_mm")}
+    monitors.report("sagedeck", {"source": "kscreen", "monitors": [monitor(mirrors=[tv_mirror])]}, now=100)
+    view = monitors.view([{"name": "sagedeck"}], set())
+    (msi,) = view["computers"][0]["monitors"]
+    assert [r["name"] for r in msi["mirrors"]] == ["LG TV"]
+    assert view["known"]["GSM-0001-16843009"] | {"seen": 0} == {
+        "name": "LG TV", "width_mm": 1600, "height_mm": 900, "computer": "sagedeck",
+        "mirror_of": "MSI-3CD9-CD9M285200091", "seen": 0}
+    with pytest.raises(monitors.MonitorError):
+        monitors.normalise({"monitors": [monitor(mirrors=[{"id": ""}])]})
+
+
 def test_the_tv_is_known_by_its_edid_wherever_its_cable_is(session):
     monitors.report("sagedeck", {"source": "kscreen", "monitors": [monitor(), TV]}, now=100)
     monitors.report("sage", {"source": "windows", "monitors": [TV | {"connector": "DISPLAY2", "x": 2560}]}, now=200)

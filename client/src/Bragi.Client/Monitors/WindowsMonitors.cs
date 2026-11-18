@@ -20,7 +20,7 @@ public sealed class WindowsMonitors : IMonitorSource
 {
     public string Kind => "windows";
 
-    private const int MonitorInfoPrimary = 1, EnumCurrentSettings = -1, GetDeviceInterfaceName = 1;
+    private const int MonitorInfoPrimary = 1, EnumCurrentSettings = -1, GetDeviceInterfaceName = 1, DeviceActive = 1;
     private static readonly IntPtr PerMonitorAwareV2 = new(-4);
 
     [StructLayout(LayoutKind.Sequential)]
@@ -90,9 +90,17 @@ public sealed class WindowsMonitors : IMonitorSource
                 var rotation = EnumDisplaySettingsW(info.Device, EnumCurrentSettings, ref mode) ? mode.DisplayOrientation * 90 : 0;
                 var (width, height) = (info.Monitor.Right - info.Monitor.Left, info.Monitor.Bottom - info.Monitor.Top);
                 var (pixelWidth, pixelHeight) = mode.PelsWidth > 0 ? (mode.PelsWidth, mode.PelsHeight) : (width, height);
-                monitors.Add(MonitorInfo.From(ReadEdid(info.Device), info.Device.Replace(@"\\.\", ""),
+                // Every monitor on this desktop output: the first is the monitor,
+                // any more show a copy of it (Windows' "Duplicate these displays").
+                var attached = AttachedMonitors(info.Device);
+                var connector = info.Device.Replace(@"\\.\", "");
+                monitors.Add(MonitorInfo.From(attached.FirstOrDefault(), connector,
                     info.Monitor.Left, info.Monitor.Top, width, height, pixelWidth, pixelHeight,
-                    scale, rotation, (info.Flags & MonitorInfoPrimary) != 0));
+                    scale, rotation, (info.Flags & MonitorInfoPrimary) != 0) with
+                {
+                    Mirrors = attached.Skip(1).Select((edid, i) =>
+                        MirrorInfo.From(edid, $"{connector}.{i + 2}", pixelWidth, pixelHeight)).ToList(),
+                });
             }
             return monitors.OrderBy(m => m.X).ThenBy(m => m.Y).ToList();
         }
@@ -106,18 +114,44 @@ public sealed class WindowsMonitors : IMonitorSource
     }
 
     /// <summary>
-    /// The EDID of the monitor on an adapter output (\\.\DISPLAY1): its device
-    /// interface, \\?\DISPLAY#GSM5B09#5&amp;...&amp;UID4353#{...}, names the
-    /// registry key that holds it.
+    /// The active monitors on a desktop output (\\.\DISPLAY1), in order, with
+    /// their EDIDs (null where one can't be read). More than one means the
+    /// others mirror the first.
     /// </summary>
-    private static Edid? ReadEdid(string device)
+    private static List<Edid?> AttachedMonitors(string device)
     {
-        var display = new DisplayDevice { Size = Marshal.SizeOf<DisplayDevice>() };
-        if (!EnumDisplayDevicesW(device, 0, ref display, GetDeviceInterfaceName) || string.IsNullOrEmpty(display.DeviceId))
+        var found = new List<Edid?>();
+        for (var index = 0; index < 8; index++)
+        {
+            var display = new DisplayDevice { Size = Marshal.SizeOf<DisplayDevice>() };
+            if (!EnumDisplayDevicesW(device, index, ref display, GetDeviceInterfaceName))
+            {
+                break;
+            }
+            if ((display.StateFlags & DeviceActive) != 0)
+            {
+                found.Add(ReadEdid(display.DeviceId));
+            }
+        }
+        if (found.Count == 0)
+        {
+            found.Add(null);
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// A monitor's EDID from its device interface,
+    /// \\?\DISPLAY#GSM5B09#5&amp;...&amp;UID4353#{...}, which names the registry
+    /// key that holds it.
+    /// </summary>
+    private static Edid? ReadEdid(string? deviceInterface)
+    {
+        if (string.IsNullOrEmpty(deviceInterface))
         {
             return null;
         }
-        var parts = display.DeviceId.Split('#');
+        var parts = deviceInterface.Split('#');
         if (parts.Length < 3)
         {
             return null;

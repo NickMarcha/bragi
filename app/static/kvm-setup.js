@@ -122,7 +122,8 @@
       ? `, ${(Math.hypot(m.width_mm, m.height_mm) / 25.4).toFixed(0)}″ (${Math.round(m.width_mm / 10)}×${Math.round(m.height_mm / 10)} cm)`
       : "";
     const turned = m.rotation ? `, turned ${m.rotation}°` : "";
-    return `${m.name}: ${m.pixel_width}×${m.pixel_height} at ${Math.round(m.scale * 100)}%${turned}${size}${m.primary ? ", main" : ""}`;
+    const mirrored = (m.mirrors || []).length ? `, mirrored on ${m.mirrors.map((r) => r.name).join(" and ")}` : "";
+    return `${m.name}: ${m.pixel_width}×${m.pixel_height} at ${Math.round(m.scale * 100)}%${turned}${size}${m.primary ? ", main" : ""}${mirrored}`;
   }
 
   function renderMonitors(view) {

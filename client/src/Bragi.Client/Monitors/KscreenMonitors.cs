@@ -53,10 +53,17 @@ public sealed class KscreenMonitors : IMonitorSource
         return null;
     }
 
-    /// <summary>kscreen-doctor's JSON to monitors; the EDID read per connector.</summary>
+    /// <summary>
+    /// kscreen-doctor's JSON to monitors; the EDID read per connector. An
+    /// output with a replicationSource ("Replica of" in KDE's settings) shows
+    /// a copy of that output: it becomes one of its mirrors, and its own
+    /// position, which KDE still reports, means nothing.
+    /// </summary>
     public static IReadOnlyList<MonitorInfo> Parse(string json, Func<string, byte[]?> edidFor)
     {
         var monitors = new List<MonitorInfo>();
+        var byOutputId = new Dictionary<int, int>();
+        var replicas = new List<(int Source, MirrorInfo Mirror)>();
         try
         {
             using var doc = JsonDocument.Parse(json);
@@ -64,6 +71,15 @@ public sealed class KscreenMonitors : IMonitorSource
             {
                 if (!Bool(output, "connected") || !Bool(output, "enabled"))
                 {
+                    continue;
+                }
+                var source = output.TryGetProperty("replicationSource", out var rs) && rs.ValueKind == JsonValueKind.Number ? rs.GetInt32() : 0;
+                if (source != 0)
+                {
+                    var name = output.GetProperty("name").GetString() ?? "";
+                    var mode = output.GetProperty("size");
+                    replicas.Add((source, MirrorInfo.From(edidFor(name) is { } raw ? Edid.Parse(raw) : null, name,
+                        mode.GetProperty("width").GetInt32(), mode.GetProperty("height").GetInt32())));
                     continue;
                 }
                 var connector = output.GetProperty("name").GetString() ?? "";
@@ -75,11 +91,22 @@ public sealed class KscreenMonitors : IMonitorSource
                 var rotation = output.TryGetProperty("rotation", out var r) ? r.GetInt32() switch { 2 => 90, 4 => 180, 8 => 270, _ => 0 } : 0;
                 var (w, h) = rotation is 90 or 270 ? (pixelHeight, pixelWidth) : (pixelWidth, pixelHeight);
                 var edid = edidFor(connector) is { } bytes ? Edid.Parse(bytes) : null;
+                if (output.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number)
+                {
+                    byOutputId[id.GetInt32()] = monitors.Count;
+                }
                 monitors.Add(MonitorInfo.From(edid, connector,
                     pos.GetProperty("x").GetInt32(), pos.GetProperty("y").GetInt32(),
                     (int)Math.Round(w / scale), (int)Math.Round(h / scale),
                     pixelWidth, pixelHeight, scale, rotation,
                     output.TryGetProperty("priority", out var p) && p.GetInt32() == 1));
+            }
+            foreach (var (source, mirror) in replicas)
+            {
+                if (byOutputId.TryGetValue(source, out var index))
+                {
+                    monitors[index] = monitors[index] with { Mirrors = [.. monitors[index].Mirrors, mirror] };
+                }
             }
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)

@@ -20,7 +20,7 @@ public sealed class MonitorReporter : IDisposable
     private readonly TimeSpan _interval;
     private readonly CancellationTokenSource _stop = new();
     private readonly object _lock = new();
-    private IReadOnlyList<MonitorInfo>? _sent;
+    private string? _sent;  // the last message sent, as JSON
     private bool _connected;
     private Task? _loop;
 
@@ -103,18 +103,20 @@ public sealed class MonitorReporter : IDisposable
         {
             return;  // a failed read keeps what the host has
         }
+        var message = MonitorMessage.Build(_source.Kind, now);
+        var json = JsonSerializer.Serialize(message);
         lock (_lock)
         {
-            if (!_connected || (_sent is not null && _sent.SequenceEqual(now)))
+            if (!_connected || _sent == json)
             {
                 return;
             }
         }
-        if (await Send(MonitorMessage.Build(_source.Kind, now)))
+        if (await Send(message))
         {
             lock (_lock)
             {
-                _sent = now;
+                _sent = json;
             }
         }
     }

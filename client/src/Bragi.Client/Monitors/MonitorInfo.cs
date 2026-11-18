@@ -11,7 +11,10 @@ namespace Bragi.Client.Monitors;
 /// physical pixels on Windows, logical pixels (after scaling) on KDE.
 /// PixelWidth/PixelHeight are the mode, Scale the OS's scaling, Rotation in
 /// degrees. Id recognises the same monitor on any computer (its EDID), or is
-/// the connector when the EDID can't be read.
+/// the connector when the EDID can't be read. Mirrors are the monitors
+/// showing a copy of this one (KDE's "Replica of", Windows' "Duplicate"):
+/// no desktop area of their own, but known, so the layout can tell where
+/// the TV is.
 /// </summary>
 public sealed record MonitorInfo(
     string Id, string Name, string Connector,
@@ -19,11 +22,22 @@ public sealed record MonitorInfo(
     int PixelWidth, int PixelHeight, double Scale, int Rotation, bool Primary,
     int? WidthMm, int? HeightMm)
 {
+    public IReadOnlyList<MirrorInfo> Mirrors { get; init; } = [];
+
     /// <summary>Built from what the OS says and the monitor's EDID, if any.</summary>
     public static MonitorInfo From(Edid? edid, string connector, int x, int y, int width, int height,
         int pixelWidth, int pixelHeight, double scale, int rotation, bool primary) =>
         new(edid?.Id ?? $"connector-{connector}", edid?.Name ?? connector, connector, x, y, width, height,
             pixelWidth, pixelHeight, Math.Round(scale, 3), rotation, primary, edid?.WidthMm, edid?.HeightMm);
+}
+
+/// <summary>A monitor that mirrors another: who it is, and its own mode.</summary>
+public sealed record MirrorInfo(string Id, string Name, string Connector, int PixelWidth, int PixelHeight,
+    int? WidthMm, int? HeightMm)
+{
+    public static MirrorInfo From(Edid? edid, string connector, int pixelWidth, int pixelHeight) =>
+        new(edid?.Id ?? $"connector-{connector}", edid?.Name ?? connector, connector, pixelWidth, pixelHeight,
+            edid?.WidthMm, edid?.HeightMm);
 }
 
 /// <summary>Where a computer's monitors come from: Windows itself, or KDE.</summary>
@@ -50,6 +64,12 @@ public static class MonitorMessage
             pixel_width = m.PixelWidth, pixel_height = m.PixelHeight,
             scale = m.Scale, rotation = m.Rotation, primary = m.Primary,
             width_mm = m.WidthMm, height_mm = m.HeightMm,
+            mirrors = m.Mirrors.Select(r => new
+            {
+                id = r.Id, name = r.Name, connector = r.Connector,
+                pixel_width = r.PixelWidth, pixel_height = r.PixelHeight,
+                width_mm = r.WidthMm, height_mm = r.HeightMm,
+            }).ToList(),
         }).ToList(),
     };
 }

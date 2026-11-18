@@ -78,6 +78,13 @@ monitor has:
   TV whichever computer its cable is in. Without an EDID the id is
   `connector-<name>`.
 
+Mirrored monitors (KDE's "Replica of", Windows' "Duplicate these
+displays") show a copy of another monitor, so they have no desktop area of
+their own. They're listed under the monitor they copy, with their own
+identity, so Bragi still knows where the TV is: sagedeck in its dock shows
+the MSI monitor and mirrors it on the LG TV. KDE keeps reporting a
+replica's old position, which means nothing while it mirrors.
+
 EDID sizes are a hint only. TVs put an aspect ratio in the detailed timing
 (an LG TV reports 160×90 mm and 160×90 cm), and some panels put nonsense
 there (the Legion Go's 12×19 cm screen reports 698×392 mm). The base

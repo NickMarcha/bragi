@@ -5,7 +5,9 @@ a "monitors" message after it connects and whenever its monitors change
 (client/src/Bragi.Client/Monitors/): every enabled monitor's rectangle in
 that computer's desktop coordinates, its mode, scaling and rotation, and
 what its EDID says (an id that recognises the same monitor on any computer,
-its name and size).
+its name and size). A monitor showing a copy of another (KDE's "Replica
+of", Windows' "Duplicate") is listed under that one as a mirror: no desktop
+area of its own, but known.
 
 Kept here: the latest report from each computer, and every monitor ever
 seen, by id, with the computer it was last on. Both are saved to
@@ -27,6 +29,7 @@ logger = logging.getLogger("bragi.monitors")
 
 SETTINGS_FILE = peers.DATA_DIR / "monitors.yaml"
 MAX_MONITORS = 16
+MAX_MIRRORS = 8
 _INT_FIELDS = ("x", "y", "width", "height", "pixel_width", "pixel_height")
 
 _lock = threading.Lock()
@@ -50,6 +53,23 @@ def _int(value, low: int, high: int) -> int:
     return value
 
 
+def _size_mm(m: dict, item: dict) -> None:
+    for key in ("width_mm", "height_mm"):
+        value = m.get(key)
+        item[key] = _int(value, 1, 10_000) if value is not None else None
+
+
+def _mirror(m) -> dict:
+    if not isinstance(m, dict):
+        raise MonitorError("a mirror is an object")
+    item = {"id": _text(m.get("id")), "name": _text(m.get("name")), "connector": _text(m.get("connector")),
+            "pixel_width": _int(m.get("pixel_width"), 1, 100_000), "pixel_height": _int(m.get("pixel_height"), 1, 100_000)}
+    if not item["id"]:
+        raise MonitorError("a mirror needs an id")
+    _size_mm(m, item)
+    return item
+
+
 def normalise(message: dict) -> dict:
     """A "monitors" message, checked and reduced to what's kept."""
     monitors = message.get("monitors")
@@ -70,9 +90,11 @@ def normalise(message: dict) -> dict:
         item["scale"] = round(float(scale), 3)
         item["rotation"] = m.get("rotation") if m.get("rotation") in (0, 90, 180, 270) else 0
         item["primary"] = m.get("primary") is True
-        for key in ("width_mm", "height_mm"):
-            value = m.get(key)
-            item[key] = _int(value, 1, 10_000) if value is not None else None
+        _size_mm(m, item)
+        mirrors = m.get("mirrors") or []
+        if not isinstance(mirrors, list) or len(mirrors) > MAX_MIRRORS:
+            raise MonitorError("mirrors is a list")
+        item["mirrors"] = [_mirror(r) for r in mirrors]
         out.append(item)
     return {"source": _text(message.get("source") or "unknown", 16), "monitors": out}
 
@@ -102,11 +124,15 @@ def report(peer: str, message: dict, now: float | None = None) -> bool:
         data["computers"][peer] = {**report, "seen": int(now)}
         for m in report["monitors"]:
             data["known"][m["id"]] = {"name": m["name"], "width_mm": m["width_mm"], "height_mm": m["height_mm"],
-                                      "computer": peer, "seen": int(now)}
+                                      "computer": peer, "mirror_of": None, "seen": int(now)}
+            for r in m["mirrors"]:
+                data["known"][r["id"]] = {"name": r["name"], "width_mm": r["width_mm"], "height_mm": r["height_mm"],
+                                          "computer": peer, "mirror_of": m["id"], "seen": int(now)}
         _save(data)
     if changed:
-        logger.info("monitors: %s has %s", peer, ", ".join(f"{m['name']} {m['pixel_width']}x{m['pixel_height']}"
-                                                          for m in report["monitors"]) or "none")
+        logger.info("monitors: %s has %s", peer, ", ".join(
+            f"{m['name']} {m['pixel_width']}x{m['pixel_height']}"
+            + "".join(f" (mirrored on {r['name']})" for r in m["mirrors"]) for m in report["monitors"]) or "none")
         if broadcast is not None:
             broadcast({"type": "monitors"})
     return changed

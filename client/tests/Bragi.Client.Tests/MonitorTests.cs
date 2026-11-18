@@ -57,14 +57,25 @@ public class MonitorTests
         };
         var monitors = KscreenMonitors.Parse(Kscreen, c => edids.GetValueOrDefault(c));
 
-        Assert.Equal(2, monitors.Count);  // the Go's own panel is off
-        var msi = monitors[0];
+        // The Go's own panel is off, and the TV is a replica of the MSI ("replicationSource": 1):
+        // one desktop area, with the TV as its mirror.
+        var msi = Assert.Single(monitors);
         Assert.Equal(("MSI-3CD9-CD9M285200091", "MAG 27CQ6F", "DP-2"), (msi.Id, msi.Name, msi.Connector));
         Assert.Equal((0, 0, 1707, 960), (msi.X, msi.Y, msi.Width, msi.Height));  // 2560x1440 at 150%
         Assert.Equal((2560, 1440, 1.5, 0, true), (msi.PixelWidth, msi.PixelHeight, msi.Scale, msi.Rotation, msi.Primary));
-        var tv = monitors[1];
-        Assert.Equal(("LG TV", 1707, 0, 1422, 800), (tv.Name, tv.X, tv.Y, tv.Width, tv.Height));  // 1920x1080 at 135%
-        Assert.False(tv.Primary);
+        var tv = Assert.Single(msi.Mirrors);
+        Assert.Equal(("GSM-0001-16843009", "LG TV", "DP-3", 1920, 1080, 1600), (tv.Id, tv.Name, tv.Connector, tv.PixelWidth, tv.PixelHeight, tv.WidthMm));
+    }
+
+    [Fact]
+    public void A_kde_output_that_isnt_a_replica_is_a_monitor_of_its_own()
+    {
+        var extended = Kscreen.Replace("\"replicationSource\":1", "\"replicationSource\":0");
+        Assert.NotEqual(Kscreen, extended);
+        var monitors = KscreenMonitors.Parse(extended, _ => null);
+        Assert.Equal(2, monitors.Count);
+        Assert.Equal(("DP-3", 1707, 1422, 800), (monitors[1].Connector, monitors[1].X, monitors[1].Width, monitors[1].Height));
+        Assert.Empty(monitors[0].Mirrors);
     }
 
     [Fact]
@@ -98,9 +109,14 @@ public class MonitorTests
         Assert.Equal(2, sent.Count);
         Assert.Contains("\"scale\":1.25", sent[1]);
 
+        source.Now = [source.Now[0] with { Mirrors = [new MirrorInfo("GSM-0001-16843009", "LG TV", "DP-3", 1920, 1080, 1600, 900)] }];
+        await reporter.CheckAsync();
+        Assert.Equal(3, sent.Count);  // a mirror coming or going is a change too
+        Assert.Contains("\"name\":\"LG TV\"", sent[2]);
+
         reporter.OnDisconnected();
         reporter.OnMessage(JsonDocument.Parse("""{"type":"kvm"}""").RootElement);
-        await WaitFor(() => sent.Count == 3);  // a new connection hears it again
+        await WaitFor(() => sent.Count == 4);  // a new connection hears it again
     }
 
     private static async Task WaitFor(System.Func<bool> condition)
