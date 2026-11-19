@@ -35,6 +35,8 @@ _INT_FIELDS = ("x", "y", "width", "height", "pixel_width", "pixel_height")
 _lock = threading.Lock()
 # What changed is told to the dashboards: (message) -> None.
 broadcast = None
+# Told when any computer's monitors change, to follow the setup (app/kvm_follow.py).
+on_change = None
 
 
 class MonitorError(ValueError):
@@ -135,6 +137,8 @@ def report(peer: str, message: dict, now: float | None = None) -> bool:
             + "".join(f" (mirrored on {r['name']})" for r in m["mirrors"]) for m in report["monitors"]) or "none")
         if broadcast is not None:
             broadcast({"type": "monitors"})
+        if on_change is not None:
+            on_change()
     return changed
 
 

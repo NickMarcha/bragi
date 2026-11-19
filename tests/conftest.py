@@ -38,6 +38,7 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(gamepad, "SETTINGS_FILE", tmp_path / "gamepad.yaml")
     monkeypatch.setattr(monitors, "SETTINGS_FILE", tmp_path / "monitors.yaml")
     monkeypatch.setattr(monitors, "broadcast", None)
+    monkeypatch.setattr(monitors, "on_change", None)
     monkeypatch.setattr(gamepad, "hub", None)
     monkeypatch.setattr(bluetooth, "manager", None)
     modules.reset_cache()

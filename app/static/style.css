@@ -1293,6 +1293,9 @@ dialog h2 {
 
 .kvm-size { margin-left: auto; font-size: 13px; }
 
+.kvm-subhead { margin: 12px 0 2px; font-size: 14px; }
+.kvm-setup-label { font-size: 13px; }
+
 @media (max-width: 560px) {
   .kvm-canvas { height: 220px; }
 }

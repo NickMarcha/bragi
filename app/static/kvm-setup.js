@@ -153,6 +153,15 @@
   }
 
   document.addEventListener("bragi:monitors", () => { if (dialog.open) loadMonitors(); });
+  // The KVM switched layouts by itself because the setup changed (app/kvm_follow.py).
+  document.addEventListener("bragi:kvm-layout", async (e) => {
+    if (!dialog.open) return;
+    try {
+      config = await call("GET", "/kvm/config");
+      render();
+      say("layout", e.detail.note);
+    } catch (_) { /* the next open shows it */ }
+  });
 
   // --- monitor layout (app/kvm_layout.py) ------------------------------------------
   //
@@ -337,11 +346,34 @@
     area.replaceChildren(...nodes, ...edges);
     renderNotes();
     renderGroupList();
+    renderSetups();
+  }
+
+  function renderSetups() {
+    const list = (config.layout && config.layout.setups) || [];
+    const rows = list.map((s) => {
+      const state = [s.active ? "in use" : "", s.current ? "matches what's connected" : ""].filter(Boolean).join(", ");
+      return el("li", { class: "kvm-row" },
+        el("span", { class: "kvm-setup-label" }, s.label),
+        state ? el("span", { class: "form-note" }, `(${state})`) : "",
+        s.active ? "" : el("button", { type: "button", onclick: (e) => save("layout", "/kvm/config/setups/use", { key: s.key }, e.target) }, "Use now"),
+        el("button", { type: "button", onclick: (e) => {
+          if (confirm(`Forget the layout for ${s.label}?`)) save("layout", "/kvm/config/setups/delete", { key: s.key }, e.target);
+        } }, "Forget"));
+    });
+    $("#kvm-setups").replaceChildren(...(rows.length ? rows : [el("li", { class: "form-note" }, "None yet. Save the layout to keep it for the monitors connected now.")]));
   }
 
   function renderNotes() {
     const notes = [];
-    for (const n of changed) notes.push([`${n}'s monitors changed since the layout was saved; it's drawn with the current ones. Save to use them.`, false]);
+    const setup = config.layout && config.layout.setup;
+    if (setup && !setup.known) {
+      notes.push([(config.layout.setups || []).length
+        ? `New setup (${setup.label}). This starts from the closest saved layout; arrange it and save to keep it for this setup.`
+        : `Save to keep this layout for what's connected now (${setup.label}).`, false]);
+    }
+    // On a new setup, the note above already says the monitors differ.
+    if (!setup || setup.known) for (const n of changed) notes.push([`${n}'s monitors changed since the layout was saved; it's drawn with the current ones. Save to use them.`, false]);
     if (analysis) {
       for (const e of analysis.errors) notes.push([e, true]);
       for (const w of analysis.warnings) notes.push([w, false]);

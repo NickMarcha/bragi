@@ -368,6 +368,10 @@ e.g. `keystroke(Control+Alt+F12) = switchToScreen(sage)`) and `input`
 position and scale on a shared canvas; where monitors of different computers
 touch, the computers are linked over that stretch (`app/kvm_layout.py`).
 
+A monitor layout is also kept for the monitors connected when it was saved
+(a setup), and the KVM switches back to it when those monitors return.
+`layout.setups` lists them and `layout.setup` is the one connected now.
+
 `PUT /api/v1/kvm/config/layout {"cells": ..., "hotkeys": [...], "layout": ...}`
 applies without dropping connections (leave `layout` out to keep the saved
 one); `PUT .../computers {"computers": [...]}` and

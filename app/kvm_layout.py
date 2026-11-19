@@ -83,6 +83,34 @@ def check_groups(groups, names: set[str]) -> dict[str, dict]:
     return out
 
 
+MM_UNITS = 96 / 25.4  # canvas units per millimetre at "real size", as the editor draws it
+
+
+def physical_scale(monitors: list[dict]) -> float | None:
+    """Real size: the monitors' millimetres per desktop unit, averaged."""
+    per = [m["width_mm"] / m["width"] for m in monitors if m.get("width_mm") and m.get("width")]
+    return sum(per) / len(per) * MM_UNITS if per else None
+
+
+def with_monitors(groups: dict[str, dict], current: dict[str, list[dict]]) -> dict[str, dict]:
+    """The groups with each computer's monitors as reported now, kept where
+    and as large as the layout has them. Computers without a report keep
+    the monitors the layout was saved with."""
+    out = {}
+    for name, g in groups.items():
+        g = dict(g)
+        now = current.get(name)
+        if now:
+            g["monitors"] = [{"id": m["id"], "name": m["name"], "x": float(m["x"]), "y": float(m["y"]),
+                              "width": float(m["width"]), "height": float(m["height"])} for m in now]
+            if g["size"] == "os":
+                g["scale"] = 1.0
+            elif g["size"] == "physical":
+                g["scale"] = physical_scale(now) or g["scale"]
+        out[name] = g
+    return out
+
+
 def bounds(group: dict) -> tuple[float, float, float, float]:
     """The group's bounding box in its computer's desktop coordinates:
     (x, y, width, height). This is the box Deskflow's percentages count in."""

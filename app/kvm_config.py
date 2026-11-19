@@ -37,7 +37,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import kvm, kvm_layout
+from . import kvm, kvm_layout, monitors
 
 UNIT = "deskflow-headless.service"
 KEEP_BACKUPS = 20
@@ -314,20 +314,52 @@ def _layout(sections) -> tuple[dict[str, list[int]], list[str], list[str]]:
     return {n: v for n, v in cells.items() if n in names and n != primary}, options, other
 
 
+def _groups(groups, names: set[str]) -> dict:
+    groups = groups if isinstance(groups, dict) else {}
+    try:
+        return kvm_layout.check_groups({n: g for n, g in groups.items() if n in names}, names)
+    except kvm_layout.LayoutError:
+        return {}
+
+
 def _drawing(names: set[str]) -> dict:
-    """The saved layout mode and, for "monitors", each computer's group,
-    limited to the computers that still exist."""
+    """The saved layout: its mode; for "monitors", each computer's group as
+    in use now; and the layouts saved per setup (see current_setup), with
+    the key of the one in use. Limited to the computers that still exist."""
     try:
         data = json.loads(_read(config_dir() / "webui-layout.json") or "{}")
     except json.JSONDecodeError:
         data = {}
-    mode = data.get("mode") if data.get("mode") in ("grid", "monitors") else "grid"
-    groups = data.get("groups") if isinstance(data.get("groups"), dict) else {}
-    try:
-        groups = kvm_layout.check_groups({n: g for n, g in groups.items() if n in names}, names)
-    except kvm_layout.LayoutError:
-        groups = {}
-    return {"mode": mode, "groups": groups}
+    setups = {}
+    for key, s in (data.get("setups") or {}).items():
+        if isinstance(s, dict) and (groups := _groups(s.get("groups"), names)):
+            setups[key] = {"label": str(s.get("label", key)), "saved": s.get("saved"), "groups": groups}
+    return {
+        "mode": data.get("mode") if data.get("mode") in ("grid", "monitors") else "grid",
+        "groups": _groups(data.get("groups"), names),
+        "setups": setups,
+        "active": data.get("active") if data.get("active") in setups else None,
+    }
+
+
+def current_setup(computers: list[dict]) -> dict:
+    """What's connected now: each computer's monitors as its tray app last
+    reported them, mirrors aside (they copy a monitor, the shape stays). A
+    computer that's off keeps its last monitors, so a tray app restarting
+    doesn't change the setup. The key names the setup; the label says it."""
+    view = monitors.view(computers, set())
+    by_name = {c["computer"]: c["monitors"] for c in view["computers"] if c["monitors"]}
+    key = "|".join(f"{n}={','.join(sorted(m['id'] for m in by_name[n]))}" for n in sorted(by_name))
+    label = "; ".join(f"{n}: {' + '.join(m['name'] or m['id'] for m in by_name[n])}" for n in sorted(by_name))
+    return {"key": key, "label": label or "no monitors reported", "monitors": by_name}
+
+
+def _closeness(a: str, b: str) -> int:
+    """How many computer-monitor pairs two setup keys share."""
+    def pairs(key):
+        return {(part.split("=", 1)[0], mid) for part in key.split("|") if "=" in part
+                for mid in part.split("=", 1)[1].split(",") if mid}
+    return len(pairs(a) & pairs(b))
 
 
 def _links(drawing: dict) -> dict[str, list[str]] | None:
@@ -341,7 +373,30 @@ def _links(drawing: dict) -> dict[str, list[str]] | None:
 
 
 def _layout_file(cells: dict, drawing: dict) -> str:
-    return json.dumps({"cells": cells, "mode": drawing["mode"], "groups": drawing["groups"]}, indent=2) + "\n"
+    return json.dumps({"cells": cells, "mode": drawing["mode"], "groups": drawing["groups"],
+                       "setups": drawing.get("setups", {}), "active": drawing.get("active")}, indent=2) + "\n"
+
+
+def _layout_view(computers: list[dict]) -> dict:
+    """The layout for the setup page. groups is where the editor starts: the
+    layout saved for the setup connected now, else the closest saved one,
+    else the one in use."""
+    drawing = _drawing({c["name"] for c in computers})
+    setup = current_setup(computers)
+    setups = drawing["setups"]
+    if setup["key"] in setups:
+        start = setups[setup["key"]]["groups"]
+    elif setups:
+        start = setups[max(setups, key=lambda k: (_closeness(k, setup["key"]), k == drawing["active"]))]["groups"]
+    else:
+        start = drawing["groups"]
+    return {
+        "mode": drawing["mode"],
+        "groups": start,
+        "setup": {"key": setup["key"], "label": setup["label"], "known": setup["key"] in setups},
+        "setups": [{"key": k, "label": s["label"], "saved": s["saved"], "active": k == drawing["active"],
+                    "current": k == setup["key"]} for k, s in setups.items()],
+    }
 
 
 def _env_lines() -> list[str]:
@@ -376,7 +431,7 @@ def read() -> dict:
         "host": primary,
         "computers": computers,
         "cells": cells,
-        "layout": _drawing({c["name"] for c in computers}),
+        "layout": _layout_view(computers),
         "hotkeys": options,
         "hotkey_actions": _hotkey_actions(),
         "input": _input(),
@@ -492,13 +547,22 @@ def save_layout(cells, hotkeys, hotkey_actions_wanted=None, layout=None) -> str:
     (clients stay connected). Puts the old file back if it's refused.
     Hotkeys that run Bragi actions (notify(bragi-N)) save their actions too.
     layout is {"mode": "grid" | "monitors", "groups": ...}; without it the
-    saved one stays."""
+    saved one stays. A monitor layout is also kept for the setup connected
+    now, to come back to when this setup does."""
     from . import hotkey_actions
     with _lock:
         sections = _sections()
-        names = {c["name"] for c in _computers(sections)} - {_primary(sections)}
+        computers = [c for c in _computers(sections) if c["name"] != _primary(sections)]
+        names = {c["name"] for c in computers}
         cells = _check_cells(cells, names)
-        drawing = _drawing(names) if layout is None else _check_drawing(layout, names)
+        drawing = _drawing(names)
+        if layout is not None:
+            drawing.update(_check_drawing(layout, names))
+            if drawing["mode"] == "monitors":
+                setup = current_setup(computers)
+                drawing["setups"][setup["key"]] = {"label": setup["label"], "saved": int(time.time()),
+                                                   "groups": drawing["groups"]}
+                drawing["active"] = setup["key"]
         links = _links(drawing)
         hotkeys = _check_hotkeys(hotkeys)
         try:
@@ -520,6 +584,80 @@ def save_layout(cells, hotkeys, hotkey_actions_wanted=None, layout=None) -> str:
         _restore(layout_path, old_layout)
         _reload()
         raise ConfigError(f"{problem}, so the previous settings are back.")
+
+
+def _switch(sections, drawing: dict, key: str, current: dict[str, list[dict]]) -> None:
+    """Puts the layout saved for setup `key` in use, drawn with the monitors
+    connected now, and reloads the server. Raises ConfigError with the old
+    files back if it can't."""
+    groups = kvm_layout.with_monitors(drawing["setups"][key]["groups"], current)
+    result = kvm_layout.analyse(groups)
+    if result["errors"]:
+        raise ConfigError(f"The layout for {drawing['setups'][key]['label']} doesn't fit the monitors "
+                          f"connected now: {result['errors'][0]}")
+    cells, options, other = _layout(sections)
+    drawing = {**drawing, "groups": groups, "active": key}
+    conf_path, layout_path = _conf_path(sections), config_dir() / "webui-layout.json"
+    old_conf, old_layout = _read(conf_path), _read(layout_path)
+    _backup(conf_path)
+    _atomic_write(conf_path, build_conf(cells, options, other, result["links"]))
+    _atomic_write(layout_path, _layout_file(cells, drawing))
+    problem = _reload()
+    if problem is not None:
+        _restore(conf_path, old_conf)
+        _restore(layout_path, old_layout)
+        _reload()
+        raise ConfigError(f"{problem}, so the previous layout is back.")
+
+
+def follow_setup() -> str | None:
+    """Called when monitors change (and have stayed changed for a while).
+    If the setup connected now has a saved layout that isn't in use, puts
+    it in use. A setup without one keeps the layout in use; the setup page
+    offers to arrange one. Returns what it did, or None."""
+    with _lock:
+        try:
+            sections = _sections()
+        except ConfigError:
+            return None
+        computers = [c for c in _computers(sections) if c["name"] != _primary(sections)]
+        drawing = _drawing({c["name"] for c in computers})
+        if drawing["mode"] != "monitors":
+            return None
+        setup = current_setup(computers)
+        if setup["key"] == drawing["active"] or setup["key"] not in drawing["setups"]:
+            return None
+        _switch(sections, drawing, setup["key"], setup["monitors"])
+        return f"Switched the KVM to the layout for {drawing['setups'][setup['key']]['label']}."
+
+
+def use_setup(key) -> str:
+    """Puts a saved layout in use by hand, whatever is connected."""
+    with _lock:
+        sections = _sections()
+        computers = [c for c in _computers(sections) if c["name"] != _primary(sections)]
+        drawing = _drawing({c["name"] for c in computers})
+        if key not in drawing["setups"]:
+            raise ConfigError("There's no saved layout by that name.")
+        drawing["mode"] = "monitors"
+        _switch(sections, drawing, key, current_setup(computers)["monitors"])
+        return f"Using the layout for {drawing['setups'][key]['label']}; the computers stayed connected."
+
+
+def delete_setup(key) -> str:
+    """Forgets a saved layout. The layout in use stays as it is."""
+    with _lock:
+        sections = _sections()
+        names = {c["name"] for c in _computers(sections)} - {_primary(sections)}
+        drawing = _drawing(names)
+        if key not in drawing["setups"]:
+            raise ConfigError("There's no saved layout by that name.")
+        label = drawing["setups"].pop(key)["label"]
+        if drawing["active"] == key:
+            drawing["active"] = None
+        cells, _, _ = _layout(sections)
+        _atomic_write(config_dir() / "webui-layout.json", _layout_file(cells, drawing))
+        return f"Forgot the layout for {label}."
 
 
 def save_computers(computers) -> str:
