@@ -39,6 +39,7 @@ from . import updates
 from . import setup_checks
 from . import hub_info
 from . import headset_choice
+from . import second_headset
 from . import backup
 from . import usb_topology
 from . import level_meter
@@ -82,6 +83,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(microphone.supervise()),
         asyncio.create_task(hub_info.refresh()),
         asyncio.create_task(headset_choice.supervise()),
+        asyncio.create_task(second_headset.supervise()),
         asyncio.create_task(mic_monitor.supervise()),
         asyncio.create_task(gamepad.supervise(peer_control.send, peer_control.broadcast_desktop,
                                               ws.manager.broadcast_levels_nowait)),
@@ -508,7 +510,13 @@ def _headset_choice_section(request: Request, error: str | None = None):
     except peers_module.pipewire.PipewireError as exc:
         view, error = {"choice": headset_choice.saved(), "current": None, "current_label": None,
                        "options": [], "missing": False}, str(exc)
-    return templates.TemplateResponse(request, "_headset_choice.html", {"headset_choice": view, "error": error})
+    try:
+        second = second_headset.view()
+    except peers_module.pipewire.PipewireError:
+        second = {"choice": second_headset.saved(), "current": None, "current_label": None,
+                  "options": [], "missing": False, "playing": False}
+    return templates.TemplateResponse(request, "_headset_choice.html",
+                                      {"headset_choice": view, "second": second, "error": error})
 
 
 @app.get("/headset-choice", response_class=HTMLResponse)
@@ -525,6 +533,16 @@ def headset_choice_set(request: Request, card: str = Form(...)):
     except ValueError as exc:
         return _headset_choice_section(request, str(exc))
     ws.manager.broadcast_nowait({'type': 'microphone'})
+    return _headset_choice_section(request)
+
+
+@app.post("/second-headset", response_class=HTMLResponse)
+def second_headset_set(request: Request, card: str = Form(...)):
+    """Off, automatic (another HyperX), or a picked device: plays what the main headset plays."""
+    try:
+        second_headset.choose(card)
+    except ValueError as exc:
+        return _headset_choice_section(request, str(exc))
     return _headset_choice_section(request)
 
 

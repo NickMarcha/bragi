@@ -38,6 +38,8 @@ def data_dir(tmp_path, monkeypatch):
     from app import headset_choice
     monkeypatch.setattr(headset_choice, "SETTINGS_FILE", tmp_path / "headset_choice.yaml")
     monkeypatch.setattr(headset_choice, "_wanted", None)
+    from app import second_headset
+    monkeypatch.setattr(second_headset, "SETTINGS_FILE", tmp_path / "second_headset.yaml")
     monkeypatch.setattr(gamepad, "SETTINGS_FILE", tmp_path / "gamepad.yaml")
     monkeypatch.setattr(monitors, "SETTINGS_FILE", tmp_path / "monitors.yaml")
     monkeypatch.setattr(monitors, "broadcast", None)
