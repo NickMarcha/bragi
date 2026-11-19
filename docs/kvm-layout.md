@@ -1,7 +1,7 @@
 # KVM layout: monitors, not just computers
 
-Status: steps 1 (monitor reporting), 2 (the editor) and 4 (layouts per
-setup) done. Step 3, real monitor shapes in the fork, is still to do.
+Status: all four steps done. Step 3 needs the Deskflow fork from
+NickMarcha/deskflow#10 or later.
 
 ## The problem
 
@@ -171,6 +171,35 @@ from step 1, the fork can treat a computer as the union of its monitors:
 
 This changes only the server; the Deskflow clients on the computers stay
 as they are. Without the fork, links fall back to plain Deskflow edges.
+
+How it's built:
+
+- Bragi writes a `monitors` section into `server.conf`, one line per
+  computer whose monitors don't fill its outline, each monitor as
+  `x,y,w,h` in percent of the outline:
+
+  ```
+  section: monitors
+  	sage = 0,0,64.1791,100 64.1791,24.7222,35.8209,75.2778
+  end
+  ```
+
+  Percent, because the Deskflow client reports the computer's size in its
+  own units (pixels on Windows, scaled units on KDE). The server scales the
+  monitors to whatever the client reports. A monitor edge within 1% of the
+  outline is put on it, the same rule the links use, so sage's BenQ ending
+  4 px short leaves no dead strip.
+- An older server refuses a config with a section it doesn't know. The fork
+  lists `"features": ["monitors"]` in its status file, and Bragi writes the
+  section only when it's there (`kvm.features()`).
+- In the fork, `MonitorShape` does the geometry: a move onto any monitor is
+  allowed; a move off every monitor stops at the edge of the one the cursor
+  was on, unless nothing is past that edge, in which case the server tries
+  the neighbour on that side at the same height, as if from the outline.
+  Arriving, the cursor lands on the first monitor in its way. A hotkey or
+  IPC switch that lands in a gap moves to the nearest monitor.
+- With shapes, the editor stops warning about links on inner monitor edges:
+  they work as drawn.
 
 ### 4. Layouts per setup
 

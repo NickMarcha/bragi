@@ -99,3 +99,12 @@ def test_groups_are_checked():
         kvm_layout.check_groups({"sage": group(0, 0, MSI, scale=0)}, names)
     with pytest.raises(kvm_layout.LayoutError, match="size setting"):
         kvm_layout.check_groups({"sage": group(0, 0, MSI, size="huge")}, names)
+
+
+def test_with_monitor_shapes_an_inner_edge_is_no_warning():
+    low = {**BENQ_R, "y": 900}
+    groups = {"sage": group(0, 0, SAMSUNG, low), "sagedeck": group(0, 1440, MSI)}
+    result = kvm_layout.analyse(groups, shapes=True)
+    assert result["links"]["sage"] == ["down(0,31.85) = sagedeck"]
+    assert not any("outline" in w for w in result["warnings"])
+    assert kvm_layout.monitor_shapes(groups) == {"sage": "0,0,64.1791,72.7273 64.1791,45.4545,35.8209,54.5455"}

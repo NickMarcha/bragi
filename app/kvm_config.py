@@ -170,7 +170,8 @@ def parse_conf(text: str) -> tuple[dict[str, dict[str, str]], list[str], list[st
                 section, current, buf = m.group(1), None, [raw]
             continue
         if line == "end":
-            if section not in ("links", "options"):
+            # monitors is Bragi's to write, like links: never kept as it was
+            if section not in ("links", "options", "monitors"):
                 other.append("\n".join([*buf, raw]))
             section = None
             continue
@@ -215,9 +216,10 @@ def derive_cells(links: dict[str, dict[str, str]], names: list[str]) -> dict[str
 
 
 def build_conf(cells: dict[str, list[int]], options: list[str], other: list[str],
-               links: dict[str, list[str]] | None = None) -> str:
+               links: dict[str, list[str]] | None = None, shapes: dict[str, str] | None = None) -> str:
     """server.conf from grid cells, or from links already worked out
-    (app/kvm_layout.py) when the layout is drawn as monitors."""
+    (app/kvm_layout.py) when the layout is drawn as monitors. shapes is the
+    monitors section, for a server that understands it (kvm.features())."""
     pos = {tuple(v): k for k, v in cells.items()}
     out = [
         "# Written by Bragi (KVM setup). Saving there rewrites this file;",
@@ -236,7 +238,12 @@ def build_conf(cells: dict[str, list[int]], options: list[str], other: list[str]
         if neighbours:
             out.append(f"\t{name}:")
             out.extend(neighbours)
-    out += ["end", "", "section: options"]
+    out.append("end")
+    if shapes:
+        out += ["", "section: monitors"]
+        out += [f"\t{name} = {rects}" for name, rects in sorted(shapes.items())]
+        out.append("end")
+    out += ["", "section: options"]
     out += [f"\t{o}" for o in options]
     out.append("end")
     for block in other:
@@ -366,10 +373,21 @@ def _links(drawing: dict) -> dict[str, list[str]] | None:
     """The links of a monitor layout, or None for the grid."""
     if drawing["mode"] != "monitors":
         return None
-    result = kvm_layout.analyse(drawing["groups"])
+    result = kvm_layout.analyse(drawing["groups"], shapes=_shapes_ok())
     if result["errors"]:
         raise ConfigError(result["errors"][0])
     return result["links"]
+
+
+def _shapes_ok() -> bool:
+    return "monitors" in kvm.features()
+
+
+def _shapes(drawing: dict) -> dict[str, str] | None:
+    """The monitors section for a monitor layout, when the server takes it."""
+    if drawing["mode"] != "monitors" or not _shapes_ok():
+        return None
+    return kvm_layout.monitor_shapes(drawing["groups"])
 
 
 def _layout_file(cells: dict, drawing: dict) -> str:
@@ -539,7 +557,7 @@ def preview(layout) -> dict:
     """What a monitor layout would link, without saving it."""
     sections = _sections()
     names = {c["name"] for c in _computers(sections)} - {_primary(sections)}
-    return kvm_layout.analyse(_check_drawing(layout, names)["groups"])
+    return kvm_layout.analyse(_check_drawing(layout, names)["groups"], shapes=_shapes_ok())
 
 
 def save_layout(cells, hotkeys, hotkey_actions_wanted=None, layout=None) -> str:
@@ -574,7 +592,7 @@ def save_layout(cells, hotkeys, hotkey_actions_wanted=None, layout=None) -> str:
         old_conf, old_layout = _read(conf_path), _read(layout_path)
         _, _, other = parse_conf(old_conf or "")
         _backup(conf_path)
-        _atomic_write(conf_path, build_conf(cells, hotkeys, other, links))
+        _atomic_write(conf_path, build_conf(cells, hotkeys, other, links, _shapes(drawing)))
         _atomic_write(layout_path, _layout_file(cells, drawing))
         problem = _reload()
         if problem is None:
@@ -591,7 +609,7 @@ def _switch(sections, drawing: dict, key: str, current: dict[str, list[dict]]) -
     connected now, and reloads the server. Raises ConfigError with the old
     files back if it can't."""
     groups = kvm_layout.with_monitors(drawing["setups"][key]["groups"], current)
-    result = kvm_layout.analyse(groups)
+    result = kvm_layout.analyse(groups, shapes=_shapes_ok())
     if result["errors"]:
         raise ConfigError(f"The layout for {drawing['setups'][key]['label']} doesn't fit the monitors "
                           f"connected now: {result['errors'][0]}")
@@ -600,7 +618,7 @@ def _switch(sections, drawing: dict, key: str, current: dict[str, list[dict]]) -
     conf_path, layout_path = _conf_path(sections), config_dir() / "webui-layout.json"
     old_conf, old_layout = _read(conf_path), _read(layout_path)
     _backup(conf_path)
-    _atomic_write(conf_path, build_conf(cells, options, other, result["links"]))
+    _atomic_write(conf_path, build_conf(cells, options, other, result["links"], _shapes(drawing)))
     _atomic_write(layout_path, _layout_file(cells, drawing))
     problem = _reload()
     if problem is not None:
@@ -702,7 +720,7 @@ def save_computers(computers) -> str:
         _backup(settings)
         _backup(conf_path)
         _atomic_write(settings, ini_join(kept + new_sections))
-        _atomic_write(conf_path, build_conf(cells, hotkeys, other, links))
+        _atomic_write(conf_path, build_conf(cells, hotkeys, other, links, _shapes(drawing)))
         _atomic_write(layout_path, _layout_file(cells, drawing))
         if _restart():
             return "Saved; the KVM restarted and the computers are reconnecting."
