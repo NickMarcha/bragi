@@ -347,7 +347,17 @@ async def kvm_config_read():
 @app.post("/kvm/config/layout")
 async def kvm_config_layout(body: dict):
     return await asyncio.to_thread(_kvm_config_call, kvm_config.save_layout, body.get("cells"), body.get("hotkeys"),
-                                   body.get("hotkey_actions"))
+                                   body.get("hotkey_actions"), body.get("layout"))
+
+
+@app.post("/kvm/config/layout/preview")
+async def kvm_config_layout_preview(body: dict):
+    """Where a monitor layout's computers touch and what that would link
+    (app/kvm_layout.py), for the editor to draw before saving."""
+    try:
+        return await asyncio.to_thread(kvm_config.preview, body.get("layout"))
+    except kvm_config.ConfigError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.post("/kvm/config/computers")

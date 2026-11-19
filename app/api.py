@@ -107,7 +107,8 @@ async def get_kvm_config():
 
 @router.put("/kvm/config/layout")
 async def put_kvm_layout(body: dict):
-    return await asyncio.to_thread(_kvm_config, kvm_config.save_layout, body.get("cells"), body.get("hotkeys"))
+    return await asyncio.to_thread(_kvm_config, kvm_config.save_layout, body.get("cells"), body.get("hotkeys"),
+                                   body.get("hotkey_actions"), body.get("layout"))
 
 
 @router.put("/kvm/config/computers")
@@ -362,8 +363,14 @@ layout grid; neighbours are linked), `hotkeys` (the server's option lines,
 e.g. `keystroke(Control+Alt+F12) = switchToScreen(sage)`) and `input`
 (input options such as `DESKFLOW_EVDEV_REPEAT`).
 
-`PUT /api/v1/kvm/config/layout {"cells": ..., "hotkeys": [...]}` applies
-without dropping connections; `PUT .../computers {"computers": [...]}` and
+`layout` is `{"mode": "grid"}` (links come from `cells`) or `{"mode":
+"monitors", "groups": {...}}`: each computer drawn as its monitors, at a
+position and scale on a shared canvas; where monitors of different computers
+touch, the computers are linked over that stretch (`app/kvm_layout.py`).
+
+`PUT /api/v1/kvm/config/layout {"cells": ..., "hotkeys": [...], "layout": ...}`
+applies without dropping connections (leave `layout` out to keep the saved
+one); `PUT .../computers {"computers": [...]}` and
 `PUT .../input {"input": {...}}` restart the KVM. Each returns
 `{"ok", "note", "config"}`; `400` with the reason if it's refused, and the
 previous settings are then back in place.

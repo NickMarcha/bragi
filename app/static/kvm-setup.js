@@ -141,13 +141,358 @@
 
   async function loadMonitors() {
     try {
-      renderMonitors(await call("GET", "/kvm/monitors"));
+      monitorView = await call("GET", "/kvm/monitors");
+      renderMonitors(monitorView);
+      if (!config) return;
+      syncGroups();
+      view = null;
+      changedLayout();
     } catch (err) {
       $("#kvm-monitors").replaceChildren(el("p", { class: "form-error" }, err.message));
     }
   }
 
   document.addEventListener("bragi:monitors", () => { if (dialog.open) loadMonitors(); });
+
+  // --- monitor layout (app/kvm_layout.py) ------------------------------------------
+  //
+  // Each computer is a group: its monitors in its own desktop coordinates,
+  // drawn at (x, y) on a shared canvas at `scale` canvas units per desktop
+  // unit. The server works out where groups touch (/kvm/config/layout/preview).
+
+  const MM = 96 / 25.4;           // canvas units per millimetre for "real size"
+  const TILE = { width: 1920, height: 1080 };
+  const SNAP_PX = 12;             // snap distance on screen
+  let mode = "grid";
+  let groups = {};                // name -> {x, y, scale, size, monitors, tile}
+  let monitorView = null;
+  let changed = [];               // computers whose monitors differ from the saved layout
+  let analysis = null;            // the last preview
+  let view = null;                // {x, y, z}: canvas point at the editor's top left, and zoom
+
+  const SIZE_LABELS = { os: "As the computer shows it", physical: "Real size", manual: "Custom" };
+
+  const sameMonitors = (a, b) => JSON.stringify(a.map(({ id, x, y, width, height }) => [id, x, y, width, height]))
+    === JSON.stringify(b.map(({ id, x, y, width, height }) => [id, x, y, width, height]));
+
+  function bounds(g) {
+    const ms = g.monitors;
+    const x0 = Math.min(...ms.map((m) => m.x)), y0 = Math.min(...ms.map((m) => m.y));
+    const x1 = Math.max(...ms.map((m) => m.x + m.width)), y1 = Math.max(...ms.map((m) => m.y + m.height));
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+
+  // The group's monitors and outline on the canvas: [left, top, right, bottom].
+  function rects(g) {
+    const b = bounds(g);
+    return g.monitors.map((m) => {
+      const l = g.x + (m.x - b.x) * g.scale, t = g.y + (m.y - b.y) * g.scale;
+      return [l, t, l + m.width * g.scale, t + m.height * g.scale];
+    });
+  }
+  function box(g) {
+    const b = bounds(g);
+    return [g.x, g.y, g.x + b.w * g.scale, g.y + b.h * g.scale];
+  }
+
+  // Real size: the monitors' millimetres per desktop unit, averaged.
+  function physicalScale(g) {
+    const per = g.monitors.filter((m) => m.width_mm).map((m) => m.width_mm / m.width);
+    return per.length ? (per.reduce((a, b) => a + b, 0) / per.length) * MM : null;
+  }
+
+  function sizeScale(g) {
+    if (g.size === "os") return 1;
+    if (g.size === "physical") return physicalScale(g) || 1;
+    return g.scale;
+  }
+
+  function reported(name) {
+    const c = monitorView && monitorView.computers.find((x) => x.computer === name);
+    return c && c.monitors.length ? c.monitors.map((m) => ({
+      id: m.id, name: m.name, x: m.x, y: m.y, width: m.width, height: m.height,
+      width_mm: m.width_mm, pixel_width: m.pixel_width, pixel_height: m.pixel_height,
+      mirrors: (m.mirrors || []).map((r) => r.name),
+    })) : null;
+  }
+
+  // Groups from the saved layout, with each computer's monitors as its tray
+  // app reports them now. New computers are placed to the right, apart.
+  function initGroups() {
+    mode = (config.layout && config.layout.mode) || "grid";
+    groups = JSON.parse(JSON.stringify((config.layout && config.layout.groups) || {}));
+    syncGroups();
+    if (!Object.keys((config.layout && config.layout.groups) || {}).length) arrangeLikeGrid();
+  }
+
+  function syncGroups() {
+    if (!config) return;
+    changed = [];
+    const fresh = [];
+    for (const name of names()) {
+      const now = reported(name);
+      let g = groups[name];
+      if (!g) {
+        g = groups[name] = { x: 0, y: 0, scale: 1, size: now ? "os" : "manual", monitors: [] };
+        fresh.push(name);
+      }
+      if (now) {
+        if (g.monitors.length && !g.tile && !sameMonitors(g.monitors, now)) changed.push(name);
+        if (g.tile) g.size = "os";
+        g.monitors = now;
+        g.tile = false;
+      } else if (!g.monitors.length) {
+        g.monitors = [{ id: "tile", name: "", x: 0, y: 0, ...TILE }];
+        g.tile = true;
+        g.size = "manual";
+        g.scale = 1;
+      }
+      g.scale = sizeScale(g);
+    }
+    for (const name of Object.keys(groups)) if (!names().includes(name)) delete groups[name];
+    // Newcomers go to the right of everything, with a gap, so nothing links by accident.
+    for (const name of fresh) {
+      const others = Object.entries(groups).filter(([n]) => n !== name && !fresh.slice(fresh.indexOf(name)).includes(n));
+      const right = others.length ? Math.max(...others.map(([, g]) => box(g)[2])) : 0;
+      groups[name].x = right + (others.length ? 400 : 0);
+      groups[name].y = 0;
+    }
+  }
+
+  // Rows and columns from the simple grid; each row's computers touch side
+  // by side, rows touch top to bottom.
+  function arrangeLikeGrid() {
+    const placed = Object.entries(config.cells).filter(([n]) => groups[n]).sort(([, a], [, b]) => a[1] - b[1] || a[0] - b[0]);
+    const rest = names().filter((n) => !(n in config.cells) && groups[n]);
+    const rows = new Map();
+    for (const [n, [, r]] of placed) rows.set(r, [...(rows.get(r) || []), n]);
+    if (rest.length) rows.set(Infinity, rest);
+    let y = 0;
+    for (const row of rows.values()) {
+      let x = 0, height = 0;
+      for (const n of row) {
+        const g = groups[n];
+        const [, , r, b] = box({ ...g, x: 0, y: 0 });
+        g.x = x; g.y = y;
+        x += r; height = Math.max(height, b);
+      }
+      y += height;
+    }
+  }
+
+  // --- drawing
+
+  function fit() {
+    const area = $("#kvm-canvas");
+    const all = Object.values(groups).map(box);
+    if (!all.length || !area.clientWidth) return null;
+    const l = Math.min(...all.map((b) => b[0])), t = Math.min(...all.map((b) => b[1]));
+    const r = Math.max(...all.map((b) => b[2])), btm = Math.max(...all.map((b) => b[3]));
+    const z = Math.min(area.clientWidth / ((r - l) * 1.2 || 1), area.clientHeight / ((btm - t) * 1.25 || 1));
+    return { x: (l + r) / 2 - area.clientWidth / 2 / z, y: (t + btm) / 2 - area.clientHeight / 2 / z, z };
+  }
+
+  function insideView(v) {
+    const area = $("#kvm-canvas");
+    return Object.values(groups).map(box).every(([l, t, r, b]) =>
+      (l - v.x) * v.z >= 0 && (t - v.y) * v.z >= 0 && (r - v.x) * v.z <= area.clientWidth && (b - v.y) * v.z <= area.clientHeight);
+  }
+
+  const px = (v) => `${Math.round(v * 10) / 10}px`;
+
+  function placeGroup(node, g) {
+    const [l, t, r, b] = box(g);
+    Object.assign(node.style, { left: px((l - view.x) * view.z), top: px((t - view.y) * view.z),
+                                width: px((r - l) * view.z), height: px((b - t) * view.z) });
+  }
+
+  function renderCanvas(refit) {
+    if (!config || mode !== "monitors") return;
+    const area = $("#kvm-canvas");
+    if (refit || !view || !insideView(view)) view = fit();
+    if (!view) { area.replaceChildren(); return; }
+    const nodes = Object.entries(groups).map(([name, g]) => {
+      const b = bounds(g);
+      const node = el("div", { class: "kvm-group" + (g.tile ? " tile" : ""), tabindex: 0, "data-name": name,
+                               role: "button", "aria-label": `${name}: drag, or use the arrow keys, to move it` });
+      for (const m of g.monitors) {
+        const label = g.tile ? "no monitors reported" : `${m.name} ${m.pixel_width || m.width}×${m.pixel_height || m.height}`
+          + (m.mirrors && m.mirrors.length ? `, also on ${m.mirrors.join(", ")}` : "");
+        node.append(el("div", { class: "kvm-monitor", title: label, style:
+          `left:${((m.x - b.x) / b.w) * 100}%;top:${((m.y - b.y) / b.h) * 100}%;width:${(m.width / b.w) * 100}%;height:${(m.height / b.h) * 100}%` },
+          el("span", {}, label)));
+      }
+      node.append(el("strong", { class: "kvm-group-name" }, name), el("span", { class: "kvm-resize", title: "Drag to resize" }));
+      placeGroup(node, g);
+      return node;
+    });
+    const edges = (analysis ? analysis.edges : []).filter((e) => e.from < e.to).map((e) => {
+      const [[x0, y0], [x1, y1]] = e.segment;
+      const vertical = x0 === x1;
+      return el("div", { class: "kvm-edge" + (e.outer ? "" : " inner") + (vertical ? " v" : " h"),
+                         title: `The mouse crosses between ${e.from} and ${e.to} here`,
+                         style: `left:${px((Math.min(x0, x1) - view.x) * view.z)};top:${px((Math.min(y0, y1) - view.y) * view.z)};`
+                           + (vertical ? `height:${px(Math.abs(y1 - y0) * view.z)}` : `width:${px(Math.abs(x1 - x0) * view.z)}`) });
+    });
+    area.replaceChildren(...nodes, ...edges);
+    renderNotes();
+    renderGroupList();
+  }
+
+  function renderNotes() {
+    const notes = [];
+    for (const n of changed) notes.push([`${n}'s monitors changed since the layout was saved; it's drawn with the current ones. Save to use them.`, false]);
+    if (analysis) {
+      for (const e of analysis.errors) notes.push([e, true]);
+      for (const w of analysis.warnings) notes.push([w, false]);
+    }
+    $("#kvm-layout-notes").replaceChildren(...notes.map(([text, bad]) => el("li", { class: bad ? "form-error" : "form-note" }, text)));
+  }
+
+  function renderGroupList() {
+    $("#kvm-groups").replaceChildren(...Object.entries(groups).map(([name, g]) => {
+      const choice = el("select", { "aria-label": `${name} size` },
+        Object.entries(SIZE_LABELS).map(([v, label]) => el("option", {
+          value: v, selected: v === g.size,
+          disabled: (g.tile && v !== "manual") || (v === "physical" && !physicalScale(g)),
+        }, label)));
+      choice.addEventListener("change", () => {
+        g.size = choice.value;
+        g.scale = sizeScale(g);
+        changedLayout();
+      });
+      const what = g.tile ? "no Bragi tray app has reported its monitors"
+        : `${g.monitors.length} monitor${g.monitors.length === 1 ? "" : "s"}`;
+      return el("li", { class: "kvm-row" }, el("strong", {}, name), el("span", { class: "form-note" }, what),
+        el("label", { class: "kvm-size" }, "Size ", choice));
+    }));
+  }
+
+  // --- moving
+
+  function edgesOf(g) {
+    const rs = [...rects(g), box(g)];
+    return { xs: rs.flatMap((r) => [r[0], r[2]]), ys: rs.flatMap((r) => [r[1], r[3]]) };
+  }
+
+  // Moves g by the smallest step (under the snap distance) that lines one of
+  // its edges up with another computer's.
+  function snap(name, g) {
+    const mine = edgesOf(g);
+    const theirs = Object.entries(groups).filter(([n]) => n !== name).map(([, o]) => edgesOf(o));
+    const limit = SNAP_PX / view.z;
+    for (const axis of ["xs", "ys"]) {
+      let best = null;
+      for (const a of mine[axis]) for (const o of theirs) for (const b of o[axis]) {
+        const d = b - a;
+        if (Math.abs(d) <= limit && (best === null || Math.abs(d) < Math.abs(best))) best = d;
+      }
+      if (best !== null) g[axis === "xs" ? "x" : "y"] += best;
+    }
+  }
+
+  function overlaps(name) {
+    const mine = rects(groups[name]);
+    return Object.entries(groups).some(([n, o]) => n !== name && rects(o).some((b) => mine.some((a) =>
+      Math.min(a[2], b[2]) - Math.max(a[0], b[0]) > 0.5 && Math.min(a[3], b[3]) - Math.max(a[1], b[1]) > 0.5)));
+  }
+
+  let previewTimer = null;
+  function changedLayout() {
+    analysis = null;
+    renderCanvas(false);
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(preview, 150);
+  }
+
+  async function preview() {
+    if (mode !== "monitors") return;
+    try {
+      analysis = await call("POST", "/kvm/config/layout/preview", { layout: layoutBody() });
+    } catch (err) {
+      analysis = { edges: [], warnings: [], errors: [err.message] };
+    }
+    renderCanvas(false);
+  }
+
+  function layoutBody() {
+    const out = {};
+    for (const [name, g] of Object.entries(groups)) {
+      out[name] = { x: Math.round(g.x * 100) / 100, y: Math.round(g.y * 100) / 100, scale: g.scale, size: g.size,
+                    monitors: g.monitors.map(({ id, name: n, x, y, width, height }) => ({ id, name: n, x, y, width, height })) };
+    }
+    return { mode, groups: out };
+  }
+
+  const canvas = $("#kvm-canvas");
+  canvas.addEventListener("pointerdown", (e) => {
+    const node = e.target.closest(".kvm-group");
+    if (!node || e.button !== 0) return;
+    const name = node.dataset.name;
+    const g = groups[name];
+    const resizing = e.target.classList.contains("kvm-resize");
+    const start = { px: e.clientX, py: e.clientY, x: g.x, y: g.y, scale: g.scale, w: box(g)[2] - box(g)[0] };
+    node.setPointerCapture(e.pointerId);
+    node.classList.add("moving");
+    $("#kvm-canvas").querySelectorAll(".kvm-edge").forEach((n) => n.remove());
+    const move = (ev) => {
+      const dx = (ev.clientX - start.px) / view.z, dy = (ev.clientY - start.py) / view.z;
+      if (resizing) {
+        g.scale = Math.max(0.05, start.scale * Math.max(0.1, (start.w + dx) / start.w));
+        g.size = "manual";
+      } else {
+        g.x = start.x + dx;
+        g.y = start.y + dy;
+        if (!ev.altKey) snap(name, g);
+      }
+      node.classList.toggle("overlap", overlaps(name));
+      placeGroup(node, g);
+    };
+    const up = () => {
+      node.removeEventListener("pointermove", move);
+      node.removeEventListener("pointerup", up);
+      node.removeEventListener("pointercancel", up);
+      node.classList.remove("moving");
+      changedLayout();
+    };
+    node.addEventListener("pointermove", move);
+    node.addEventListener("pointerup", up);
+    node.addEventListener("pointercancel", up);
+    e.preventDefault();
+  });
+  canvas.addEventListener("keydown", (e) => {
+    const node = e.target.closest(".kvm-group");
+    const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (!node || !step) return;
+    const g = groups[node.dataset.name];
+    const d = (e.shiftKey ? 2 : 20) / view.z;
+    g.x += step[0] * d;
+    g.y += step[1] * d;
+    if (!e.shiftKey) snap(node.dataset.name, g);
+    e.preventDefault();
+    changedLayout();
+    $(`.kvm-group[data-name="${CSS.escape(node.dataset.name)}"]`).focus();
+  });
+  new ResizeObserver(() => { if (dialog.open && mode === "monitors") renderCanvas(true); }).observe(canvas);
+
+  function setMode(next) {
+    mode = next;
+    for (const r of dialog.querySelectorAll('input[name="kvm-mode"]')) r.checked = r.value === mode;
+    $("#kvm-grid-editor").hidden = mode !== "grid";
+    $("#kvm-canvas-editor").hidden = mode !== "monitors";
+    $("#kvm-unplace").hidden = mode !== "grid";
+    $("#kvm-arrange").hidden = mode !== "monitors";
+    if (mode === "monitors") {
+      renderCanvas(true);
+      preview();
+    }
+  }
+  for (const r of dialog.querySelectorAll('input[name="kvm-mode"]')) r.addEventListener("change", () => setMode(r.value));
+  $("#kvm-arrange").addEventListener("click", () => {
+    arrangeLikeGrid();
+    view = null;
+    changedLayout();
+  });
 
   // --- hotkeys -----------------------------------------------------------------
 
@@ -446,6 +791,9 @@
     $("#kvm-host").textContent = config.host;
     renderComputers();
     renderLayout();
+    initGroups();
+    analysis = null;
+    setMode(mode);
     renderHotkeys();
     renderInput();
   }
@@ -510,7 +858,10 @@
       }
     }
     const hotkeys = rows.map(hotkeyLine).filter(Boolean);
-    save(e.target.dataset.section, "/kvm/config/layout", { cells: config.cells, hotkeys, hotkey_actions }, e.target);
+    const body = { cells: config.cells, hotkeys, hotkey_actions };
+    // Saving hotkeys keeps the saved layout; saving the layout sends the one drawn.
+    if (e.target.dataset.section === "layout") body.layout = layoutBody();
+    save(e.target.dataset.section, "/kvm/config/layout", body, e.target);
   };
   $("#kvm-save-layout").addEventListener("click", saveLayout);
   $("#kvm-save-hotkeys").addEventListener("click", saveLayout);
@@ -527,8 +878,15 @@
     try {
       config = await call("GET", "/kvm/config");
       selected = null;
+      // The monitor layout needs the monitors before it's drawn.
+      try {
+        monitorView = await call("GET", "/kvm/monitors");
+        renderMonitors(monitorView);
+      } catch (err) {
+        monitorView = null;
+        $("#kvm-monitors").replaceChildren(el("p", { class: "form-error" }, err.message));
+      }
       render();
-      loadMonitors();
       loadMouse();
       loadBindings();
     } catch (err) {
