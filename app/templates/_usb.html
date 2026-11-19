@@ -1,0 +1,21 @@
+{# Settings > USB (app/usb_topology.py, bragi#63): which devices share a full-speed lane. #}
+{% set u = usb %}
+<h3>USB</h3>
+<p class="form-note">Headset dongles, USB mics and keyboard/mouse receivers share full-speed lanes (12 Mbit/s): a USB 1.1 controller, or one hub's translator. Audio devices reserve part of their lane; {{ u.crowded }} on one lane don't fit, and the last one stays silent. Put audio devices on ports of different lanes, and receivers behind a hub.</p>
+{% for f in u.failing %}
+<p class="form-error">{{ f.product }} ({{ f.name }}) was refused bandwidth {{ f.count }} time{{ "s" if f.count != 1 }} in the last 15 minutes{% if f.lane %} on {{ f.lane }}{% endif %}. Move it to a port on another lane.</p>
+{% endfor %}
+{% if not u.log_readable %}<p class="form-note">Bragi can't read the kernel log (needs the adm or systemd-journal group), so it can't see bandwidth refusals.</p>{% endif %}
+<ul class="usb-lanes">
+  {% for l in u.lanes %}
+  <li class="{{ 'crowded' if l.audio >= u.crowded else ('tight' if l.audio == 2 else '') }}">
+    <strong>{{ l.lane }}</strong>{% if l.audio >= 2 %} <span class="form-note">· {{ l.audio }} audio devices{{ ", too many" if l.audio >= u.crowded else ", no room for another" }}</span>{% endif %}
+    <span class="usb-devices">{% for d in l.devices %}{{ d.product }}{% if d.kind == "audio" %} (audio){% endif %}{{ ", " if not loop.last }}{% endfor %}</span>
+  </li>
+  {% else %}
+  <li class="form-note">No full-speed USB devices.</li>
+  {% endfor %}
+</ul>
+<div class="dialog-actions">
+  <button type="button" hx-get="/usb" hx-target="#usb" hx-swap="innerHTML" hx-disabled-elt="this">Check again</button>
+</div>

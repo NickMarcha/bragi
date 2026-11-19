@@ -223,6 +223,28 @@ def check_services() -> dict:
                   {"kind": "user", "action": "start-services", "label": "Enable and start them"})
 
 
+def check_usb() -> dict:
+    """Audio devices sharing a full-speed USB lane (bragi#63)."""
+    from . import usb_topology
+    title = "USB bandwidth"
+    view = usb_topology.view()
+    if view["failing"]:
+        f = view["failing"][0]
+        return _check("usb", title, "problem",
+                      f"{f['product']} was refused USB bandwidth {f['count']} times in the last 15 minutes, so it "
+                      "stays silent. Move it to a port on another lane (Settings > USB shows them).")
+    crowded = [l for l in view["lanes"] if l["audio"] >= view["crowded"]]
+    if crowded:
+        return _check("usb", title, "problem",
+                      f"{crowded[0]['audio']} audio devices share {crowded[0]['lane']}; they don't all fit. "
+                      "Move one to a port on another lane (Settings > USB).")
+    tight = [l for l in view["lanes"] if l["audio"] == 2]
+    if tight:
+        return _check("usb", title, "ok",
+                      f"Two audio devices share {tight[0]['lane']}: fine, but a third there wouldn't fit.")
+    return _check("usb", title, "ok", "No full-speed USB lane is crowded.")
+
+
 def check_hand_peers() -> dict:
     """Roc peers still run from a hand-written conf.d file (bragi#62)."""
     from . import peers
@@ -249,13 +271,13 @@ def check_hand_peers() -> dict:
 
 
 CHECKS = ("check_pipewire", "check_realtime", "check_modules", "check_linger", "check_input_group", "check_hyperx_quirk",
-          "check_tailscale_serve", "check_services", "check_hand_peers")
+          "check_tailscale_serve", "check_services", "check_usb", "check_hand_peers")
 
 
 # check id -> function, so a fix runs only its own check.
 CHECK_IDS = {"pipewire": "check_pipewire", "realtime": "check_realtime", "modules": "check_modules", "linger": "check_linger",
              "input": "check_input_group", "hyperx": "check_hyperx_quirk", "tailscale": "check_tailscale_serve",
-             "services": "check_services", "handpeers": "check_hand_peers"}
+             "services": "check_services", "usb": "check_usb", "handpeers": "check_hand_peers"}
 
 
 def run_all() -> list[dict]:

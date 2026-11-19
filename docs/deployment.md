@@ -69,6 +69,23 @@ usbcore quirk (in `cmdline.txt` on a Pi, a GRUB drop-in elsewhere),
   a kernel quirk and a udev rule. See
   [HyperX Cloud III S Wireless controls](#hyperx-cloud-iii-s-wireless-controls).
 
+## USB placement
+
+Headset dongles, USB mics and keyboard/mouse receivers are full-speed
+(12 Mbit/s) devices, and full-speed devices share a lane: a whole USB 1.1
+(OHCI/UHCI) controller, the translator of a USB 2.0 hub (one for the hub,
+or one per port on a multi-TT hub), or a USB 3 root port. Audio devices
+reserve part of their lane up front; three on one lane didn't fit on an HP
+MicroServer N54L, and the third stayed silent. A Raspberry Pi 4 has a
+single such controller for all four USB-A ports.
+
+Settings > USB lists the lanes and what's on them, and Setup warns about a
+crowded lane or a device the kernel refused bandwidth to in the last 15
+minutes. In practice: give each headset dongle and USB mic a port on its
+own lane, and put the receivers behind a USB 2.0 hub (a high-speed device
+like a Wi-Fi dongle can go there too, it doesn't use the hub's full-speed
+lane). `lsusb -t` shows the tree.
+
 ## Install with Docker (older setup)
 
 Clone the repo on the host, as the PipeWire user, and run the installer:

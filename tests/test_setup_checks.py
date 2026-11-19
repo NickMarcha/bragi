@@ -35,6 +35,7 @@ def host(tmp_path, monkeypatch):
     monkeypatch.setattr(sc.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(sc, "check_input_group", lambda: sc._check("input", "Input devices", "ok", "fake"))
     monkeypatch.setattr(sc, "check_realtime", lambda: sc._check("realtime", "Real-time audio", "ok", "fake"))
+    monkeypatch.setattr(sc, "check_usb", lambda: sc._check("usb", "USB bandwidth", "ok", "fake"))
     monkeypatch.setattr(sc, "check_hand_peers", lambda: sc._check("handpeers", "Hand-configured peers", "na", "fake"))
     h = {"active": {}, "enabled": {}, "serve": {"TCP": {"443": {"HTTPS": True}}, "Web": {"sagehub:443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:8000"}}}}},
          "started": [], "start_rc": 0, "dir": tmp_path}
@@ -63,7 +64,7 @@ def test_a_set_up_host_passes_every_check(host):
     checks = by_id()
     assert {i: c["status"] for i, c in checks.items()} == {
         "pipewire": "ok", "realtime": "ok", "modules": "ok", "linger": "ok", "input": "ok",
-        "hyperx": "ok", "tailscale": "ok", "services": "ok", "handpeers": "na"}
+        "hyperx": "ok", "tailscale": "ok", "services": "ok", "usb": "ok", "handpeers": "na"}
     assert all(c["fix"] is None for c in checks.values())
 
 
