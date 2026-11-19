@@ -410,6 +410,69 @@ def remove_peer(name: str) -> None:
         _regenerate_managed_conf(peers)
 
 
+# Where hand-written PipeWire configs live (the user's own conf.d).
+PIPEWIRE_CONF_DIR = Path(os.environ.get("BRAGI_PIPEWIRE_CONF_DIR")
+                         or Path.home() / ".config" / "pipewire" / "pipewire.conf.d")
+_NODE_NAME = re.compile(r'\b(sink|source)\.name\s*=\s*"([^"]+)"')
+
+
+def hand_configured() -> dict:
+    """Roc peers configured by hand (managed: false) and the conf.d files
+    that run them (bragi#62). A file is adoptable when every Roc sink and
+    source in it belongs to one of these peers: then Bragi can take over all
+    of them and set the file aside. A file with anything else is left alone."""
+    unmanaged = [p for p in load_peers() if not p.managed and p.protocol == "roc"]
+    files = []
+    found: set[str] = set()
+    if unmanaged and PIPEWIRE_CONF_DIR.is_dir():
+        for path in sorted(PIPEWIRE_CONF_DIR.glob("*.conf")):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            names = {name for _, name in _NODE_NAME.findall(text)}
+            mine = [p for p in unmanaged if p.outgoing_sink_name in names or p.incoming_source_name in names]
+            if not mine:
+                continue
+            known = {n for p in mine for n in (p.outgoing_sink_name, p.incoming_source_name)}
+            files.append({"path": str(path), "peers": [p.name for p in mine], "other": sorted(names - known)})
+            found.update(p.name for p in mine)
+    return {"peers": [p.name for p in unmanaged], "files": files,
+            "elsewhere": [p.name for p in unmanaged if p.name not in found]}
+
+
+def adopt_hand_configured() -> list[str]:
+    """Lets Bragi manage the hand-configured Roc peers whose conf.d files it
+    can take over whole: they keep their ports and node names (so the other
+    end needs no change), Bragi writes them into its managed config, and each
+    file is renamed to <name>.adopted-<date>. PipeWire has to restart before
+    the managed config can bind the ports the file's modules hold; the
+    caller asks for an audio reset. Returns the adopted peers' names."""
+    from datetime import date
+    report = hand_configured()
+    blocked = [f for f in report["files"] if f["other"]]
+    if blocked:
+        f = blocked[0]
+        raise ValueError(f"{f['path']} also runs {', '.join(f['other'])}, which Bragi doesn't know. "
+                         "Move those peers' modules to their own file, or list them in peers.yaml.")
+    names = {n for f in report["files"] for n in f["peers"]}
+    if not names:
+        return []
+    with _lock:
+        peers = load_peers()
+        for peer in peers:
+            if peer.name in names:
+                peer.managed = True
+        save_peers(peers)
+        _regenerate_managed_conf(peers)
+    stamp = date.today().strftime("%Y%m%d")
+    for f in report["files"]:
+        path = Path(f["path"])
+        path.rename(path.with_name(f"{path.name}.adopted-{stamp}"))
+    logger.info("adopted hand-configured peers %s", ", ".join(sorted(names)))
+    return sorted(names)
+
+
 def register_android_peer(name: str, tailscale_ip: str, capture_mode: str) -> Peer:
     """Registration is repeatable: reconnecting must keep its port allocation."""
     with _lock:

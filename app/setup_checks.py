@@ -191,8 +191,39 @@ def check_services() -> dict:
                   "user's session.", {"kind": "user", "action": "start-services", "label": "Start them"})
 
 
+def check_hand_peers() -> dict:
+    """Roc peers still run from a hand-written conf.d file (bragi#62)."""
+    from . import peers
+    title = "Hand-configured peers"
+    report = peers.hand_configured()
+    if not report["peers"]:
+        return _check("handpeers", title, "na", "Bragi manages every peer.")
+    blocked = [f for f in report["files"] if f["other"]]
+    if blocked:
+        f = blocked[0]
+        return _check("handpeers", title, "problem",
+                      f"{', '.join(report['peers'])} run from {f['path']}, which also runs {', '.join(f['other'])}. "
+                      "Bragi can only take over a file whose Roc modules are all its peers'.")
+    if not report["files"]:
+        return _check("handpeers", title, "problem",
+                      f"{', '.join(report['peers'])} are configured outside Bragi, but not in "
+                      f"{peers.PIPEWIRE_CONF_DIR}, so Bragi can't take them over.")
+    files = ", ".join(Path(f["path"]).name for f in report["files"])
+    return _check("handpeers", title, "problem",
+                  f"{', '.join(report['peers'])} run from {files}, which Bragi doesn't write: moving the hub or "
+                  "changing the headset means editing it by hand. Bragi can take them over with the same ports "
+                  "and names (the computers don't notice), set the file aside, and restart the audio.",
+                  {"kind": "user", "action": "adopt-peers", "label": "Let Bragi manage them"})
+
+
 CHECKS = ("check_pipewire", "check_modules", "check_linger", "check_input_group", "check_hyperx_quirk",
-          "check_tailscale_serve", "check_services")
+          "check_tailscale_serve", "check_services", "check_hand_peers")
+
+
+# check id -> function, so a fix runs only its own check.
+CHECK_IDS = {"pipewire": "check_pipewire", "modules": "check_modules", "linger": "check_linger",
+             "input": "check_input_group", "hyperx": "check_hyperx_quirk", "tailscale": "check_tailscale_serve",
+             "services": "check_services", "handpeers": "check_hand_peers"}
 
 
 def run_all() -> list[dict]:
@@ -229,12 +260,24 @@ def pending() -> bool:
 
 def fix(check_id: str) -> str:
     """Runs or requests the fix for one check. Returns what happened."""
-    check = next((c for c in run_all() if c["id"] == check_id), None)
-    if check is None:
+    name = CHECK_IDS.get(check_id)
+    if name is None:
         raise SetupError("Unknown check.")
+    check = globals()[name]()
     action = check["fix"]
     if action is None:
         return "Nothing to fix."
+    if action["kind"] == "user" and action["action"] == "adopt-peers":
+        from . import audio_reset, peers
+        try:
+            names = peers.adopt_hand_configured()
+        except ValueError as exc:
+            raise SetupError(str(exc)) from exc
+        try:
+            audio_reset.request()
+        except RuntimeError:
+            return f"Bragi manages {', '.join(names)} now. An audio reset is already running; it picks them up."
+        return f"Bragi manages {', '.join(names)} now. The audio restarts for a few seconds."
     if action["kind"] == "user":
         units = ["pipewire", "wireplumber", "pipewire-pulse"] if action["action"] == "start-pipewire" else _hub_units()
         rc, _ = _run(["systemctl", "--user", "start", *units], timeout=30)
