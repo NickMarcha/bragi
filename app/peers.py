@@ -143,19 +143,33 @@ def _next_free_ports(existing: list[Peer]) -> RocPorts:
     )
 
 
+def _headset_node(media_class: str, prefix: str) -> str | None:
+    """The headset's own node: with a desk mic like the AT2020 (which also
+    has a headphone jack) there's more than one USB input and output, and
+    the first in pw-dump's order isn't necessarily the headset. A HyperX
+    dongle is recognised by its USB serial in its ALSA card id. The serials
+    come from sysfs (headset_hid.find_devices), so this works before the
+    HID channel is open, e.g. when the managed config is written at
+    startup. Without a recognised dongle: the first USB node, as before."""
+    from . import headset_hid, headsets  # headset_hid imports this module
+    candidates = [n.name for n in pipewire.dump().nodes
+                  if n.media_class == media_class and n.name.startswith(prefix + "usb-")]
+    serials = [s for s in headset_hid.find_devices().values() if s]
+    for name in candidates:
+        card = headsets._card_id(name, prefix)
+        if card and any(headset_hid.serial_matches(card, s) for s in serials):
+            return name
+    return candidates[0] if candidates else None
+
+
 def _headset_mic_source_name() -> str | None:
     """The physical mic node currently feeding all peers' outgoing audio."""
-    for node in pipewire.dump().nodes:
-        if node.media_class == "Audio/Source" and "alsa_input" in node.name:
-            return node.name
-    return None
+    return _headset_node("Audio/Source", "alsa_input.")
 
 
 def _headset_playback_name() -> str | None:
-    for node in pipewire.dump().nodes:
-        if node.media_class == "Audio/Sink" and node.name.startswith("alsa_output.usb-"):
-            return node.name
-    return None
+    """The headset's output, which phones in listen mode hear."""
+    return _headset_node("Audio/Sink", "alsa_output.")
 
 
 def _roc_conf_block(peer: Peer) -> str:

@@ -180,3 +180,26 @@ def test_no_address_warning_when_the_address_matches_or_is_unknown(session):
             socket.receive_json()
             socket.send_json({'type': 'peer_status', 'send_active': True, 'receive_active': True, 'error': None})
             assert socket.receive_json()['address_warning'] is None
+
+
+def test_phones_hear_the_headset_not_a_desk_mics_headphone_jack(session, monkeypatch):
+    """sagehub, 2026-11-19: an AT2020USB+ (which has a headphone jack) came
+    first in pw-dump, so phones were fed its silent jack instead of the
+    headset. The HyperX dongle's serial picks the headset's own nodes."""
+    from app import headset_hid
+    from .fake_pipewire import HEADSET_CARD_ID, FakeNode
+    at2020 = "usb-audio-technica_AT2020USB_-00"
+    session.free_nodes[:0] = [
+        FakeNode(301, f"alsa_output.{at2020}.analog-stereo", "AT2020USB+ Analog Stereo", "Audio/Sink"),
+        FakeNode(302, f"alsa_input.{at2020}.analog-stereo", "AT2020USB+ Analog Stereo", "Audio/Source"),
+    ]
+    monkeypatch.setattr(headset_hid, "find_devices", lambda: {"hidraw0": "0000000001"})
+    assert peers._headset_playback_name() == f"alsa_output.{HEADSET_CARD_ID}.analog-stereo"
+    assert peers._headset_mic_source_name() == f"alsa_input.{HEADSET_CARD_ID}.mono-fallback"
+    register(TestClient(app))
+    text = peers.MANAGED_CONF_FILE.read_text()
+    assert f'target.object = "alsa_output.{HEADSET_CARD_ID}.analog-stereo"' in text
+    assert "AT2020" not in text
+    # Without a recognised dongle it's the first USB node, as before.
+    monkeypatch.setattr(headset_hid, "find_devices", lambda: {})
+    assert peers._headset_playback_name() == f"alsa_output.{at2020}.analog-stereo"
