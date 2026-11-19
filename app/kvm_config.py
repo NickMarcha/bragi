@@ -8,7 +8,9 @@ The engine is the headless Deskflow server. Its files live in
                this host's own name ([core] computerName), where server.conf is
 - server.conf  the links between computers and the options (hotkeys)
 - env          input options, read at startup
-- webui-layout.json  the grid positions links are built from
+- webui-layout.json  what links are built from: grid positions ("cells"), or
+               with "mode": "monitors", each computer drawn as its monitors
+               ("groups", see app/kvm_layout.py)
 
 Saving the layout or hotkeys rewrites server.conf and asks the running
 server to reload it (SIGHUP); the server reports whether it took it in its
@@ -35,7 +37,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import kvm
+from . import kvm, kvm_layout
 
 UNIT = "deskflow-headless.service"
 KEEP_BACKUPS = 20
@@ -212,7 +214,10 @@ def derive_cells(links: dict[str, dict[str, str]], names: list[str]) -> dict[str
     return {n: [c - c0, r - r0] for n, (c, r) in cells.items()}
 
 
-def build_conf(cells: dict[str, list[int]], options: list[str], other: list[str]) -> str:
+def build_conf(cells: dict[str, list[int]], options: list[str], other: list[str],
+               links: dict[str, list[str]] | None = None) -> str:
+    """server.conf from grid cells, or from links already worked out
+    (app/kvm_layout.py) when the layout is drawn as monitors."""
     pos = {tuple(v): k for k, v in cells.items()}
     out = [
         "# Written by Bragi (KVM setup). Saving there rewrites this file;",
@@ -220,7 +225,11 @@ def build_conf(cells: dict[str, list[int]], options: list[str], other: list[str]
         "",
         "section: links",
     ]
-    for name in sorted(cells, key=lambda n: (cells[n][1], cells[n][0])):
+    if links is not None:
+        for name in sorted(links):
+            out.append(f"\t{name}:")
+            out.extend(f"\t\t{line}" for line in links[name])
+    for name in sorted(cells, key=lambda n: (cells[n][1], cells[n][0])) if links is None else []:
         c, r = cells[name]
         neighbours = [f"\t\t{d} = {pos[(c + STEP[d][0], r + STEP[d][1])]}"
                       for d in DIRS if (c + STEP[d][0], r + STEP[d][1]) in pos]
@@ -305,6 +314,36 @@ def _layout(sections) -> tuple[dict[str, list[int]], list[str], list[str]]:
     return {n: v for n, v in cells.items() if n in names and n != primary}, options, other
 
 
+def _drawing(names: set[str]) -> dict:
+    """The saved layout mode and, for "monitors", each computer's group,
+    limited to the computers that still exist."""
+    try:
+        data = json.loads(_read(config_dir() / "webui-layout.json") or "{}")
+    except json.JSONDecodeError:
+        data = {}
+    mode = data.get("mode") if data.get("mode") in ("grid", "monitors") else "grid"
+    groups = data.get("groups") if isinstance(data.get("groups"), dict) else {}
+    try:
+        groups = kvm_layout.check_groups({n: g for n, g in groups.items() if n in names}, names)
+    except kvm_layout.LayoutError:
+        groups = {}
+    return {"mode": mode, "groups": groups}
+
+
+def _links(drawing: dict) -> dict[str, list[str]] | None:
+    """The links of a monitor layout, or None for the grid."""
+    if drawing["mode"] != "monitors":
+        return None
+    result = kvm_layout.analyse(drawing["groups"])
+    if result["errors"]:
+        raise ConfigError(result["errors"][0])
+    return result["links"]
+
+
+def _layout_file(cells: dict, drawing: dict) -> str:
+    return json.dumps({"cells": cells, "mode": drawing["mode"], "groups": drawing["groups"]}, indent=2) + "\n"
+
+
 def _env_lines() -> list[str]:
     return (_read(config_dir() / "env") or "").splitlines()
 
@@ -332,10 +371,12 @@ def read() -> dict:
     sections = _sections()
     primary = _primary(sections)
     cells, options, _ = _layout(sections)
+    computers = [c for c in _computers(sections) if c["name"] != primary]
     return {
         "host": primary,
-        "computers": [c for c in _computers(sections) if c["name"] != primary],
+        "computers": computers,
         "cells": cells,
+        "layout": _drawing({c["name"] for c in computers}),
         "hotkeys": options,
         "hotkey_actions": _hotkey_actions(),
         "input": _input(),
@@ -429,15 +470,36 @@ def _check_hotkeys(hotkeys) -> list[str]:
     return out
 
 
-def save_layout(cells, hotkeys, hotkey_actions_wanted=None) -> str:
+def _check_drawing(layout, names: set[str]) -> dict:
+    if not isinstance(layout, dict) or layout.get("mode") not in ("grid", "monitors"):
+        raise ConfigError("layout needs a mode: grid or monitors")
+    try:
+        groups = kvm_layout.check_groups(layout.get("groups") or {}, names)
+    except kvm_layout.LayoutError as exc:
+        raise ConfigError(str(exc)) from exc
+    return {"mode": layout["mode"], "groups": groups}
+
+
+def preview(layout) -> dict:
+    """What a monitor layout would link, without saving it."""
+    sections = _sections()
+    names = {c["name"] for c in _computers(sections)} - {_primary(sections)}
+    return kvm_layout.analyse(_check_drawing(layout, names)["groups"])
+
+
+def save_layout(cells, hotkeys, hotkey_actions_wanted=None, layout=None) -> str:
     """Writes the links and hotkeys and reloads them in the running server
     (clients stay connected). Puts the old file back if it's refused.
-    Hotkeys that run Bragi actions (notify(bragi-N)) save their actions too."""
+    Hotkeys that run Bragi actions (notify(bragi-N)) save their actions too.
+    layout is {"mode": "grid" | "monitors", "groups": ...}; without it the
+    saved one stays."""
     from . import hotkey_actions
     with _lock:
         sections = _sections()
         names = {c["name"] for c in _computers(sections)} - {_primary(sections)}
         cells = _check_cells(cells, names)
+        drawing = _drawing(names) if layout is None else _check_drawing(layout, names)
+        links = _links(drawing)
         hotkeys = _check_hotkeys(hotkeys)
         try:
             bragi_actions = hotkey_actions.check(hotkeys, hotkey_actions_wanted)
@@ -448,8 +510,8 @@ def save_layout(cells, hotkeys, hotkey_actions_wanted=None) -> str:
         old_conf, old_layout = _read(conf_path), _read(layout_path)
         _, _, other = parse_conf(old_conf or "")
         _backup(conf_path)
-        _atomic_write(conf_path, build_conf(cells, hotkeys, other))
-        _atomic_write(layout_path, json.dumps({"cells": cells}, indent=2) + "\n")
+        _atomic_write(conf_path, build_conf(cells, hotkeys, other, links))
+        _atomic_write(layout_path, _layout_file(cells, drawing))
         problem = _reload()
         if problem is None:
             hotkey_actions.save(bragi_actions)
@@ -492,6 +554,8 @@ def save_computers(computers) -> str:
         names = {str(c.get("name", "")).strip() for c in computers}
         cells, hotkeys, other = _layout(sections)
         cells = {n: p for n, p in cells.items() if n in names}
+        drawing = _drawing(names)
+        links = _links(drawing)
         gone = {c["name"] for c in _computers(sections)} - names - {primary}
         hotkeys = [h for h in (without_computers(o, gone) for o in hotkeys) if h is not None]
 
@@ -500,8 +564,8 @@ def save_computers(computers) -> str:
         _backup(settings)
         _backup(conf_path)
         _atomic_write(settings, ini_join(kept + new_sections))
-        _atomic_write(conf_path, build_conf(cells, hotkeys, other))
-        _atomic_write(layout_path, json.dumps({"cells": cells}, indent=2) + "\n")
+        _atomic_write(conf_path, build_conf(cells, hotkeys, other, links))
+        _atomic_write(layout_path, _layout_file(cells, drawing))
         if _restart():
             return "Saved; the KVM restarted and the computers are reconnecting."
         for path, text in old.items():

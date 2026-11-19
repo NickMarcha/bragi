@@ -155,3 +155,60 @@ def test_the_dashboard_routes(cfg, session):
     assert ok["ok"] and ok["config"]["cells"] == {"sage": [0, 0]}
     refused = client.post("/kvm/config/computers", json={"computers": [{"name": "bad name"}]})
     assert refused.status_code == 400 and "Not a valid" in refused.json()["detail"]
+
+
+MONITOR_LAYOUT = {"mode": "monitors", "groups": {
+    "sage": {"x": 0, "y": 0, "scale": 1, "size": "os", "monitors": [
+        {"id": "SAM", "name": "C34J79x", "x": 0, "y": 0, "width": 3440, "height": 1440},
+        {"id": "BNQ", "name": "BenQ RL2455", "x": 3440, "y": 356, "width": 1920, "height": 1080}]},
+    "sagedeck": {"x": 0, "y": 1440, "scale": 1, "size": "os", "monitors": [
+        {"id": "MSI", "name": "MAG 27CQ6F", "x": 0, "y": 0, "width": 1707, "height": 960}]},
+    "sage-dev": {"x": 3440, "y": 1440, "scale": 1, "size": "os", "monitors": [
+        {"id": "BNQ2", "name": "BenQ GL2450H", "x": 0, "y": 0, "width": 1920, "height": 1080}]},
+}}
+
+
+def test_a_monitor_layout_writes_partial_edges(cfg):
+    d, state = cfg
+    kvm_config.save_layout({}, [], None, MONITOR_LAYOUT)
+    conf = (d / "server.conf").read_text()
+    assert "\t\tdown(0,31.85) = sagedeck\n\t\tdown(64.18,100) = sage-dev\n" in conf
+    assert "\t\tup = sage(64.18,100)\n" in conf
+    saved = json.loads((d / "webui-layout.json").read_text())
+    assert saved["mode"] == "monitors" and set(saved["groups"]) == {"sage", "sagedeck", "sage-dev"}
+    assert kvm_config.read()["layout"]["mode"] == "monitors"
+    assert state["reloads"] == 1
+
+
+def test_saving_hotkeys_alone_keeps_the_monitor_layout(cfg):
+    d, _ = cfg
+    kvm_config.save_layout({}, [], None, MONITOR_LAYOUT)
+    kvm_config.save_layout({}, ["keystroke(Control+Alt+F9) = switchToNextScreen"])
+    conf = (d / "server.conf").read_text()
+    assert "down(0,31.85) = sagedeck" in conf and "switchToNextScreen" in conf
+
+
+def test_removing_a_computer_drops_it_from_the_monitor_layout(cfg):
+    d, _ = cfg
+    kvm_config.save_layout({}, [], None, MONITOR_LAYOUT)
+    kvm_config.save_computers([{"name": "sage"}, {"name": "sagedeck"}])
+    conf = (d / "server.conf").read_text()
+    assert "sage-dev" not in conf and "down(0,31.85) = sagedeck" in conf
+
+
+def test_an_overlapping_monitor_layout_is_refused_before_anything_is_written(cfg):
+    d, state = cfg
+    before = (d / "server.conf").read_text()
+    bad = json.loads(json.dumps(MONITOR_LAYOUT))
+    bad["groups"]["sagedeck"]["y"] = 1000
+    with pytest.raises(kvm_config.ConfigError, match="overlap"):
+        kvm_config.save_layout({}, [], None, bad)
+    assert (d / "server.conf").read_text() == before and state["reloads"] == 0
+
+
+def test_the_layout_preview_route(cfg, session):
+    client = TestClient(app)
+    result = client.post("/kvm/config/layout/preview", json={"layout": MONITOR_LAYOUT}).json()
+    assert result["links"]["sagedeck"] == ["up = sage(0,31.85)"] and result["errors"] == []
+    refused = client.post("/kvm/config/layout/preview", json={"layout": {"mode": "monitors", "groups": {"x": {}}}})
+    assert refused.status_code == 400 and "Unknown computer" in refused.json()["detail"]

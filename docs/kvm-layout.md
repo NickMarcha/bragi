@@ -1,6 +1,6 @@
 # KVM layout: monitors, not just computers
 
-Status: step 1 of 4 in progress (monitor reporting).
+Status: steps 1 (monitor reporting) and 2 (the editor) done; 3 and 4 to do.
 
 ## The problem
 
@@ -95,6 +95,42 @@ monitor seen, by id, with the computer it was last on, in
 `data/monitors.yaml`. KVM setup lists them.
 
 ### 2. The editor: computers as groups of monitors
+
+Built. KVM setup → Layout has two styles, Monitors and Simple grid. The
+grid is the old 5×3 one, unchanged. The choice is saved in
+`webui-layout.json` as `mode`, next to the grid's `cells` and the
+monitor layout's `groups`, so switching back and forth loses neither.
+
+- A group is `{x, y, scale, size, monitors}`: the computer's monitors in
+  its own desktop coordinates, drawn at `(x, y)` on the canvas at `scale`
+  canvas units per desktop unit. One scale per group keeps the mapping
+  from canvas to Deskflow percentages linear, so a split lands on a seam.
+- `app/kvm_layout.py` finds where monitors of different computers touch
+  and writes each shared stretch as a partial edge in both directions,
+  with neighbouring monitors along the same line merged into one range.
+  After every move the editor asks it for a preview with
+  `POST /kvm/config/layout/preview` and draws the crossing edges.
+- A monitor edge within 1% of the computer's outline counts as the
+  outline. sage's BenQ ends 4 px above its Samsung, and that shouldn't
+  matter. A shared stretch under 2% of the shorter monitor edge is a
+  corner, not an edge.
+- Overlapping computers can't be saved. Computers nothing touches, and
+  edges on an inner monitor (which plain Deskflow can only cross at the
+  outline), get a warning.
+- Size: "As the computer shows it" is scale 1. "Real size" uses the EDID
+  millimetres at 96 units per inch. Dragging the corner handle makes it
+  "Custom".
+- Drag snaps any edge of the moved computer, monitor or outline, to any
+  edge of the others within 12 screen pixels. Alt while dragging turns
+  that off. Arrow keys move a focused computer (Shift for small steps).
+- On first use the groups are placed like the simple grid. "Arrange like
+  the grid" does that again. A computer added later starts to the right,
+  apart from the rest, so it links nothing until it's placed.
+- The editor draws each computer with the monitors its tray app reports
+  now. When they differ from the saved layout, it says so, and saving
+  writes the new ones.
+
+The plan this was built from:
 
 - Each computer is drawn as its monitors, arranged inside the group exactly
   as its own display settings have them. That arrangement is the one

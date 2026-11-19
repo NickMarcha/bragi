@@ -146,19 +146,32 @@
 
     <section class="security-section">
       <h3>Monitors</h3>
-      <p class="form-note">What each computer's Bragi tray app reports, updated when monitors are plugged in, unplugged or rearranged. The layout will be built from these.</p>
+      <p class="form-note">What each computer's Bragi tray app reports, updated when monitors are plugged in, unplugged or rearranged. The Monitors layout is drawn from these.</p>
       <div id="kvm-monitors"><p class="form-note">Loading…</p></div>
     </section>
 
     <section class="security-section">
       <h3>Layout</h3>
-      <p class="form-note">Click a computer, then a place. Computers next to each other share that edge: the mouse crosses over it.</p>
-      <div id="kvm-grid" class="kvm-grid"></div>
-      <p id="kvm-unplaced-note" class="form-note" hidden>Not placed yet:</p>
-      <div id="kvm-unplaced" class="kvm-chips"></div>
+      <div class="kvm-mode" role="radiogroup" aria-label="Layout style">
+        <label><input type="radio" name="kvm-mode" value="monitors"> Monitors</label>
+        <label><input type="radio" name="kvm-mode" value="grid"> Simple grid</label>
+      </div>
+      <div id="kvm-grid-editor">
+        <p class="form-note">Click a computer, then a place. Computers next to each other share that edge: the mouse crosses over it.</p>
+        <div id="kvm-grid" class="kvm-grid"></div>
+        <p id="kvm-unplaced-note" class="form-note" hidden>Not placed yet:</p>
+        <div id="kvm-unplaced" class="kvm-chips"></div>
+      </div>
+      <div id="kvm-canvas-editor" hidden>
+        <p class="form-note">Each computer is drawn as its monitors, arranged as its own display settings have them. Drag computers so their monitors touch where the mouse should cross; they snap together. Crossing edges are highlighted.</p>
+        <div id="kvm-canvas" class="kvm-canvas" aria-label="Layout: drag computers, or focus one and use the arrow keys"></div>
+        <ul id="kvm-layout-notes" class="kvm-notes"></ul>
+        <ul id="kvm-groups" class="kvm-list"></ul>
+      </div>
       <div class="dialog-actions">
         <button type="button" id="kvm-identify" title="Show each computer's name on its own screens for a few seconds">Identify</button>
         <button type="button" id="kvm-unplace">Take the selected one off</button>
+        <button type="button" id="kvm-arrange" hidden title="Place the computers as the simple grid has them">Arrange like the grid</button>
         <button type="button" id="kvm-save-layout" class="primary" data-section="layout">Save layout</button>
       </div>
       <p data-msg="layout" hidden></p>

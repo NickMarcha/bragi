@@ -1202,6 +1202,101 @@ dialog h2 {
   outline-offset: 1px;
 }
 
+.kvm-mode {
+  display: flex;
+  gap: 16px;
+  margin: 4px 0 8px;
+  font-size: 14px;
+}
+
+.kvm-canvas {
+  position: relative;
+  height: 320px;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.kvm-group {
+  position: absolute;
+  cursor: grab;
+  outline-offset: 2px;
+}
+
+.kvm-group:focus-visible { outline: 2px solid var(--accent); }
+.kvm-group.moving { cursor: grabbing; z-index: 2; }
+
+.kvm-monitor {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.kvm-group.tile .kvm-monitor { border-style: dashed; background: transparent; }
+.kvm-group.overlap .kvm-monitor { border-color: var(--danger, #c0392b); }
+
+.kvm-monitor span {
+  position: absolute;
+  left: 4px;
+  bottom: 2px;
+  right: 4px;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kvm-group-name {
+  position: absolute;
+  left: 6px;
+  top: 4px;
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.kvm-resize {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--muted);
+  cursor: nwse-resize;
+}
+
+.kvm-edge {
+  position: absolute;
+  background: var(--accent);
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.kvm-edge.v { width: 4px; margin-left: -2px; }
+.kvm-edge.h { height: 4px; margin-top: -2px; }
+.kvm-edge.inner { background: repeating-linear-gradient(45deg, var(--accent) 0 4px, transparent 4px 8px); }
+
+.kvm-notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.kvm-size { margin-left: auto; font-size: 13px; }
+
+@media (max-width: 560px) {
+  .kvm-canvas { height: 220px; }
+}
+
 .kvm-chips {
   display: flex;
   flex-wrap: wrap;
