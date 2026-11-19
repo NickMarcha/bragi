@@ -1560,3 +1560,23 @@ dialog h2 {
 }
 
 .hub-move label { display: grid; gap: 2px; flex: 1; min-width: 14em; }
+
+/* --- Settings > Backup (app/backup.py) --- */
+
+.backup-paused {
+  padding: 8px 10px;
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.backup-restore {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 8px 0 4px;
+  font-size: 13px;
+}
+
+.backup-restore label { display: grid; gap: 2px; flex: 1; min-width: 14em; }

@@ -10,7 +10,7 @@ import time
 from typing import Literal
 from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException, Request, WebSocket
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile, WebSocket
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -39,6 +39,7 @@ from . import updates
 from . import setup_checks
 from . import hub_info
 from . import headset_choice
+from . import backup
 from . import level_meter
 from . import peer_control
 from . import key_bindings
@@ -62,6 +63,8 @@ async def _headset_changed(serial: str) -> None:
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
+    # A hub restored from a backup stays paused until "Take over" (app/backup.py).
+    await asyncio.to_thread(backup.enforce_pause)
     try:
         await asyncio.to_thread(peers_module.sync_managed_conf)
     except peers_module.ConfigWriteError:
@@ -456,6 +459,44 @@ def run_update(request: Request, action: str):
     except updates.UpdateError as exc:
         return _updates_section(request, str(exc))
     return _updates_section(request)
+
+
+# --- Settings > Backup (app/backup.py) ---
+
+def _backup_section(request: Request, error: str | None = None, note: str | None = None):
+    return templates.TemplateResponse(request, "_backup.html",
+                                      {"backup": backup.view(), "error": error, "note": note})
+
+
+@app.get("/backup", response_class=HTMLResponse)
+def backup_section(request: Request):
+    return _backup_section(request)
+
+
+@app.get("/backup/download")
+def backup_download():
+    """This hub's settings as one .tar.gz (it holds the dashboard's logins)."""
+    name, data = backup.backup()
+    return Response(data, media_type="application/gzip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
+@app.post("/backup/restore", response_class=HTMLResponse)
+async def backup_restore(request: Request, archive: UploadFile):
+    data = await archive.read(backup.MAX_UPLOAD + 1)
+    try:
+        manifest = await asyncio.to_thread(backup.restore, data)
+    except backup.BackupError as exc:
+        return _backup_section(request, error=str(exc))
+    backup.restart_bragi()
+    return _backup_section(request, note=f"Restored the backup from {manifest.get('host', 'another hub')}. "
+                           "Bragi restarts in a moment to load it; reload this page then.")
+
+
+@app.post("/backup/take-over", response_class=HTMLResponse)
+def backup_take_over(request: Request):
+    backup.take_over()
+    return _backup_section(request, note="This hub is running the peers and the KVM now.")
 
 
 # --- Settings > Main headset (app/headset_choice.py) ---
