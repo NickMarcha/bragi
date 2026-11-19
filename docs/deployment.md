@@ -1,7 +1,7 @@
 # Deployment
 
-Bragi is built for one shape of host: a Linux box (a Raspberry Pi 4 in
-practice) running PipeWire as a user session, with one or more USB headsets
+Bragi is built for one shape of host: a Linux box (a Raspberry Pi 4, or a
+small x86 server such as an HP MicroServer) running PipeWire as a user session, with one or more USB headsets
 plugged in, and peers reachable over Tailscale. Everything runs bare metal
 as the PipeWire user: Bragi itself as the `bragi` systemd user service from
 a Debian package, next to PipeWire, WirePlumber and, optionally, the
@@ -12,7 +12,21 @@ run it: Bragi manages host services (Deskflow, the peers, the audio reset)
 and devices, which a container can only reach through more and more
 mounts.
 
-## Install from the apt repository (Raspberry Pi OS / Debian trixie, arm64)
+## Choosing the box
+
+- **Raspberry Pi 4:** cheap, silent, 5 W. All four USB-A ports share one
+  controller and its full-speed lane, so one headset dongle plus keyboard
+  and mouse receivers fit, but a second headset or a USB mic doesn't (see
+  [USB placement](#usb-placement)). Its USB-C port is a separate
+  controller that takes one more full-speed device.
+- **A small x86 server or PC** (tested: HP ProLiant MicroServer N54L, 16 GB,
+  Debian 13): USB ports on several controllers, so two headsets and a USB
+  mic fit, and drive bays. Louder and 25-40 W. It needs USB dongles for
+  Bluetooth and Wi-Fi if it has none built in.
+
+Bragi and the headless Deskflow server are packaged for both arm64 and amd64.
+
+## Install from the apt repository (Debian trixie or Raspberry Pi OS, arm64 or amd64)
 
 ```bash
 curl -fsSL https://nickmarcha.github.io/apt/install.sh | sh
@@ -39,6 +53,27 @@ Building it yourself: `packaging/build-deb.sh <version>` in a Debian trixie
 container (see `.github/workflows/package.yml`, which does it on every
 `bragi-v*` tag and attaches the `.deb` to the release; the apt repository
 picks releases up within the hour).
+
+### On an x86 server
+
+1. Install Debian 13 (trixie): the netinst image, or the official cloud
+   image written straight to the disk with a cloud-init seed (hostname,
+   user, SSH key) if the box has no screen. A BIOS-only box like the N54L
+   boots the generic image from a drive bay.
+2. Install Tailscale and join the tailnet.
+3. Run the install script above. It adds the apt repository and installs
+   Bragi; `sudo apt install deskflow` adds the KVM server.
+4. Open the dashboard on `http://127.0.0.1:8000` through an SSH tunnel, or
+   let Settings > Setup set up `tailscale serve` first, and work through
+   Settings > Setup. On a fresh Debian it typically fixes: lingering, the
+   `pipewire` group (real-time audio, without it the audio clicks under
+   load), the `input` group, the Roc modules, and the HyperX quirk (a GRUB
+   drop-in here, not `cmdline.txt`).
+5. Wi-Fi dongles usually need non-free firmware: add `non-free-firmware` to
+   the Debian apt sources and install `firmware-misc-nonfree` (MediaTek
+   `mt76x2u`, such as the Netgear A6210) or the matching package.
+6. Moving from another hub: restore its backup (Settings > Backup), then
+   follow [Moving to a new hub](#moving-to-a-new-hub).
 
 ## What the host needs
 

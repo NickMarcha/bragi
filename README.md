@@ -5,7 +5,8 @@
 # Bragi
 
 A dedicated, headless audio hub with a web mixer. Plug a USB headset into
-an always-on Linux box (a Raspberry Pi is plenty), run Bragi on it, and the
+an always-on Linux box (a Raspberry Pi, or a small x86 server for more USB
+headroom), run Bragi on it, and the
 headset is shared by every machine on your tailnet. Linux desktops, Windows PCs and Android
 phones send their audio to it and hear its mic. Bragi is the control panel
 on top: per-peer volume and balance in both directions, live level meters,
@@ -159,8 +160,11 @@ These are design constraints. Open bugs are in
   within milliseconds. Balance only holds on the software peer nodes.
 - **One headset at a time on a Pi 4.** All four USB ports share one
   Full-Speed hub, and two headset streams don't fit reliably. Keep a second
-  headset plugged in and switched off. See
-  [`docs/audio-bridge.md`](docs/audio-bridge.md#dual-headset-playback-and-why-the-pi-runs-one-headset).
+  headset plugged in and switched off, or use a box whose USB ports sit on
+  separate controllers (an HP MicroServer N54L runs two headsets and a USB
+  mic). Settings > USB shows which devices share bandwidth. See
+  [`docs/audio-bridge.md`](docs/audio-bridge.md#dual-headset-playback-and-why-the-pi-runs-one-headset)
+  and "USB placement" in [`docs/deployment.md`](docs/deployment.md#usb-placement).
 - **VBAN peers share one port and one format.** All use port 6980 at 48 kHz,
   16-bit stereo, and each needs a stream name no other VBAN peer uses.
 - **Adding or removing a managed peer briefly drops all of them.** The host
