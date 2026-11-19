@@ -23,6 +23,7 @@ class FakeDongle:
     millivolts: int = 3662
     charging: int = 0
     mic_monitor: bool = False
+    mic_muted: bool = False
     auto_off: int = 1200
     headset_on: bool = True
     # Ops this dongle never answers, to model a dropped reply.
@@ -58,6 +59,8 @@ class FakeDongle:
             return bytes([self.charging])
         if op == 0x16:
             return bytes([1 if self.mic_monitor else 0])
+        if op == 0x04:
+            return bytes([1 if self.mic_muted else 0])
         if op == 0x4B:
             return self.auto_off.to_bytes(2, "big")
         return bytes([0])

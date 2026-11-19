@@ -1,8 +1,9 @@
 """Microphone selection rewires only desktop microphone destinations."""
 import json
 
+import pytest
 from fastapi.testclient import TestClient
-from app import microphone, peers, pipewire
+from app import headset_hid, microphone, peers, pipewire
 from app.main import app
 
 
@@ -86,3 +87,113 @@ def test_missing_selected_phone_mic_stays_silent_and_device_audio_is_not_a_mic(s
 def test_original_host_routing_is_untouched_until_selection_is_used(session):
     microphone.reconcile()
     assert session.calls == []
+
+
+# --- a USB desk mic, following the headset's mute ---------------------------------
+
+HEADSET_IN = 'alsa_input.usb-HP__Inc_HyperX_Cloud_III_S_Wireless_SER1-00.mono-fallback'
+AT2020_IN = 'alsa_input.usb-audio-technica_AT2020USB_-00.analog-stereo'
+AT2020 = 'usb-audio-technica_AT2020USB_-00'
+
+
+class DeskHost(RoutingHost):
+    """The headset's mic (node 4) and an AT2020 (node 8) on the host."""
+
+    def __init__(self):
+        super().__init__()
+        self.nodes = [n if n[0] != 4 else (4, HEADSET_IN, 'Audio/Source') for n in self.nodes]
+        self.nodes.append((8, AT2020_IN, 'Audio/Source'))
+        self.ports += [(801, 8, 'out', 'FL'), (802, 8, 'out', 'FR')]
+
+    def run(self, args, input_text=None):
+        out = super().run(args, input_text)
+        if args == ['pw-dump']:
+            objects = json.loads(out)
+            for obj in objects:
+                if obj['id'] == 8:
+                    obj['info']['props']['node.description'] = 'AT2020USB+ Analog Stereo'
+            out = json.dumps(objects)
+        return out
+
+
+@pytest.fixture
+def desk(session, monkeypatch):
+    host = DeskHost()
+    monkeypatch.setattr(pipewire, '_run', host.run)
+    hs = headset_hid.HidHeadset('SER1', lambda data: None, lambda serial: None)
+    hs._state.update(headset_on=True, mic_muted=False)
+    monkeypatch.setattr(headset_hid, '_devices', {'SER1': hs})
+    monkeypatch.setattr(microphone, '_last_live', None)
+    host.headset = hs
+    return host
+
+
+FROM_HEADSET = {(401, 101), (401, 102), (401, 201), (401, 202), (401, 501), (401, 502), (301, 601)}
+FROM_AT2020 = {(801, 101), (802, 102), (801, 201), (802, 202), (801, 501), (802, 502), (301, 601)}
+
+
+def test_a_usb_mic_is_a_choice_and_the_headset_is_still_its_own_mic(desk):
+    keys = {o['key']: o['label'] for o in microphone.options()}
+    assert keys[f'usb:{AT2020}'] == 'AT2020USB+'
+    assert keys[f'follow:{AT2020}'] == "Headset when its mic is live, AT2020USB+ when it's muted"
+    microphone.select('headset')
+    assert desk.links == FROM_HEADSET   # not the AT2020, though it's a USB input too
+    microphone.select(f'usb:{AT2020}')
+    assert desk.links == FROM_AT2020
+
+
+def test_following_the_headset_mute_switches_between_the_mics(desk):
+    microphone.select(f'follow:{AT2020}')
+    assert desk.links == FROM_HEADSET
+    assert microphone.view()['live'] == 'Headset microphone (its mic is live)'
+
+    desk.headset._state['mic_muted'] = True      # sat down at the desk
+    assert microphone.reconcile() is True        # changed: the dashboards are told
+    assert desk.links == FROM_AT2020
+    assert microphone.view()['live'] == 'AT2020USB+ (headset muted or off)'
+    assert microphone.reconcile() is False
+
+    desk.headset._state.update(headset_on=False, mic_muted=None)   # headset off
+    microphone.reconcile()
+    assert desk.links == FROM_AT2020
+
+    desk.headset._state.update(headset_on=True, mic_muted=False)   # walked away again
+    microphone.reconcile()
+    assert desk.links == FROM_HEADSET
+
+
+def test_muting_all_mics_silences_every_choice_until_unmuted(desk):
+    microphone.select(f'follow:{AT2020}')
+    assert microphone.toggle_muted() is True
+    assert desk.links == {(301, 601)}
+    desk.headset._state['mic_muted'] = True
+    microphone.reconcile()
+    assert desk.links == {(301, 601)}             # still muted on the desk mic
+    assert microphone.view()['live'] == 'All mics muted'
+    assert microphone.toggle_muted() is False
+    assert desk.links == FROM_AT2020
+
+
+def test_an_unplugged_desk_mic_stays_silent_rather_than_using_the_muted_headset(desk):
+    microphone.select(f'follow:{AT2020}')
+    desk.headset._state['mic_muted'] = True
+    desk.nodes = [n for n in desk.nodes if n[0] != 8]
+    desk.ports = [p for p in desk.ports if p[1] != 8]
+    desk.links = {link for link in desk.links if link[0] not in (801, 802)}
+    microphone.reconcile()
+    assert desk.links == {(301, 601)}
+    assert microphone.view()['live'].endswith('not connected')
+
+
+def test_the_mute_route_and_the_macro_action(desk):
+    from app import macro_button
+    import asyncio
+    microphone.select('headset')
+    client = TestClient(app)
+    page = client.post('/audio/microphone/mute', data={'muted': '1'})
+    assert page.status_code == 200 and 'Unmute mics' in page.text
+    assert desk.links == {(301, 601)}
+    assert macro_button.valid_action({'type': 'toggle_mic_mute'}) == {'type': 'toggle_mic_mute'}
+    result = asyncio.run(macro_button.press('SER1', 'single', {'type': 'toggle_mic_mute'}))
+    assert result['ok'] and result['text'] == 'mics live'
+    assert desk.links == FROM_HEADSET

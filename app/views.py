@@ -189,7 +189,7 @@ def build_state() -> dict:
         "peers": [peer_view(graph, p, volumes) for p in peers],
         "order_of": layout.positions(default_order),
         "viz_settings": {"enabled": viz_settings.get_enabled()},
-        "microphone": microphone.view(),
+        "microphone": microphone.view(graph),
         "audio_reset": audio_reset.view(),
         "nightly_reset": {"hour": audio_reset.nightly_hour()},
         "eq_presets": eq_presets.list_all(),

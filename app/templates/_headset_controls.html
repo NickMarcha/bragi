@@ -153,6 +153,7 @@
           <option value="kvm_switch" {% if a.type == 'kvm_switch' %}selected{% endif %}>Switch to a computer</option>
           <option value="http" {% if a.type == 'http' %}selected{% endif %}>HTTP request</option>
           <option value="toggle_mic_monitor" {% if a.type == 'toggle_mic_monitor' %}selected{% endif %}>Mic monitoring on/off</option>
+          <option value="toggle_mic_mute" {% if a.type == 'toggle_mic_mute' %}selected{% endif %}>Mute or unmute all mics</option>
         </select>
         <button type="button" data-macro-test {% if a.type == 'none' %}disabled{% endif %}
                 title="Run this action once, as it is in the form">Test</button>

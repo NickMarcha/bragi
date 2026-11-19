@@ -116,7 +116,19 @@ button:focus-visible {
 
 #microphone-routing select {
   color: var(--text);
+  max-width: 22em;
 }
+
+#microphone-routing {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#microphone-routing .mic-mute-form { display: inline; }
+#microphone-routing button.mic-muted { border-color: var(--danger); color: var(--danger); }
+#microphone-routing .mic-live { font-size: 12px; }
 
 /* The KVM bar: one button per computer, the active one lit. */
 #kvm-bar {

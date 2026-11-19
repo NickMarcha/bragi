@@ -50,6 +50,13 @@ from . import ws
 logger = logging.getLogger("bragi")
 
 
+async def _headset_changed(serial: str) -> None:
+    """A headset's HID state changed: the dashboards hear about it, and in
+    "follow the headset's mute" mode its mute picks the desktop mic."""
+    await ws.broadcast_headset_controls(serial)
+    await microphone.on_headset_change()
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -57,12 +64,13 @@ async def lifespan(app: FastAPI):
     except peers_module.ConfigWriteError:
         logger.exception("managed peers config not written")
     monitors.broadcast = ws.manager.broadcast_nowait
+    microphone.broadcast = ws.manager.broadcast_nowait
     kvm_follow.start(asyncio.get_running_loop(), ws.manager.broadcast_nowait)
     monitors.on_change = kvm_follow.changed
     tasks = [
         asyncio.create_task(watcher.watch(ws.on_node_changed)),
         asyncio.create_task(knob_watcher.watch(ws.broadcast_headset_volume_change)),
-        asyncio.create_task(headset_hid.supervise(ws.broadcast_headset_controls, ws.on_macro_button)),
+        asyncio.create_task(headset_hid.supervise(_headset_changed, ws.on_macro_button)),
         asyncio.create_task(level_meter.supervise()),
         asyncio.create_task(microphone.supervise()),
         asyncio.create_task(mic_monitor.supervise()),
@@ -259,6 +267,17 @@ def select_microphone(request: Request, source: str = Form(...)):
         microphone.select(source)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    except peers_module.pipewire.PipewireError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    ws.manager.broadcast_nowait({'type': 'microphone'})
+    return microphone_controls(request)
+
+
+@app.post("/audio/microphone/mute", response_class=HTMLResponse)
+def mute_microphones(request: Request, muted: str = Form(...)):
+    """Mutes or unmutes every mic the computers hear (microphone.py)."""
+    try:
+        microphone.set_muted(muted == "1")
     except peers_module.pipewire.PipewireError as exc:
         raise HTTPException(502, str(exc)) from exc
     ws.manager.broadcast_nowait({'type': 'microphone'})

@@ -255,3 +255,32 @@ def test_a_headset_card_is_matched_to_its_dongle_by_usb_serial():
     assert headset_hid.serial_matches(card, "C1V5340J99")
     assert not headset_hid.serial_matches(card, "5340J9")
     assert not headset_hid.serial_matches(card, "")
+
+
+def test_refresh_reads_the_mic_mute(headset, dongle):
+    """The Pi's headset answered `04 01` while its mute was on."""
+    dongle.mic_muted = True
+    headset.refresh()
+
+    assert headset.view()["mic_muted"] is True
+
+
+def test_mic_mute_follows_the_mute_button(headset, dongle):
+    """Each press sends `0d 02 03 00 03 <01 muted | 00 live>` (seen on the Pi)."""
+    headset.refresh()
+    assert headset.view()["mic_muted"] is False
+
+    dongle.notify(0x03, 1)
+    assert headset.view()["mic_muted"] is True
+    dongle.notify(0x03, 0)
+    assert headset.view()["mic_muted"] is False
+    assert headset.changes  # the dashboards and the mic routing are told
+
+
+def test_a_headset_turning_off_forgets_its_mute(headset, dongle):
+    dongle.mic_muted = True
+    headset.refresh()
+
+    dongle.notify(0x0C, 0)
+
+    assert headset.view()["mic_muted"] is None
