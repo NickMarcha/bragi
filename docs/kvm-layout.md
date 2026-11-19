@@ -121,9 +121,15 @@ monitor layout's `groups`, so switching back and forth loses neither.
 - Size: "As the computer shows it" is scale 1. "Real size" uses the EDID
   millimetres at 96 units per inch. Dragging the corner handle makes it
   "Custom".
-- Drag snaps any edge of the moved computer, monitor or outline, to any
-  edge of the others within 12 screen pixels. Alt while dragging turns
-  that off. Arrow keys move a focused computer (Shift for small steps).
+- Dragging snaps within 12 screen pixels, or 18 for edges that would
+  touch. Touching wins over lining up, so a computer dropped near another
+  ends up against it. A monitor edge within 1% of the outline snaps as
+  the outline, the same way the server counts it. Otherwise sage-dev
+  would snap to the bottom of sage's BenQ, which ends 4 px above the
+  Samsung, and overlap the Samsung. A computer dropped on top of another
+  is pushed out the shortest way until they only touch. Crossing edges
+  update while dragging. Alt while dragging turns snapping off. Arrow
+  keys move a focused computer, and Shift makes the steps small.
 - On first use the groups are placed like the simple grid. "Arrange like
   the grid" does that again. A computer added later starts to the right,
   apart from the rest, so it links nothing until it's placed.

@@ -335,18 +335,26 @@
       placeGroup(node, g);
       return node;
     });
-    const edges = (analysis ? analysis.edges : []).filter((e) => e.from < e.to).map((e) => {
+    area.replaceChildren(...nodes);
+    renderEdges();
+    renderNotes();
+    renderGroupList();
+    renderSetups();
+  }
+
+  // The crossing edges from the last preview, drawn over the groups.
+  function renderEdges() {
+    const area = $("#kvm-canvas");
+    area.querySelectorAll(".kvm-edge").forEach((n) => n.remove());
+    if (!view) return;
+    area.append(...(analysis ? analysis.edges : []).filter((e) => e.from < e.to).map((e) => {
       const [[x0, y0], [x1, y1]] = e.segment;
       const vertical = x0 === x1;
       return el("div", { class: "kvm-edge" + (e.outer ? "" : " inner") + (vertical ? " v" : " h"),
                          title: `The mouse crosses between ${e.from} and ${e.to} here`,
                          style: `left:${px((Math.min(x0, x1) - view.x) * view.z)};top:${px((Math.min(y0, y1) - view.y) * view.z)};`
                            + (vertical ? `height:${px(Math.abs(y1 - y0) * view.z)}` : `width:${px(Math.abs(x1 - x0) * view.z)}`) });
-    });
-    area.replaceChildren(...nodes, ...edges);
-    renderNotes();
-    renderGroupList();
-    renderSetups();
+    }));
   }
 
   function renderSetups() {
@@ -402,31 +410,66 @@
 
   // --- moving
 
-  function edgesOf(g) {
-    const rs = [...rects(g), box(g)];
-    return { xs: rs.flatMap((r) => [r[0], r[2]]), ys: rs.flatMap((r) => [r[1], r[3]]) };
+  // The group's monitors with any edge within 1% of its outline moved onto
+  // the outline, as the server counts them (sage's BenQ ends 4 px above
+  // its Samsung; snapping to that would overlap the Samsung).
+  function outlined(g) {
+    const bx = box(g);
+    const sx = Math.max(0.5, 0.01 * (bx[2] - bx[0])), sy = Math.max(0.5, 0.01 * (bx[3] - bx[1]));
+    return rects(g).map(([l, t, r, b]) => [
+      Math.abs(l - bx[0]) <= sx ? bx[0] : l, Math.abs(t - bx[1]) <= sy ? bx[1] : t,
+      Math.abs(r - bx[2]) <= sx ? bx[2] : r, Math.abs(b - bx[3]) <= sy ? bx[3] : b]);
   }
 
-  // Moves g by the smallest step (under the snap distance) that lines one of
-  // its edges up with another computer's.
-  function snap(name, g) {
-    const mine = edgesOf(g);
-    const theirs = Object.entries(groups).filter(([n]) => n !== name).map(([, o]) => edgesOf(o));
-    const limit = SNAP_PX / view.z;
-    for (const axis of ["xs", "ys"]) {
-      let best = null;
-      for (const a of mine[axis]) for (const o of theirs) for (const b of o[axis]) {
-        const d = b - a;
-        if (Math.abs(d) <= limit && (best === null || Math.abs(d) < Math.abs(best))) best = d;
-      }
-      if (best !== null) g[axis === "xs" ? "x" : "y"] += best;
+  const others = (name) => Object.entries(groups).filter(([n]) => n !== name).flatMap(([, o]) => outlined(o));
+
+  // The smallest move along one axis (0 = x, 1 = y) under `limit`, or null.
+  // Touching (my left on their right, my top on their bottom...) counts
+  // only where the two would actually meet along the other axis, and wins
+  // over merely lining edges up.
+  function snapStep(mine, theirs, axis, limit) {
+    const [lo, hi, olo, ohi] = axis === 0 ? [0, 2, 1, 3] : [1, 3, 0, 2];
+    let touch = null, align = null;
+    const better = (best, d, lim) => Math.abs(d) <= lim && (best === null || Math.abs(d) < Math.abs(best));
+    for (const a of mine) for (const b of theirs) {
+      const near = a[olo] < b[ohi] + limit && b[olo] < a[ohi] + limit;
+      for (const d of [b[hi] - a[lo], b[lo] - a[hi]]) if (near && better(touch, d, limit * 1.5)) touch = d;
+      for (const d of [b[lo] - a[lo], b[hi] - a[hi]]) if (better(align, d, limit)) align = d;
     }
+    return touch !== null ? touch : align;
   }
 
-  function overlaps(name) {
-    const mine = rects(groups[name]);
-    return Object.entries(groups).some(([n, o]) => n !== name && rects(o).some((b) => mine.some((a) =>
-      Math.min(a[2], b[2]) - Math.max(a[0], b[0]) > 0.5 && Math.min(a[3], b[3]) - Math.max(a[1], b[1]) > 0.5)));
+  function snap(name, g) {
+    const limit = SNAP_PX / view.z;
+    const theirs = others(name);
+    const dx = snapStep(outlined(g), theirs, 0, limit);
+    if (dx !== null) g.x += dx;
+    const dy = snapStep(outlined(g), theirs, 1, limit);
+    if (dy !== null) g.y += dy;
+  }
+
+  function overlapping(name) {
+    const mine = outlined(groups[name]);
+    for (const b of others(name)) for (const a of mine) {
+      if (Math.min(a[2], b[2]) - Math.max(a[0], b[0]) > 0.5 && Math.min(a[3], b[3]) - Math.max(a[1], b[1]) > 0.5) return [a, b];
+    }
+    return null;
+  }
+  const overlaps = (name) => overlapping(name) !== null;
+
+  // Dropped on top of another computer: push it out the shortest way until
+  // they only touch.
+  function pushOut(name) {
+    const g = groups[name];
+    for (let i = 0; i < 8; i++) {
+      const hit = overlapping(name);
+      if (!hit) return;
+      const [a, b] = hit;
+      const moves = [[b[2] - a[0], 0], [b[0] - a[2], 0], [0, b[3] - a[1]], [0, b[1] - a[3]]];
+      const [mx, my] = moves.reduce((m, v) => (Math.abs(v[0] + v[1]) < Math.abs(m[0] + m[1]) ? v : m));
+      g.x += mx;
+      g.y += my;
+    }
   }
 
   let previewTimer = null;
@@ -437,6 +480,9 @@
     previewTimer = setTimeout(preview, 150);
   }
 
+  let dragging = false;
+  let livePending = false;
+
   async function preview() {
     if (mode !== "monitors") return;
     try {
@@ -444,7 +490,16 @@
     } catch (err) {
       analysis = { edges: [], warnings: [], errors: [err.message] };
     }
-    renderCanvas(false);
+    // Mid-drag only the edges change: redrawing the groups would drop the
+    // one being dragged.
+    if (dragging) renderEdges(); else renderCanvas(false);
+  }
+
+  // While dragging, at most one preview in flight.
+  async function livePreview() {
+    if (livePending) return;
+    livePending = true;
+    try { await preview(); } finally { livePending = false; }
   }
 
   function layoutBody() {
@@ -466,7 +521,7 @@
     const start = { px: e.clientX, py: e.clientY, x: g.x, y: g.y, scale: g.scale, w: box(g)[2] - box(g)[0] };
     node.setPointerCapture(e.pointerId);
     node.classList.add("moving");
-    $("#kvm-canvas").querySelectorAll(".kvm-edge").forEach((n) => n.remove());
+    dragging = true;
     const move = (ev) => {
       const dx = (ev.clientX - start.px) / view.z, dy = (ev.clientY - start.py) / view.z;
       if (resizing) {
@@ -479,12 +534,15 @@
       }
       node.classList.toggle("overlap", overlaps(name));
       placeGroup(node, g);
+      livePreview();
     };
     const up = () => {
       node.removeEventListener("pointermove", move);
       node.removeEventListener("pointerup", up);
       node.removeEventListener("pointercancel", up);
       node.classList.remove("moving");
+      dragging = false;
+      pushOut(name);
       changedLayout();
     };
     node.addEventListener("pointermove", move);
@@ -501,6 +559,7 @@
     g.x += step[0] * d;
     g.y += step[1] * d;
     if (!e.shiftKey) snap(node.dataset.name, g);
+    pushOut(node.dataset.name);
     e.preventDefault();
     changedLayout();
     $(`.kvm-group[data-name="${CSS.escape(node.dataset.name)}"]`).focus();
