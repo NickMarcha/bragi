@@ -151,6 +151,15 @@ their volume, but never writes their config and won't remove them:
 Bragi allocates ports for managed peers from 10041 up, leaving 10001-10040
 free for hand-configured ones.
 
+To hand them over later, Settings > Setup > Hand-configured peers > Let Bragi
+manage them. Bragi looks in `~/.config/pipewire/pipewire.conf.d` for the
+files that run those peers' Roc sinks and sources. If every Roc module in a
+file belongs to a listed peer, it marks the peers managed, keeping their
+ports and node names, so the computers at the other end need no change. It
+then writes them into its own config, renames the file to
+`<name>.adopted-<date>`, and resets the audio so its config can take over
+the ports. A file that also runs anything Bragi doesn't know is left alone.
+
 ## Reset audio button and nightly reset
 
 The dashboard's "Reset audio" button restarts PipeWire, WirePlumber and
