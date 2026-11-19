@@ -65,6 +65,16 @@ case "$action" in
             write_status failed "usermod -aG input $user failed."
         fi
         ;;
+    pipewire-group)
+        # Debian's limits.d/25-pw-rlimits.conf gives @pipewire rtprio 95.
+        if ! getent group pipewire >/dev/null; then
+            write_status failed "This system has no pipewire group."
+        elif usermod -aG pipewire "$user"; then
+            write_status done "$user is in the pipewire group. PipeWire gets real-time priority after a restart of the box."
+        else
+            write_status failed "usermod -aG pipewire $user failed."
+        fi
+        ;;
     hyperx-quirk)
         # For this boot: usbcore reads its quirks list at each enumeration.
         current="$(cat /sys/module/usbcore/parameters/quirks 2>/dev/null)"

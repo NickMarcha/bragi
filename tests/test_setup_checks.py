@@ -34,15 +34,18 @@ def host(tmp_path, monkeypatch):
     monkeypatch.setattr(sc, "_module", lambda name: True)
     monkeypatch.setattr(sc.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(sc, "check_input_group", lambda: sc._check("input", "Input devices", "ok", "fake"))
+    monkeypatch.setattr(sc, "check_realtime", lambda: sc._check("realtime", "Real-time audio", "ok", "fake"))
     monkeypatch.setattr(sc, "check_hand_peers", lambda: sc._check("handpeers", "Hand-configured peers", "na", "fake"))
-    h = {"active": {}, "serve": {"TCP": {"443": {"HTTPS": True}}, "Web": {"sagehub:443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:8000"}}}}},
+    h = {"active": {}, "enabled": {}, "serve": {"TCP": {"443": {"HTTPS": True}}, "Web": {"sagehub:443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:8000"}}}}},
          "started": [], "start_rc": 0, "dir": tmp_path}
 
     def run(cmd, timeout=5):
         if cmd[:3] == ["systemctl", "--user", "is-active"]:
             return 0, "\n".join(h["active"].get(u, "active") for u in cmd[3:]) + "\n"
-        if cmd[:3] == ["systemctl", "--user", "start"]:
-            h["started"].append(cmd[3:])
+        if cmd[:3] == ["systemctl", "--user", "is-enabled"]:
+            return 0, "\n".join(h["enabled"].get(u, "enabled") for u in cmd[3:]) + "\n"
+        if cmd[:4] == ["systemctl", "--user", "enable", "--now"]:
+            h["started"].append(cmd[4:])
             return h["start_rc"], ""
         if cmd[:3] == ["tailscale", "serve", "status"]:
             return 0, json.dumps(h["serve"])
@@ -59,7 +62,7 @@ def by_id():
 def test_a_set_up_host_passes_every_check(host):
     checks = by_id()
     assert {i: c["status"] for i, c in checks.items()} == {
-        "pipewire": "ok", "modules": "ok", "linger": "ok", "input": "ok",
+        "pipewire": "ok", "realtime": "ok", "modules": "ok", "linger": "ok", "input": "ok",
         "hyperx": "ok", "tailscale": "ok", "services": "ok", "handpeers": "na"}
     assert all(c["fix"] is None for c in checks.values())
 
@@ -143,3 +146,33 @@ def test_the_settings_section(host, session):
     page = client.post("/setup/fix/linger").text
     assert "Asked the setup helper" in page and "Working on" in page
     assert "Unknown check" in client.post("/setup/fix/nope").text
+
+
+def test_services_that_wont_start_at_boot(host):
+    host["enabled"]["deskflow-headless.service"] = "disabled"
+    host["enabled"]["bragi-peers.path"] = "disabled"
+    c = by_id()["services"]
+    assert c["status"] == "problem" and "Not started at boot: bragi-peers.path" in c["detail"]
+    assert c["fix"]["label"] == "Enable and start them"
+    sc.fix("services")
+    assert "bragi-peers.path" in host["started"][0]
+
+
+def test_real_time_audio(monkeypatch):
+    """PipeWire without real-time priority clicks on a busy box (sagehub, 2026-11-19)."""
+    import sys
+    import types
+    rlimit = {"value": 0}
+    fake_resource = types.SimpleNamespace(RLIMIT_RTPRIO=14, getrlimit=lambda _: (rlimit["value"], rlimit["value"]))
+    members = {"list": []}
+    fake_grp = types.SimpleNamespace(getgrnam=lambda name: types.SimpleNamespace(gr_mem=members["list"], gr_gid=106))
+    monkeypatch.setitem(sys.modules, "resource", fake_resource)
+    monkeypatch.setitem(sys.modules, "grp", fake_grp)
+    monkeypatch.setattr(sc, "_user", lambda: "sage")
+    c = sc.check_realtime()
+    assert c["status"] == "problem" and c["fix"]["action"] == "pipewire-group"
+    members["list"] = ["sage"]
+    c = sc.check_realtime()
+    assert c["status"] == "problem" and c["fix"] is None and "started before" in c["detail"]
+    rlimit["value"] = 95
+    assert sc.check_realtime()["status"] == "ok"

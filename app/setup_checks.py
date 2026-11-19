@@ -34,7 +34,7 @@ LINGER_DIR = Path("/var/lib/systemd/linger")
 HYPERX_QUIRK = "03f0:06be:r"
 BRAGI_URL = "http://127.0.0.1:8000"
 MODULE_DIRS = ("/usr/lib/*/pipewire-0.3", "/usr/lib/pipewire-0.3", "/usr/lib64/pipewire-0.3")
-ROOT_ACTIONS = ("packages", "linger", "input-group", "hyperx-quirk", "tailscale-serve")
+ROOT_ACTIONS = ("packages", "linger", "input-group", "pipewire-group", "hyperx-quirk", "tailscale-serve")
 # A request the helper hasn't answered after this long means it isn't listening.
 QUEUE_TIMEOUT = 60
 
@@ -118,6 +118,31 @@ def check_input_group() -> dict:
                   "can't read the keyboard and mouse.", _root_fix("input-group", "Add to input"))
 
 
+def check_realtime() -> dict:
+    """PipeWire needs real-time priority, or a busy moment on a small box
+    makes the audio click. Debian grants it to the pipewire group
+    (/etc/security/limits.d/25-pw-rlimits.conf); bragi#71."""
+    import resource
+    title = "Real-time audio"
+    soft, _ = resource.getrlimit(resource.RLIMIT_RTPRIO)
+    if soft > 0:
+        return _check("realtime", title, "ok", f"PipeWire may use real-time priority (up to {soft}).")
+    try:
+        import grp
+        group = grp.getgrnam("pipewire")
+    except (ImportError, KeyError):
+        return _check("realtime", title, "problem",
+                      "This session has no real-time priority, so PipeWire competes for the CPU and the audio can "
+                      "click when the box is busy. Set an rtprio limit for this user (or run rtkit).")
+    if _user() in group.gr_mem:
+        return _check("realtime", title, "problem",
+                      f"{_user()} is in the pipewire group, but this session started before that. Restart the box "
+                      "(or log out everywhere) so PipeWire gets real-time priority.")
+    return _check("realtime", title, "problem",
+                  f"{_user()} isn't in the pipewire group, so PipeWire runs without real-time priority and the "
+                  "audio clicks when the box is busy.", _root_fix("pipewire-group", "Add to pipewire"))
+
+
 def _hyperx_dongles() -> list[Path]:
     out = []
     for dev in (SYS / "bus/usb/devices").glob("*"):
@@ -184,11 +209,18 @@ def check_services() -> dict:
     units = _hub_units()
     rc, out = _run(["systemctl", "--user", "is-active", *units])
     down = [u for u, s in zip(units, out.split()) if s != "active"]
-    if not down:
-        return _check("services", "Bragi's services", "ok", "The peer bridge, audio reset and KVM services run.")
-    return _check("services", "Bragi's services", "problem",
-                  f"Not running: {', '.join(down)}. They're enabled for every user, but only start with that "
-                  "user's session.", {"kind": "user", "action": "start-services", "label": "Start them"})
+    rc, out = _run(["systemctl", "--user", "is-enabled", *units])
+    off = [u for u, s in zip(units, out.split()) if s not in ("enabled", "enabled-runtime", "static", "alias")]
+    if not down and not off:
+        return _check("services", "Bragi's services", "ok", "The peer bridge, audio reset and KVM services run, "
+                      "and start at boot.")
+    parts = []
+    if down:
+        parts.append(f"Not running: {', '.join(down)}.")
+    if off:
+        parts.append(f"Not started at boot: {', '.join(off)}.")
+    return _check("services", "Bragi's services", "problem", " ".join(parts),
+                  {"kind": "user", "action": "start-services", "label": "Enable and start them"})
 
 
 def check_hand_peers() -> dict:
@@ -216,12 +248,12 @@ def check_hand_peers() -> dict:
                   {"kind": "user", "action": "adopt-peers", "label": "Let Bragi manage them"})
 
 
-CHECKS = ("check_pipewire", "check_modules", "check_linger", "check_input_group", "check_hyperx_quirk",
+CHECKS = ("check_pipewire", "check_realtime", "check_modules", "check_linger", "check_input_group", "check_hyperx_quirk",
           "check_tailscale_serve", "check_services", "check_hand_peers")
 
 
 # check id -> function, so a fix runs only its own check.
-CHECK_IDS = {"pipewire": "check_pipewire", "modules": "check_modules", "linger": "check_linger",
+CHECK_IDS = {"pipewire": "check_pipewire", "realtime": "check_realtime", "modules": "check_modules", "linger": "check_linger",
              "input": "check_input_group", "hyperx": "check_hyperx_quirk", "tailscale": "check_tailscale_serve",
              "services": "check_services", "handpeers": "check_hand_peers"}
 
@@ -280,7 +312,7 @@ def fix(check_id: str) -> str:
         return f"Bragi manages {', '.join(names)} now. The audio restarts for a few seconds."
     if action["kind"] == "user":
         units = ["pipewire", "wireplumber", "pipewire-pulse"] if action["action"] == "start-pipewire" else _hub_units()
-        rc, _ = _run(["systemctl", "--user", "start", *units], timeout=30)
+        rc, _ = _run(["systemctl", "--user", "enable", "--now", *units], timeout=30)
         if rc != 0:
             raise SetupError("Starting them failed; see `systemctl --user status` on the box.")
         return "Started."
