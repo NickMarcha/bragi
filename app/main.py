@@ -37,6 +37,7 @@ from . import kvm_follow
 from . import modules
 from . import updates
 from . import setup_checks
+from . import hub_info
 from . import level_meter
 from . import peer_control
 from . import key_bindings
@@ -74,6 +75,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(headset_hid.supervise(_headset_changed, ws.on_macro_button)),
         asyncio.create_task(level_meter.supervise()),
         asyncio.create_task(microphone.supervise()),
+        asyncio.create_task(hub_info.refresh()),
         asyncio.create_task(mic_monitor.supervise()),
         asyncio.create_task(gamepad.supervise(peer_control.send, peer_control.broadcast_desktop,
                                               ws.manager.broadcast_levels_nowait)),
@@ -452,6 +454,30 @@ def run_update(request: Request, action: str):
     except updates.UpdateError as exc:
         return _updates_section(request, str(exc))
     return _updates_section(request)
+
+
+# --- Settings > This hub (app/hub_info.py) ---
+
+def _hub_section(request: Request, error: str | None = None, note: str | None = None):
+    view = {"info": hub_info.message(), "clients": sorted(peer_control.desktop_peers())}
+    return templates.TemplateResponse(request, "_hub.html", {"hub": view, "error": error, "note": note})
+
+
+@app.get("/hub", response_class=HTMLResponse)
+def hub_section(request: Request):
+    """What tray apps are told about this hub, and moving them elsewhere."""
+    return _hub_section(request)
+
+
+@app.post("/hub/move", response_class=HTMLResponse)
+def hub_move(request: Request, url: str = Form(...)):
+    try:
+        count = peer_control.move_clients(url)
+    except ValueError as exc:
+        return _hub_section(request, error=str(exc))
+    target = hub_info.ws_url(url)
+    return _hub_section(request, note=f"Told {count} tray app{'s' if count != 1 else ''} to switch to {target}."
+                        if count else "No tray app is connected, so nothing was moved.")
 
 
 # --- Settings > Setup (app/setup_checks.py) ---

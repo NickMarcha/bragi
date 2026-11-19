@@ -39,6 +39,10 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(monitors, "SETTINGS_FILE", tmp_path / "monitors.yaml")
     monkeypatch.setattr(monitors, "broadcast", None)
     monkeypatch.setattr(monitors, "on_change", None)
+    from app import hub_info
+    monkeypatch.setattr(hub_info, "_cache", (0.0, {"type": "hub", "ws_url": "wss://hub.example.ts.net/ws/peer",
+                                                   "tailscale_ip": "100.64.0.1", "lan_ip": "192.168.1.32",
+                                                   "deskflow_hosts": []}))
     monkeypatch.setattr(gamepad, "hub", None)
     monkeypatch.setattr(bluetooth, "manager", None)
     modules.reset_cache()

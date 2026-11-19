@@ -180,6 +180,25 @@ a PipeWire node existing on the server says nothing about whether this
 machine is there. Missing `PEER_NAME` or `BRAGI_WS_URL` turns the heartbeat
 off without affecting anything else.
 
+## Following the hub (0.1.26+)
+
+After its `client_hello`, the tray app gets a `hub` message: the hub's
+`wss://` URL, Tailscale IP, LAN IP and the addresses Deskflow clients
+should use (`app/hub_info.py`). If this computer's settings point
+elsewhere, the tray app fixes them:
+
+- `BRAGI_HOST_IP` in the env file, where the audio goes. The old name
+  `SAGEPI_TAILSCALE_IP` is replaced. On Linux the Roc link restarts; on
+  Windows the VBAN link is rebuilt.
+- `remoteHost` in the Deskflow client's `Deskflow.conf`, then the Deskflow
+  app restarts so it connects there. Skipped when Deskflow isn't set up as a
+  client here.
+
+The dashboard's Settings > This hub > Move sends `hub_moved` with another
+hub's URL: the tray app saves it as `BRAGI_WS_URL`, connects there, and that
+hub's `hub` message fixes the rest. Logic in `Config/HubSync.cs`, effects
+in `Tray/HubSyncService.cs`.
+
 ## Client tests
 
 ```bash
