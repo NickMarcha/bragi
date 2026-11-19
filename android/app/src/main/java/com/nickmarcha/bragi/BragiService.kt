@@ -11,6 +11,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.updateAndGet
+import okhttp3.HttpUrl
 
 /** User starts this once; Bragi commands toggle streams inside the existing service. */
 class BragiService : Service() {
@@ -26,7 +27,8 @@ class BragiService : Service() {
 
     data class State(val running: Boolean = false, val connection: String = "Stopped",
                      val sending: Boolean = false, val receiving: Boolean = false, val sendEnabled: Boolean = true, val listenEnabled: Boolean = false, val error: String? = null,
-                     val listeningDelayMs: Int? = null, val sendingDelayMs: Int? = null)
+                     val listeningDelayMs: Int? = null, val sendingDelayMs: Int? = null,
+                     val server: String? = null)
     companion object {
         private val mutableState = MutableStateFlow(State())
         val state = mutableState.asStateFlow()
@@ -34,6 +36,7 @@ class BragiService : Service() {
         const val STOP = "com.nickmarcha.bragi.STOP"
         const val CHANNEL = "bragi-audio"
         const val NOTIFICATION = 1
+        const val MOVED_NOTIFICATION = 2
     }
 
     override fun onBind(intent: Intent?) = null
@@ -69,7 +72,7 @@ class BragiService : Service() {
                 CaptureMode.NONE -> 0
             }
             Diagnostics.record("Starting audio service: ${mode.wireName}")
-            mutableState.value = State(running = true, connection = "Starting…")
+            mutableState.value = State(running = true, connection = "Starting…", server = url.toString())
             startForeground(NOTIFICATION, notification(), captureType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
             wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Bragi:audio").also { it.setReferenceCounted(false); it.acquire(10 * 60 * 1000L) }
             wakeRenewal = scope.launch {
@@ -91,36 +94,25 @@ class BragiService : Service() {
             }
             connection = BragiConnection(url, name)
             session = scope.launch {
+                var server = url
+                var moved = false
                 try {
-                    connection!!.register(ip, mode)
-                    connection!!.run(
-                        onConfig = { config ->
-                            require(config.mode == mode) { "Audio source changed. Stop and restart Bragi on the phone." }
-                            engine?.stop()
-                            engine = AudioEngine(url.host, ip, config, mode, projection,
-                                onListeningDelay = { ms -> updateDelays { it.copy(listeningDelayMs = ms) } },
-                                onSendingDelay = { ms -> updateDelays { it.copy(sendingDelayMs = ms) } },
-                                onStatus = { send, receive, error ->
-                                    if (destroyed) return@AudioEngine
-                                    mutableState.value = mutableState.value.copy(sending = send, receiving = receive,
-                                        error = error ?: mutableState.value.error)
-                                    reportStatus()
-                                })
-                            mutableState.value = mutableState.value.copy(error = null, sendEnabled = config.sendEnabled, listenEnabled = config.receiveEnabled)
-                            engine!!.apply(config.sendEnabled, config.receiveEnabled)
-                        },
-                        onStreams = { send, receive ->
-                            mutableState.value = mutableState.value.copy(error = null, sendEnabled = send, listenEnabled = receive)
-                            engine?.apply(send, receive)
-                        },
-                        onDisconnected = { withContext(NonCancellable) { engine?.stop() } },
-                        onStatus = { status ->
-                            if (destroyed) return@run
-                            mutableState.value = mutableState.value.copy(connection = status)
-                            Diagnostics.record("Connection: $status")
-                            updateNotification()
-                        },
-                    )
+                    while (true) {
+                        try {
+                            register(server, ip, mode, retry = moved)
+                            runSession(server, ip, mode)
+                        } catch (e: HubMovedException) {
+                            // The hub moved (bragi#67): follow it like the tray apps do.
+                            Diagnostics.record("Hub moved to ${e.server}")
+                            server = e.server
+                            moved = true
+                            getSharedPreferences("bragi", MODE_PRIVATE).edit().putString("server", server.toString()).apply()
+                            mutableState.value = mutableState.value.copy(server = server.toString())
+                            notifyMoved(server)
+                            withContext(NonCancellable) { connection?.close() }
+                            connection = BragiConnection(server, name)
+                        }
+                    }
                 } catch (e: CancellationException) { throw e }
                 catch (e: Throwable) {
                     Diagnostics.record("Audio service failed", e)
@@ -133,6 +125,60 @@ class BragiService : Service() {
             stopSelf()
         }
         return START_NOT_STICKY // Android must not recreate mic/projection capture without user interaction.
+    }
+
+    /** Registers with the hub. After a move the new hub may still be starting, so keep trying for two minutes. */
+    private suspend fun register(server: HttpUrl, ip: String, mode: CaptureMode, retry: Boolean) {
+        var wait = 2L
+        val until = System.currentTimeMillis() + 120_000
+        while (true) {
+            try { connection!!.register(ip, mode); return }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                if (!retry || System.currentTimeMillis() > until) throw e
+                mutableState.value = mutableState.value.copy(connection = "Waiting for Bragi at ${server.host}…")
+                delay(wait * 1000); wait = (wait * 2).coerceAtMost(30)
+            }
+        }
+    }
+
+    private suspend fun runSession(server: HttpUrl, ip: String, mode: CaptureMode) {
+        connection!!.run(
+            onConfig = { config ->
+                require(config.mode == mode) { "Audio source changed. Stop and restart Bragi on the phone." }
+                engine?.stop()
+                engine = AudioEngine(server.host, ip, config, mode, projection,
+                    onListeningDelay = { ms -> updateDelays { it.copy(listeningDelayMs = ms) } },
+                    onSendingDelay = { ms -> updateDelays { it.copy(sendingDelayMs = ms) } },
+                    onStatus = { send, receive, error ->
+                        if (destroyed) return@AudioEngine
+                        mutableState.value = mutableState.value.copy(sending = send, receiving = receive,
+                            error = error ?: mutableState.value.error)
+                        reportStatus()
+                    })
+                mutableState.value = mutableState.value.copy(error = null, sendEnabled = config.sendEnabled, listenEnabled = config.receiveEnabled)
+                engine!!.apply(config.sendEnabled, config.receiveEnabled)
+            },
+            onStreams = { send, receive ->
+                mutableState.value = mutableState.value.copy(error = null, sendEnabled = send, listenEnabled = receive)
+                engine?.apply(send, receive)
+            },
+            onDisconnected = { withContext(NonCancellable) { engine?.stop() } },
+            onStatus = { status ->
+                if (destroyed) return@run
+                mutableState.value = mutableState.value.copy(connection = status)
+                Diagnostics.record("Connection: $status")
+                updateNotification()
+            },
+        )
+    }
+
+    private fun notifyMoved(server: HttpUrl) {
+        val open = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        getSystemService(NotificationManager::class.java).notify(MOVED_NOTIFICATION,
+            NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_bragi)
+                .setContentTitle("Bragi moved").setContentText("Now connecting to ${server.host}")
+                .setContentIntent(open).setAutoCancel(true).build())
     }
 
     /** The dashboard shows the phone's delays, so send them on whenever they move noticeably. */

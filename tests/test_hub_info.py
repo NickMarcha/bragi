@@ -50,22 +50,22 @@ def test_a_tray_app_hears_where_the_hub_is_after_its_hello(session):
         assert hub["type"] == "hub" and hub["lan_ip"] == "192.168.1.32"
 
 
-def test_moving_tells_tray_apps_but_not_phones(session):
+def test_moving_tells_tray_apps_and_phones(session):
+    """Phones follow too since bragi#67: the app saves the new address and registers there."""
     peers.register_android_peer("fairphone", "100.64.0.20", "microphone")
     client = TestClient(app)
-    with client.websocket_connect("/ws/peer/deck") as deck, \
-            client.websocket_connect("/ws/peer/fairphone?client=android") as phone:
+    with client.websocket_connect("/ws/peer/deck") as deck,             client.websocket_connect("/ws/peer/fairphone?client=android") as phone:
         deck.receive_json()  # kvm
         assert phone.receive_json()["type"] == "peer_config"
         page = client.post("/hub/move", data={"url": "https://newhub.example.ts.net"}).text
-        assert "Told 1 tray app to switch to wss://newhub.example.ts.net/ws/peer" in page
-        assert deck.receive_json() == {"type": "hub_moved", "ws_url": "wss://newhub.example.ts.net/ws/peer"}
-        phone.send_json({"type": "peer_status", "send_active": False, "receive_active": False})
-        assert phone.receive_json()["type"] == "peer_status"  # nothing else was queued for the phone
+        assert "Told 2 apps to switch to wss://newhub.example.ts.net/ws/peer" in page
+        moved = {"type": "hub_moved", "ws_url": "wss://newhub.example.ts.net/ws/peer"}
+        assert deck.receive_json() == moved
+        assert phone.receive_json() == moved
     assert "Type the new hub" in client.post("/hub/move", data={"url": "not a host"}).text
 
 
 def test_the_settings_section(session):
     page = TestClient(app).get("/hub").text
     assert "wss://hub.example.ts.net/ws/peer" in page and "192.168.1.32" in page
-    assert "Move tray apps to another hub" in page
+    assert "Move tray apps and phones to another hub" in page

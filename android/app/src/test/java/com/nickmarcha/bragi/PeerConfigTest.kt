@@ -89,4 +89,14 @@ class PeerConfigTest {
         assertTrue(message.isNull("listen_delay_ms"))
         assertTrue(message.isNull("error"))
     }
+
+    @Test fun a_hub_move_names_the_new_https_server() {
+        fun moved(url: String) = movedServer(JSONObject().put("type", "hub_moved").put("ws_url", url), false)
+        assertEquals("https://sagehub.example.ts.net/", moved("wss://sagehub.example.ts.net/ws/peer").toString())
+        assertEquals("https://hub.example.ts.net:8443/api/peers/register",
+            moved("wss://hub.example.ts.net:8443/ws/peer")!!.endpoint("api/peers/register").toString())
+        for (bad in listOf("ws://hub.example.ts.net/ws/peer", "https://hub.example.ts.net/", "wss://user@hub/ws/peer",
+                           "wss://hub.example.ts.net/other", "", "wss:///ws/peer"))
+            assertNull(bad, moved(bad))
+    }
 }
