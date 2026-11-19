@@ -33,6 +33,7 @@ from . import headset_hid
 from . import knob_watcher
 from . import kvm
 from . import kvm_config
+from . import kvm_follow
 from . import modules
 from . import updates
 from . import level_meter
@@ -56,6 +57,8 @@ async def lifespan(app: FastAPI):
     except peers_module.ConfigWriteError:
         logger.exception("managed peers config not written")
     monitors.broadcast = ws.manager.broadcast_nowait
+    kvm_follow.start(asyncio.get_running_loop(), ws.manager.broadcast_nowait)
+    monitors.on_change = kvm_follow.changed
     tasks = [
         asyncio.create_task(watcher.watch(ws.on_node_changed)),
         asyncio.create_task(knob_watcher.watch(ws.broadcast_headset_volume_change)),
@@ -358,6 +361,17 @@ async def kvm_config_layout_preview(body: dict):
         return await asyncio.to_thread(kvm_config.preview, body.get("layout"))
     except kvm_config.ConfigError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/kvm/config/setups/use")
+async def kvm_config_use_setup(body: dict):
+    """Puts a layout saved for a setup in use by hand."""
+    return await asyncio.to_thread(_kvm_config_call, kvm_config.use_setup, body.get("key"))
+
+
+@app.post("/kvm/config/setups/delete")
+async def kvm_config_delete_setup(body: dict):
+    return await asyncio.to_thread(_kvm_config_call, kvm_config.delete_setup, body.get("key"))
 
 
 @app.post("/kvm/config/computers")

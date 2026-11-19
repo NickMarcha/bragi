@@ -1,6 +1,7 @@
 # KVM layout: monitors, not just computers
 
-Status: steps 1 (monitor reporting) and 2 (the editor) done; 3 and 4 to do.
+Status: steps 1 (monitor reporting), 2 (the editor) and 4 (layouts per
+setup) done. Step 3, real monitor shapes in the fork, is still to do.
 
 ## The problem
 
@@ -175,3 +176,34 @@ layout; when the setup changes, Bragi switches to its layout and reloads
 Deskflow (the computers stay connected). A new setup keeps the current
 layout and offers to arrange one, starting from the closest saved layout.
 The dashboard shows which layout is active and allows a manual switch.
+
+Built, with two changes from the plan above:
+
+- A setup is each computer's monitors as its tray app last reported them,
+  by EDID id, mirrors left out. Which computers are connected doesn't
+  count. A computer that's off keeps its last monitors, because every
+  tray app update restarts the app, and the layout shouldn't flip each
+  time. Deskflow already refuses to cross into a computer that isn't
+  connected.
+- Asleep and unplugged look the same in the reports. Instead of telling
+  them apart, Bragi waits until the monitors have stayed the same for 15
+  seconds (`app/kvm_follow.py`). A TV switching inputs comes back well
+  inside that.
+
+How it works:
+
+- Saving a Monitors layout keeps it under the setup connected now
+  (`setups` in `webui-layout.json`, keyed like
+  `sage=BNQ,SAM|sage-dev=BNQ2|sagedeck=MSI`, with a readable label) and
+  marks it `active`.
+- When a tray app reports different monitors, `kvm_config.follow_setup()`
+  runs after the wait. If the setup now connected has a saved layout that
+  isn't in use, it's put in use and Deskflow reloads. It's drawn with the
+  monitors reported now, so a changed resolution or scaling still lands
+  right. If the setup has no saved layout, the layout in use stays.
+- The editor starts from the layout saved for the setup connected now.
+  For a new setup it starts from the saved layout sharing the most
+  computer and monitor pairs, and says it's a new setup.
+- Saved layouts are listed under the editor, with the one in use and the
+  one matching what's connected marked. Each has "Use now" and "Forget".
+- The grid style ignores setups.

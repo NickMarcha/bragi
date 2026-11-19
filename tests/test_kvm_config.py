@@ -212,3 +212,121 @@ def test_the_layout_preview_route(cfg, session):
     assert result["links"]["sagedeck"] == ["up = sage(0,31.85)"] and result["errors"] == []
     refused = client.post("/kvm/config/layout/preview", json={"layout": {"mode": "monitors", "groups": {"x": {}}}})
     assert refused.status_code == 400 and "Unknown computer" in refused.json()["detail"]
+
+# --- layouts per setup ---------------------------------------------------------------
+
+def report(peer, *monitors_):
+    from app import monitors
+    monitors.report(peer, {"source": "test", "monitors": [
+        {"id": i, "name": n, "connector": "X", "x": x, "y": y, "width": w, "height": h, "pixel_width": w,
+         "pixel_height": h, "scale": 1, "rotation": 0, "primary": False, "width_mm": None, "height_mm": None,
+         "mirrors": []} for i, n, x, y, w, h in monitors_]})
+
+
+def desk():
+    report("sage", ("SAM", "C34J79x", 0, 0, 3440, 1440), ("BNQ", "BenQ RL2455", 3440, 356, 1920, 1080))
+    report("sage-dev", ("BNQ2", "BenQ GL2450H", 0, 0, 1920, 1080))
+
+
+def test_saving_a_monitor_layout_keeps_it_for_the_setup(cfg):
+    d, _ = cfg
+    desk()
+    report("sagedeck", ("MSI", "MAG 27CQ6F", 0, 0, 1707, 960))
+    kvm_config.save_layout({}, [], None, MONITOR_LAYOUT)
+    saved = json.loads((d / "webui-layout.json").read_text())
+    key = "sage=BNQ,SAM|sage-dev=BNQ2|sagedeck=MSI"
+    assert saved["active"] == key
+    assert saved["setups"][key]["label"] == "sage: C34J79x + BenQ RL2455; sage-dev: BenQ GL2450H; sagedeck: MAG 27CQ6F"
+    layout = kvm_config.read()["layout"]
+    assert layout["setup"]["known"] and layout["setups"][0]["active"] and layout["setups"][0]["current"]
+
+
+def undocked_layout():
+    layout = json.loads(json.dumps(MONITOR_LAYOUT))
+    # Undocked, sagedeck's own screen sits to the left of sage.
+    layout["groups"]["sagedeck"] = {"x": -1280, "y": 0, "scale": 1, "size": "os", "monitors": [
+        {"id": "LEN", "name": "Go Display", "x": 0, "y": 0, "width": 1280, "height": 800}]}
+    return layout
+
+
+def test_the_kvm_follows_the_setup_back_and_forth(cfg):
+    d, state = cfg
+    desk()
+    report("sagedeck", ("MSI", "MAG 27CQ6F", 0, 0, 1707, 960))
+    kvm_config.save_layout({}, [], None, MONITOR_LAYOUT)
+
+    report("sagedeck", ("LEN", "Go Display", 0, 0, 1280, 800))   # undocked: a setup with no layout yet
+    assert kvm_config.follow_setup() is None
+    assert "down(0,31.85) = sagedeck" in (d / "server.conf").read_text()   # the old layout stays
+    view = kvm_config.read()["layout"]
+    assert not view["setup"]["known"] and view["groups"]["sagedeck"]["monitors"][0]["id"] == "MSI"  # closest saved
+    kvm_config.save_layout({}, [], None, undocked_layout())
+    assert "left(0,55.56) = sagedeck" in (d / "server.conf").read_text()
+
+    report("sagedeck", ("MSI", "MAG 27CQ6F", 0, 0, 1707, 960))   # docked again
+    reloads = state["reloads"]
+    note = kvm_config.follow_setup()
+    assert note and "MAG 27CQ6F" in note
+    conf = (d / "server.conf").read_text()
+    assert "down(0,31.85) = sagedeck" in conf and "left(0,55.56)" not in conf
+    assert state["reloads"] == reloads + 1
+    assert kvm_config.follow_setup() is None   # already in use
+
+
+def test_following_draws_the_saved_layout_with_the_monitors_connected_now(cfg):
+    d, _ = cfg
+    desk()
+    report("sagedeck", ("MSI", "MAG 27CQ6F", 0, 0, 1707, 960))
+    kvm_config.save_layout({}, [], None, MONITOR_LAYOUT)
+    report("sagedeck", ("LEN", "Go Display", 0, 0, 1280, 800))
+    kvm_config.save_layout({}, [], None, undocked_layout())
+    # Docked again, but now at 1920 wide (the scaling changed): same monitor, same setup.
+    report("sagedeck", ("MSI", "MAG 27CQ6F", 0, 0, 1920, 1080))
+    kvm_config.follow_setup()
+    assert "down(0,35.82) = sagedeck" in (d / "server.conf").read_text()
+
+
+def test_the_grid_doesnt_follow_setups(cfg):
+    desk()
+    report("sagedeck", ("MSI", "MAG 27CQ6F", 0, 0, 1707, 960))
+    kvm_config.save_layout({}, [], None, MONITOR_LAYOUT)
+    report("sagedeck", ("LEN", "Go Display", 0, 0, 1280, 800))
+    kvm_config.save_layout({}, [], None, undocked_layout())
+    kvm_config.save_layout({"sage": [0, 0]}, [], None, {"mode": "grid"})
+    report("sagedeck", ("MSI", "MAG 27CQ6F", 0, 0, 1707, 960))
+    assert kvm_config.follow_setup() is None
+
+
+def test_a_saved_layout_can_be_used_by_hand_and_forgotten(cfg):
+    d, _ = cfg
+    desk()
+    report("sagedeck", ("MSI", "MAG 27CQ6F", 0, 0, 1707, 960))
+    kvm_config.save_layout({}, [], None, MONITOR_LAYOUT)
+    docked = kvm_config.read()["layout"]["setup"]["key"]
+    report("sagedeck", ("LEN", "Go Display", 0, 0, 1280, 800))
+    kvm_config.save_layout({}, [], None, undocked_layout())
+    assert "Using the layout" in kvm_config.use_setup(docked)
+    assert "down(0,31.85) = sagedeck" not in (d / "server.conf").read_text()  # drawn with the Go Display
+    assert json.loads((d / "webui-layout.json").read_text())["active"] == docked
+    assert "Forgot" in kvm_config.delete_setup(docked)
+    assert [s["key"] for s in kvm_config.read()["layout"]["setups"]] == ["sage=BNQ,SAM|sage-dev=BNQ2|sagedeck=LEN"]
+    with pytest.raises(kvm_config.ConfigError, match="no saved layout"):
+        kvm_config.use_setup(docked)
+
+
+def test_kvm_follow_waits_for_the_monitors_to_settle(monkeypatch):
+    import asyncio
+    from app import kvm_follow
+    calls, sent = [], []
+    monkeypatch.setattr(kvm_follow, "SETTLE", 0.05)
+    monkeypatch.setattr(kvm_follow.kvm_config, "follow_setup", lambda: calls.append(1) or "switched")
+
+    async def run():
+        kvm_follow.start(asyncio.get_running_loop(), sent.append)
+        for _ in range(3):
+            kvm_follow.changed()
+            await asyncio.sleep(0.02)
+        await asyncio.sleep(0.2)
+
+    asyncio.run(run())
+    assert calls == [1] and sent == [{"type": "kvm_layout", "note": "switched"}]
