@@ -15,7 +15,10 @@ linear and a split lands exactly on a seam between monitors.
 
 Plain Deskflow only crosses at a computer's outer edge, so an edge of an
 inner monitor (an L-shape, offset monitors) is still written but gets a
-warning; step 3 teaches the server real monitor shapes.
+warning. Bragi's Deskflow fork knows each computer's real monitors
+(monitor_shapes(), written as the config's monitors section): it keeps the
+cursor on them and crosses at the edge of the monitor it's on, so those
+links work as drawn and there's no warning (step 3).
 """
 
 from __future__ import annotations
@@ -155,13 +158,38 @@ def _range(start: float, end: float) -> str:
     return "" if (start, end) == (0, 100) else f"({start:g},{end:g})"
 
 
-def analyse(groups: dict[str, dict]) -> dict:
+def monitor_shapes(groups: dict[str, dict]) -> dict[str, str]:
+    """The config's monitors section: {computer: "x,y,w,h ..."}, each
+    monitor in percent of the computer's outline, for computers whose
+    monitors don't fill it. An edge within OUTER_SLACK of the outline is
+    put on it, as analyse() counts it, so there's no thin dead strip."""
+    out = {}
+    for name, g in sorted(groups.items()):
+        x0, y0, w, h = bounds(g)
+        if w <= 0 or h <= 0:
+            continue
+        rects = []
+        for m in g["monitors"]:
+            left, top = (m["x"] - x0) / w, (m["y"] - y0) / h
+            right, bottom = left + m["width"] / w, top + m["height"] / h
+            left, top = (0.0 if left <= OUTER_SLACK else left), (0.0 if top <= OUTER_SLACK else top)
+            right, bottom = (1.0 if right >= 1 - OUTER_SLACK else right), (1.0 if bottom >= 1 - OUTER_SLACK else bottom)
+            rects.append((left, top, right - left, bottom - top))
+        if len(rects) == 1 and rects[0] == (0.0, 0.0, 1.0, 1.0):
+            continue
+        out[name] = " ".join(",".join(f"{v * 100:.4f}".rstrip("0").rstrip(".") for v in r) for r in rects)
+    return out
+
+
+def analyse(groups: dict[str, dict], shapes: bool = False) -> dict:
     """Where the groups touch, as Deskflow links, plus what's wrong with
     the layout. errors stop a save; warnings don't.
 
     edges: one per shared stretch and direction, with its canvas segment
     (for the editor to draw) and both computers' ranges.
-    links: {computer: ["right(0,50) = other(25,75)", ...]}."""
+    links: {computer: ["right(0,50) = other(25,75)", ...]}.
+    shapes: the server knows the computers' real monitors, so a link on an
+    inner monitor edge works as drawn."""
     errors: list[str] = []
     warnings: list[str] = []
     rects = {n: canvas_rects(g) for n, g in groups.items()}
@@ -233,7 +261,7 @@ def analyse(groups: dict[str, dict]) -> dict:
             edges.append({"from": a, "side": side, "to": b, "segment": seg,
                           "from_range": list(ar), "to_range": list(br),
                           "outer": a_outer and b_outer})
-            if not a_outer:
+            if not a_outer and not shapes:
                 warnings.append(f"{a} meets {b} on a monitor edge inside {a}'s outline (an L-shape or offset "
                                 f"monitor). Deskflow only crosses at the outline, so the mouse goes to {b} "
                                 f"from {a}'s outer {side} edge there.")

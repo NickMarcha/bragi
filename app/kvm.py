@@ -23,6 +23,19 @@ _POLL_SECONDS = 0.5
 _TIMEOUT = 5
 
 
+def features() -> set[str]:
+    """What the running Deskflow server's config understands, from its
+    status file: "monitors" when it keeps the cursor on real monitors
+    (the fork's MonitorShape, step 3 of docs/kvm-layout.md). An older
+    server refuses a config with a section it doesn't know."""
+    try:
+        status = json.loads((engine_dir() / "status.json").read_text())
+    except (OSError, ValueError):
+        return set()
+    found = status.get("features") if isinstance(status, dict) else None
+    return {str(f) for f in found} if isinstance(found, list) else set()
+
+
 def engine_dir() -> Path:
     if override := os.environ.get("BRAGI_KVM_DIR"):
         return Path(override)

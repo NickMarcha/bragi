@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import kvm_config
+from app import kvm, kvm_config
 from app.main import app
 
 DATA = Path(__file__).parent / "data" / "kvm"
@@ -330,3 +330,33 @@ def test_kvm_follow_waits_for_the_monitors_to_settle(monkeypatch):
 
     asyncio.run(run())
     assert calls == [1] and sent == [{"type": "kvm_layout", "note": "switched"}]
+
+def test_a_server_with_monitor_shapes_gets_the_monitors_section(cfg, monkeypatch):
+    """Step 3: the fork lists "monitors" in its status features and keeps the
+    cursor on real monitors. sage's BenQ hangs 356 px lower than its Samsung."""
+    d, _ = cfg
+    monkeypatch.setattr(kvm, "features", lambda: {"monitors"})
+    kvm_config.save_layout({}, [], None, MONITOR_LAYOUT)
+    conf = (d / "server.conf").read_text()
+    # BenQ's bottom is 4 px above the outline: on it, as the links count it.
+    assert "section: monitors\n\tsage = 0,0,64.1791,100 64.1791,24.7222,35.8209,75.2778\nend\n" in conf
+    assert "sagedeck =" not in conf   # one monitor filling its outline: nothing to say
+    # saving again replaces the section instead of keeping the old one too
+    kvm_config.save_layout({}, [], None, MONITOR_LAYOUT)
+    assert (d / "server.conf").read_text().count("section: monitors") == 1
+
+
+def test_an_older_server_never_sees_the_monitors_section(cfg, monkeypatch):
+    d, _ = cfg
+    monkeypatch.setattr(kvm, "features", lambda: set())
+    kvm_config.save_layout({}, [], None, MONITOR_LAYOUT)
+    assert "section: monitors" not in (d / "server.conf").read_text()
+
+
+def test_features_come_from_the_status_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRAGI_KVM_DIR", str(tmp_path))
+    assert kvm.features() == set()
+    (tmp_path / "status.json").write_text(json.dumps({"server": "sagehub", "features": ["monitors"]}))
+    assert kvm.features() == {"monitors"}
+    (tmp_path / "status.json").write_text(json.dumps({"server": "sagehub"}))
+    assert kvm.features() == set()
