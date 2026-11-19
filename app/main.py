@@ -38,6 +38,7 @@ from . import modules
 from . import updates
 from . import setup_checks
 from . import hub_info
+from . import headset_choice
 from . import level_meter
 from . import peer_control
 from . import key_bindings
@@ -76,6 +77,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(level_meter.supervise()),
         asyncio.create_task(microphone.supervise()),
         asyncio.create_task(hub_info.refresh()),
+        asyncio.create_task(headset_choice.supervise()),
         asyncio.create_task(mic_monitor.supervise()),
         asyncio.create_task(gamepad.supervise(peer_control.send, peer_control.broadcast_desktop,
                                               ws.manager.broadcast_levels_nowait)),
@@ -454,6 +456,34 @@ def run_update(request: Request, action: str):
     except updates.UpdateError as exc:
         return _updates_section(request, str(exc))
     return _updates_section(request)
+
+
+# --- Settings > Main headset (app/headset_choice.py) ---
+
+def _headset_choice_section(request: Request, error: str | None = None):
+    try:
+        view = headset_choice.view()
+    except peers_module.pipewire.PipewireError as exc:
+        view, error = {"choice": headset_choice.saved(), "current": None, "current_label": None,
+                       "options": [], "missing": False}, str(exc)
+    return templates.TemplateResponse(request, "_headset_choice.html", {"headset_choice": view, "error": error})
+
+
+@app.get("/headset-choice", response_class=HTMLResponse)
+def headset_choice_section(request: Request):
+    return _headset_choice_section(request)
+
+
+@app.post("/headset-choice", response_class=HTMLResponse)
+def headset_choice_set(request: Request, card: str = Form(...)):
+    """Picks the main headset: rewrites the peers config, reroutes the mic
+    and moves the default output."""
+    try:
+        headset_choice.choose(card)
+    except ValueError as exc:
+        return _headset_choice_section(request, str(exc))
+    ws.manager.broadcast_nowait({'type': 'microphone'})
+    return _headset_choice_section(request)
 
 
 # --- Settings > This hub (app/hub_info.py) ---

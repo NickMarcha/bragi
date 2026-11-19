@@ -35,6 +35,9 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(eq_presets, "FILE", tmp_path / "headset_eq_presets.yaml")
     monkeypatch.setattr(mic_monitor, "SETTINGS_FILE", tmp_path / "mic_monitor.yaml")
     monkeypatch.setattr(macro_button, "SETTINGS_FILE", tmp_path / "macro_button.yaml")
+    from app import headset_choice
+    monkeypatch.setattr(headset_choice, "SETTINGS_FILE", tmp_path / "headset_choice.yaml")
+    monkeypatch.setattr(headset_choice, "_wanted", None)
     monkeypatch.setattr(gamepad, "SETTINGS_FILE", tmp_path / "gamepad.yaml")
     monkeypatch.setattr(monitors, "SETTINGS_FILE", tmp_path / "monitors.yaml")
     monkeypatch.setattr(monitors, "broadcast", None)

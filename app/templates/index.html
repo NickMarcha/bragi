@@ -56,6 +56,9 @@
     <section id="updates" class="settings-updates">
       {% include "_updates.html" %}
     </section>
+    <section id="headset-choice" class="settings-setup" hx-get="/headset-choice" hx-trigger="load" hx-swap="innerHTML">
+      <h3>Main headset</h3>
+    </section>
     <section id="hub" class="settings-setup" hx-get="/hub" hx-trigger="load" hx-swap="innerHTML">
       <h3>This hub</h3>
     </section>
