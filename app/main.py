@@ -36,6 +36,7 @@ from . import kvm_config
 from . import kvm_follow
 from . import modules
 from . import updates
+from . import setup_checks
 from . import level_meter
 from . import peer_control
 from . import key_bindings
@@ -451,6 +452,29 @@ def run_update(request: Request, action: str):
     except updates.UpdateError as exc:
         return _updates_section(request, str(exc))
     return _updates_section(request)
+
+
+# --- Settings > Setup (app/setup_checks.py) ---
+
+def _setup_section(request: Request, error: str | None = None, note: str | None = None):
+    return templates.TemplateResponse(request, "_setup.html",
+                                      {"setup": setup_checks.view(), "error": error, "note": note})
+
+
+@app.get("/setup", response_class=HTMLResponse)
+def setup_section(request: Request):
+    """Host checks: PipeWire, Roc/VBAN modules, lingering, input group,
+    HyperX quirk, tailscale serve, Bragi's services."""
+    return _setup_section(request)
+
+
+@app.post("/setup/fix/{check_id}", response_class=HTMLResponse)
+def setup_fix(request: Request, check_id: str):
+    try:
+        note = setup_checks.fix(check_id)
+    except setup_checks.SetupError as exc:
+        return _setup_section(request, error=str(exc))
+    return _setup_section(request, note=note)
 
 
 # --- mouse buttons (app/hidpp.py), in the KVM setup ---

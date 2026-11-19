@@ -54,7 +54,7 @@ write_status() {  # state, message
     mv -f "$tmp" "$STATUS"
 }
 
-write_status running "${action}ing"
+case "$action" in check) write_status running checking ;; *) write_status running upgrading ;; esac
 if ! out="$(apt-get update -q 2>&1)"; then
     write_status failed "apt-get update failed: $(echo "$out" | grep -E '^(E|W):' | head -3)"
     exit 1

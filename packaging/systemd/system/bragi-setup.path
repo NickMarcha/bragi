@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the Bragi setup helper when the dashboard asks for a fix
+
+[Path]
+# Bragi (a user service) writes "<action> <user>" here (Settings > Setup).
+PathModified=/var/lib/bragi/setup-request
+Unit=bragi-setup.service
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,113 @@
+#!/bin/bash
+# Bragi's setup helper, run as root by bragi-setup.service (bragi#58). Bragi
+# runs as a user; Settings > Setup writes "<action> <user>" into
+# /var/lib/bragi/setup-request, bragi-setup.path starts this, and this writes
+# the result to /var/lib/bragi/setup.json.
+#
+# The request file is world-writable, so this only runs the fixed actions
+# below, and only for a user that is running Bragi right now. That matters
+# for input-group: that group can read every keyboard.
+set -uo pipefail
+
+STATE=/var/lib/bragi
+REQUEST="$STATE/setup-request"
+STATUS="$STATE/setup.json"
+QUIRK="03f0:06be:r"
+BRAGI_URL="http://127.0.0.1:8000"
+
+read -r action user _ < "$REQUEST" 2>/dev/null || true
+action="$(printf '%s' "${action:-}" | tr -dc 'a-z-' | head -c 32)"
+user="$(printf '%s' "${user:-}" | tr -dc 'A-Za-z0-9._-' | head -c 32)"
+
+write_status() {  # state, message
+    local tmp="$STATUS.tmp" message="${2//\"/\'}"
+    printf '{"state":"%s","action":"%s","user":"%s","message":"%s","at":%s}\n' \
+        "$1" "$action" "$user" "${message//$'\n'/ }" "$(date +%s)" > "$tmp"
+    chmod 644 "$tmp"
+    mv -f "$tmp" "$STATUS"
+}
+
+uid="$(id -u "$user" 2>/dev/null || echo 0)"
+if [[ -z "$user" || "$uid" -lt 1000 ]]; then
+    write_status failed "Not a regular user: '$user'."
+    exit 1
+fi
+if ! pgrep -u "$user" -f '/opt/bragi/venv/bin/' >/dev/null; then
+    write_status failed "$user isn't running Bragi, so the setup helper won't act for them."
+    exit 1
+fi
+
+write_status running "$action"
+
+case "$action" in
+    packages)
+        # The Roc and VBAN modules are in libpipewire-0.3-modules; the Roc
+        # library is its own package on Debian.
+        pkgs="libpipewire-0.3-modules pipewire-pulse"
+        apt-cache show libroc0.4 >/dev/null 2>&1 && pkgs="$pkgs libroc0.4"
+        if out="$(apt-get update -q 2>&1 && DEBIAN_FRONTEND=noninteractive apt-get install -y -q $pkgs 2>&1)"; then
+            write_status done "Installed $pkgs. Restart PipeWire (or the box) for it to load them."
+        else
+            write_status failed "apt failed: $(echo "$out" | grep -E '^(E|W):' | head -2)"
+        fi
+        ;;
+    linger)
+        if loginctl enable-linger "$user"; then
+            write_status done "Lingering is on for $user."
+        else
+            write_status failed "loginctl enable-linger $user failed."
+        fi
+        ;;
+    input-group)
+        if usermod -aG input "$user"; then
+            write_status done "$user is in the input group. It applies after a restart of the box."
+        else
+            write_status failed "usermod -aG input $user failed."
+        fi
+        ;;
+    hyperx-quirk)
+        # For this boot: usbcore reads its quirks list at each enumeration.
+        current="$(cat /sys/module/usbcore/parameters/quirks 2>/dev/null)"
+        if [[ ",$current," != *",$QUIRK,"* ]]; then
+            echo "${current:+$current,}$QUIRK" > /sys/module/usbcore/parameters/quirks
+        fi
+        # From the next boot on: the Pi's cmdline.txt, or GRUB.
+        where=""
+        if [[ -f /boot/firmware/cmdline.txt ]]; then
+            if ! grep -q "usbcore.quirks=$QUIRK" /boot/firmware/cmdline.txt; then
+                cp /boot/firmware/cmdline.txt "/boot/firmware/cmdline.txt.bak-$(date +%Y%m%d%H%M%S)"
+                sed -i "1 s/\$/ usbcore.quirks=$QUIRK/" /boot/firmware/cmdline.txt
+            fi
+            where="/boot/firmware/cmdline.txt"
+        elif command -v update-grub >/dev/null; then
+            mkdir -p /etc/default/grub.d
+            printf '# Bragi (bragi#58): HyperX Cloud III S dongle quirk.\nGRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX usbcore.quirks=%s"\n' "$QUIRK" \
+                > /etc/default/grub.d/60-bragi-usb-quirks.cfg
+            update-grub >/dev/null 2>&1 && where="GRUB"
+        fi
+        # Re-enumerate the dongle so the quirk applies now.
+        for dev in /sys/bus/usb/devices/*; do
+            if [[ "$(cat "$dev/idVendor" 2>/dev/null)" == 03f0 && "$(cat "$dev/idProduct" 2>/dev/null)" == 06be ]]; then
+                echo 0 > "$dev/authorized"; sleep 1; echo 1 > "$dev/authorized"
+            fi
+        done
+        if [[ -n "$where" ]]; then
+            write_status done "Quirk set for this boot and in $where; the dongle reconnected."
+        else
+            write_status done "Quirk set for this boot only: add usbcore.quirks=$QUIRK to the kernel command line by hand."
+        fi
+        ;;
+    tailscale-serve)
+        if ! command -v tailscale >/dev/null; then
+            write_status failed "Tailscale isn't installed."
+        elif tailscale set --operator="$user" && tailscale serve --bg --https=443 "$BRAGI_URL" >/dev/null 2>&1; then
+            write_status done "tailscale serve forwards HTTPS to Bragi; $user can change it without sudo."
+        else
+            write_status failed "tailscale serve failed. Is HTTPS enabled for the tailnet?"
+        fi
+        ;;
+    *)
+        write_status failed "Unknown action '$action'."
+        exit 1
+        ;;
+esac

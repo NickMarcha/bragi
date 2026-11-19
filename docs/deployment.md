@@ -42,6 +42,16 @@ picks releases up within the hour).
 
 ## What the host needs
 
+Settings > Setup checks all of this on the running box and says what's
+missing. For most items it has a fix button: starting services runs as
+Bragi's user, and the rest goes through the package's root helper
+(`bragi-setup`, asked through `/var/lib/bragi/setup-request` like the
+updater). The helper only runs its fixed list of fixes, and only for a
+user that's running Bragi. Checked: PipeWire and WirePlumber running, the
+Roc and VBAN modules, lingering, the `input` group, the HyperX dongle's
+usbcore quirk (in `cmdline.txt` on a Pi, a GRUB drop-in elsewhere),
+`tailscale serve`, and Bragi's own user services.
+
 - A user with an active PipeWire + WirePlumber session (`systemctl --user
   status pipewire wireplumber`). Enable lingering (`loginctl enable-linger
   <user>`) on a headless box, or the session dies when you log out.

@@ -1,0 +1,29 @@
+{# Settings > Setup (app/setup_checks.py): is this host set up for Bragi.
+   Loaded when the page loads; while the root helper works on a fix it
+   reloads itself every 2 s. #}
+{% set s = setup %}
+<h3>Setup</h3>
+{% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+{% if note %}<p class="form-note">{{ note }}</p>{% endif %}
+{% set busy = s.pending or s.status.state == "running" %}
+{% if busy %}
+<p class="form-note" hx-get="/setup" hx-trigger="every 2s" hx-target="#setup" hx-swap="innerHTML">Working on: {{ s.status.action or "the fix" }}…</p>
+{% elif s.status.state in ("done", "failed") and s.status.message %}
+<p class="{{ 'form-error' if s.status.state == 'failed' else 'form-note' }}">Last fix: {{ s.status.message }}</p>
+{% endif %}
+<ul class="setup-checks">
+  {% for c in s.checks if c.status != "na" %}
+  <li class="setup-check {{ c.status }}">
+    <span class="setup-mark" aria-hidden="true">{{ "✓" if c.status == "ok" else "!" }}</span>
+    <span class="setup-text"><strong>{{ c.title }}</strong> <span class="form-note">{{ c.detail }}</span></span>
+    {% if c.fix and not busy and (c.fix.kind == "user" or s.helper) %}
+    <button type="button" hx-post="/setup/fix/{{ c.id }}" hx-target="#setup" hx-swap="innerHTML" hx-disabled-elt="this">{{ c.fix.label }}</button>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% set na = s.checks | selectattr("status", "equalto", "na") | list %}
+{% if na %}<p class="form-note">Doesn't apply here: {% for c in na %}{{ c.title }}{{ ", " if not loop.last }}{% endfor %}.</p>{% endif %}
+<div class="dialog-actions">
+  <button type="button" hx-get="/setup" hx-target="#setup" hx-swap="innerHTML" hx-disabled-elt="this">Check again</button>
+</div>
