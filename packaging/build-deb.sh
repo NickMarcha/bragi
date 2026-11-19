@@ -45,6 +45,9 @@ install -D -m 755 "$root/host/bragi-audio-reset.sh" "$stage/usr/lib/bragi/bragi-
 install -D -m 755 "$root/packaging/bragi-update" "$stage/usr/lib/bragi/bragi-update"
 install -d "$stage/usr/lib/systemd/system"
 install -m 644 "$root"/packaging/systemd/system/bragi-update* "$stage/usr/lib/systemd/system/"
+# The setup helper (bragi#58): root fixes for Settings > Setup, asked the same way.
+install -D -m 755 "$root/packaging/bragi-setup" "$stage/usr/lib/bragi/bragi-setup"
+install -m 644 "$root"/packaging/systemd/system/bragi-setup* "$stage/usr/lib/systemd/system/"
 install -D -m 644 "$root/packaging/tmpfiles/bragi.conf" "$stage/usr/lib/tmpfiles.d/bragi.conf"
 echo "$version" > "$stage/opt/bragi/VERSION"
 

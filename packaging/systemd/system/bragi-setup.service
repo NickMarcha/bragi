@@ -1,0 +1,8 @@
+[Unit]
+Description=Bragi setup helper (fixes for the host checks in Settings > Setup)
+Documentation=https://github.com/NickMarcha/bragi/blob/main/docs/deployment.md
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/bragi/bragi-setup
+TimeoutStartSec=10min

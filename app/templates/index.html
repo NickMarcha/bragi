@@ -56,6 +56,10 @@
     <section id="updates" class="settings-updates">
       {% include "_updates.html" %}
     </section>
+    <section id="setup" class="settings-setup" hx-get="/setup" hx-trigger="load" hx-swap="innerHTML">
+      <h3>Setup</h3>
+      <p class="form-note">Checking this host…</p>
+    </section>
     {% include "_downloads.html" %}
     {% if modules.kvm %}<p class="form-note"><button type="button" data-open-kvm-setup>KVM setup</button> the computers, their layout, hotkeys, mouse buttons, key remapping and input options.</p>{% endif %}
     <button id="viz-settings-close" type="button">Close</button>

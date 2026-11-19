@@ -1149,6 +1149,46 @@ dialog h2 {
   font-size: 13px;
 }
 
+/* --- Settings > Setup (app/setup_checks.py) --- */
+
+.settings-setup {
+  margin: 12px 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-setup h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.setup-checks {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.setup-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.setup-mark {
+  flex: none;
+  width: 1.2em;
+  text-align: center;
+  font-weight: 600;
+}
+
+.setup-check.ok .setup-mark { color: var(--accent); }
+.setup-check.problem .setup-mark { color: var(--warn); }
+.setup-text { flex: 1; }
+.setup-check button { flex: none; }
+
 /* --- KVM setup dialog --- */
 
 #kvm-setup-dialog {
