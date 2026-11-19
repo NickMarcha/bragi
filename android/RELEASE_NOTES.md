@@ -155,3 +155,13 @@ under Add peer, Connect a device. It uses Google Play services' scanner, so the
 app asks for no camera permission. Scanning the code with the phone's own camera
 opens the app with the server filled in as well. The name and Tailscale address
 are found on the phone as before. Nothing about audio changed since 0.1.14.
+
+## 0.1.16 follows the hub when it moves
+
+When you move Bragi to another box (Settings > This hub > Move on the old
+hub), a running phone now switches with the tray apps. It saves the new
+server address, registers there with the same name, Tailscale address and
+audio source, and shows a "Bragi moved" notification. If the new hub isn't
+answering yet, the app keeps trying for two minutes. It only accepts a
+`wss://…/ws/peer` address, so a move can't point the app at plain HTTP.
+Nothing about audio changed since 0.1.15.

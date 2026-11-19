@@ -548,8 +548,8 @@ def hub_move(request: Request, url: str = Form(...)):
     except ValueError as exc:
         return _hub_section(request, error=str(exc))
     target = hub_info.ws_url(url)
-    return _hub_section(request, note=f"Told {count} tray app{'s' if count != 1 else ''} to switch to {target}."
-                        if count else "No tray app is connected, so nothing was moved.")
+    return _hub_section(request, note=f"Told {count} app{'s' if count != 1 else ''} to switch to {target}."
+                        if count else "No tray app or phone is connected, so nothing was moved.")
 
 
 # --- Settings > USB (app/usb_topology.py) ---

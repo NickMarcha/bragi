@@ -12,10 +12,10 @@
 {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
 {% if note %}<p class="form-note">{{ note }}</p>{% endif %}
 <form class="hub-move" hx-post="/hub/move" hx-target="#hub" hx-swap="innerHTML"
-      hx-confirm="Every connected tray app switches to the new hub and leaves this one. Go on?">
-  <label>Move tray apps to another hub
+      hx-confirm="Every connected tray app and phone switches to the new hub and leaves this one. Go on?">
+  <label>Move tray apps and phones to another hub
     <input type="text" name="url" placeholder="newhub.your-tailnet.ts.net" required autocomplete="off">
   </label>
   <button type="submit">Move</button>
 </form>
-<p class="form-note">Set up the new hub first (its peers and KVM settings), then move. Phones connect to the new hub with its QR code.</p>
+<p class="form-note">Set up the new hub first (its peers and KVM settings, or restore a backup), then move. Phones running Bragi switch too and show a notification; a phone that's off scans the new hub's QR code.</p>

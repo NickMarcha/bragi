@@ -6,8 +6,8 @@ android {
         applicationId = "com.nickmarcha.bragi"
         minSdk = 29
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.1.15"
+        versionCode = 17
+        versionName = "0.1.16"
         // Empty: each user enters their own Bragi URL on first launch.
         buildConfigField("String", "DEFAULT_SERVER", "\"\"")
         // Where update checks and "Report a problem" go. GitHub Actions sets

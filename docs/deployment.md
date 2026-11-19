@@ -409,8 +409,10 @@ decides what the request does.
    after a reboot, so the two hubs never send audio to the same peers.
 4. On the old hub, Settings > This hub > Move, with the new hub's address.
    Tray apps 0.1.26+ switch, and the new hub's `hub` message fixes their
-   audio address and Deskflow's server address. Older tray apps and phones
-   need the new address by hand (phones: the QR code).
+   audio address and Deskflow's server address. Running phones with the
+   Android app 0.1.16+ save the new address, register there and show a
+   notification. Older apps, and phones that aren't running Bragi, need the
+   new address by hand (phones: the QR code).
 5. Stop the old hub, press Take over on the new one, move the USB devices.
 
 ## Updating a Docker install

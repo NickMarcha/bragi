@@ -208,15 +208,15 @@ def _kvm_switch(name: str, raw: str) -> None:
 
 
 def move_clients(url: str) -> int:
-    """Tells every connected tray app to switch to another hub (bragi#61).
-    Returns how many tray apps were told. Raises ValueError for a bad URL."""
+    """Tells every connected tray app and phone to switch to another hub
+    (bragi#61, phones since bragi#67). Returns how many were told. Raises
+    ValueError for a bad URL."""
     message = {'type': 'hub_moved', 'ws_url': hub_info.ws_url(url)}
     count = 0
     for connections in _connections.values():
-        for socket, queue in connections.items():
-            if socket not in _android:
-                queue.put_nowait(message)
-                count += 1
+        for queue in connections.values():
+            queue.put_nowait(message)
+            count += 1
     return count
 
 

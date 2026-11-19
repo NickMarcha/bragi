@@ -83,14 +83,19 @@ class BragiConnection(
                         is Event.Closed -> if (event.terminal) throw PeerRemovedException(event.reason) else throw IOException(event.reason)
                         is Event.Message -> {
                             val message = JSONObject(event.text)
-                            if (message.optString("type") == "peer_streams")
-                                onStreams(message.getBoolean("send_enabled"), message.getBoolean("receive_enabled"))
+                            when (message.optString("type")) {
+                                "peer_streams" -> onStreams(message.getBoolean("send_enabled"), message.getBoolean("receive_enabled"))
+                                "hub_moved" -> movedServer(message)?.let { throw HubMovedException(it) }
+                                    ?: onStatus("Ignored a move to an address the app can't use: ${message.optString("ws_url")}")
+                            }
                         }
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: PeerRemovedException) {
+                throw e
+            } catch (e: HubMovedException) {
                 throw e
             } catch (e: Exception) {
                 onStatus("Disconnected: ${e.message}. Retrying…")
@@ -124,3 +129,13 @@ fun peerStatusMessage(send: Boolean, receive: Boolean, error: String?, sendDelay
         .put("send_delay_ms", sendDelayMs ?: JSONObject.NULL).put("listen_delay_ms", listenDelayMs ?: JSONObject.NULL)
 
 class PeerRemovedException(message: String) : IOException(message)
+
+/** The hub said it moved (Settings > This hub > Move, bragi#67); [server] is the new hub's address. */
+class HubMovedException(val server: HttpUrl) : IOException("Bragi moved to ${server.host}")
+
+/** The new hub's server URL from a "hub_moved" message, or null for anything but a
+ *  wss://host[:port]/ws/peer address this build may use. */
+fun movedServer(message: JSONObject, localDev: Boolean = BuildConfig.DEBUG): HttpUrl? {
+    val match = Regex("^wss://([^/?#@\\s]+)/ws/peer/?$").find(message.optString("ws_url")) ?: return null
+    return runCatching { serverUrl("https://${match.groupValues[1]}/", localDev) }.getOrNull()
+}

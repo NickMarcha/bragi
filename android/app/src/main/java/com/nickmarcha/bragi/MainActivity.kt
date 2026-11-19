@@ -128,6 +128,8 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             BragiService.state.collect { state ->
                 val disabled = state.running
+                // The service followed the hub to a new address (bragi#67).
+                state.server?.let { if (server.text.toString() != it) server.setText(it) }
                 start.isEnabled = !disabled
                 stop.isEnabled = disabled
                 listen.isEnabled = disabled
