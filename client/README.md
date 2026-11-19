@@ -2,9 +2,8 @@
 
 A tray app (Avalonia, .NET) for desktops that talk to Bragi. On Linux it
 turns the Roc link to the Bragi host on and off and shows its status. On
-Windows the audio still goes over VBAN through Voicemeeter, and the app
-registers the computer and shows the stream names to set Voicemeeter to
-(see [Windows](#windows)). On both it gives you a volume window for every
+Windows the app sends and receives the VBAN audio itself (see
+[Windows](#windows)). On both it gives you a volume window for every
 peer and headset and keeps the dashboard's status dot for this machine
 live. See [`../docs/audio-bridge.md`](../docs/audio-bridge.md) for the audio
 bridge this is part of.
@@ -70,17 +69,17 @@ each value) and run `systemctl --user enable --now bragi-roc-link.service`.
    Linux. The computer registers as a VBAN peer. A VBAN peer you already
    added from the dashboard under the same name is reused, stream names and
    all, so a working Voicemeeter setup stays as it is.
-3. The tray menu shows the two VBAN streams: "VBAN in" is the headset mic
-   the Bragi host sends here, "VBAN out" is what Voicemeeter should send
-   back. Set Voicemeeter's VBAN incoming and outgoing streams to match.
+3. In the tray menu's Audio submenu, "Play the headset mic on" picks the
+   output for the headset mic, and "Send to the headset" picks what goes
+   back: what plays on an output (its loopback), or a microphone or input.
+   Voicemeeter isn't needed. If you used its VBAN before, turn that off so
+   the streams aren't sent twice.
 4. Turn on "Start at Login" (a value under
    `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
 
 The settings live in `%APPDATA%\bragi-client\link.env`, in the same
-`KEY=VALUE` format as Linux. There's no Enable or Restart Link item:
-Voicemeeter owns the audio for now, so the status reads as linked once the
-computer is set up. Carrying the audio in the app itself (WASAPI against
-Voicemeeter's virtual devices, sent as VBAN) is the next step.
+`KEY=VALUE` format as Linux. The audio goes through WASAPI (NAudio) and is
+sent as VBAN.
 
 ## Components
 
@@ -159,7 +158,9 @@ Both need write access to the device node. Steam's udev rules
 (`60-steam-input.rules`) give `/dev/uinput` to the logged-in user;
 `/dev/uhid` comes with Sunshine's or Apollo's rules, or a rule of your own
 (`KERNEL=="uhid", TAG+="uaccess"`). Without access the menu item says so.
-Windows shows the item but can't play the controller yet.
+On Windows the app plays the controller as a virtual Xbox 360 pad
+through the ViGEmBus driver, which you install yourself; without it the
+menu item says so.
 
 Everything goes over the same `/ws/peer/{PEER_NAME}` socket as the
 presence heartbeat below. The app sends `gamepad_hello` with the modes it
