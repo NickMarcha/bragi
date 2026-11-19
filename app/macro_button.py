@@ -9,7 +9,8 @@ data/macro_button.yaml:
 - one of the KVM actions (actions.py): switch to a computer, the next
   computer, or press keys on some computers (Discord's mute on all),
 - an HTTP request, to an http(s) URL or to a unix socket on the host,
-- turning Bragi's own mic monitoring (mic_monitor.py) on or off.
+- turning Bragi's own mic monitoring (mic_monitor.py) on or off,
+- muting or unmuting every mic the computers hear (microphone.py).
 
 Bragi doesn't know what's on the other end of a request. A socket target
 exists because services on the host often listen only on 127.0.0.1 or a
@@ -38,7 +39,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from . import actions, headset_hid, headsets, mic_monitor, peers, pipewire
+from . import actions, headset_hid, headsets, mic_monitor, microphone, peers, pipewire
 
 logger = logging.getLogger("bragi.macro_button")
 
@@ -105,7 +106,7 @@ def valid_action(action) -> dict:
     kind = action.get("type")
     if kind == "none":
         return dict(NOTHING)
-    if kind == "toggle_mic_monitor":
+    if kind in ("toggle_mic_monitor", "toggle_mic_mute"):
         return {"type": kind}
     if kind in actions.KVM_KINDS:
         return actions.valid_kvm(action)
@@ -256,6 +257,15 @@ async def _toggle_mic_monitor(serial: str) -> tuple[bool, str]:
     return True, f"mic monitoring {'on' if on else 'off'}"
 
 
+async def _toggle_mic_mute() -> tuple[bool, str]:
+    """Mutes or unmutes every mic the computers hear (microphone.py): the
+    real mute when the headset's own button switches between mics."""
+    on = await asyncio.to_thread(microphone.toggle_muted)
+    if microphone.broadcast is not None:
+        microphone.broadcast({"type": "microphone"})
+    return True, "all mics muted" if on else "mics live"
+
+
 async def press(serial: str, gesture: str, action: dict | None = None) -> dict | None:
     """Runs a gesture's saved action, or `action` instead (the dialog's Test
     button, which tries what's in the form). Returns the result it
@@ -275,6 +285,8 @@ async def press(serial: str, gesture: str, action: dict | None = None) -> dict |
             ok, text = await asyncio.to_thread(send_http, action, TIMEOUT_SECONDS)
         elif action["type"] in actions.KVM_KINDS:
             ok, text = await actions.run_kvm(action)
+        elif action["type"] == "toggle_mic_mute":
+            ok, text = await _toggle_mic_mute()
         else:
             ok, text = await _toggle_mic_monitor(serial)
     except Exception as exc:

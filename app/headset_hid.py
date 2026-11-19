@@ -1,5 +1,5 @@
 """HyperX Cloud III S Wireless controls over the dongle's vendor HID
-interface: battery, charging, mic monitor (sidetone), auto-off and EQ.
+interface: battery, charging, mic mute, mic monitor (sidetone), auto-off and EQ.
 
 The protocol, from HeadsetControl issue 486
 (https://github.com/Sapd/HeadsetControl/issues/486, NGENUITY captures),
@@ -73,6 +73,9 @@ _READ = 0x01
 _WRITE = 0x00
 
 OP_LINK = 0x02
+# The mic's mute (the headset's own mute button), 01 muted. HyperHeadset's
+# GET_MIC_MUTE; checked on the Pi's headset (reads 01 while muted).
+OP_MIC_MUTE_READ = 0x04
 OP_BATTERY = 0x06
 OP_CHARGING = 0x48
 # Mic monitor (sidetone) reads and writes on different ops. HeadsetControl
@@ -109,6 +112,8 @@ _eq_lock = threading.Lock()
 
 # Notification kinds (byte 4 of report 0x0D), value in byte 5.
 NOTIFY_BATTERY = 0x01
+# Sent on each press of the mute button, 01 muted (seen on the Pi's headset).
+NOTIFY_MIC_MUTE = 0x03
 NOTIFY_MIC_MONITOR = 0x05
 NOTIFY_CHARGING = 0x0A
 NOTIFY_LINK = 0x0C
@@ -218,7 +223,8 @@ class HidHeadset:
         self._on_button = on_button
         self._pending: set[int] = set()
         self._state: dict = {"headset_on": None, "battery": None, "millivolts": None, "charging": None,
-                             "mic_monitor": None, "auto_off_known": False, "auto_off_minutes": None,
+                             "mic_monitor": None, "mic_muted": None,
+                             "auto_off_known": False, "auto_off_minutes": None,
                              "eq": _saved_eq(serial)}
         # Set when the headset comes back on: the caller owns the I/O
         # timing, so it does the refresh (see supervise()).
@@ -234,7 +240,7 @@ class HidHeadset:
 
     def refresh(self) -> None:
         self.wants_refresh = False
-        for op in (OP_LINK, OP_BATTERY, OP_CHARGING, OP_MIC_MONITOR_READ, OP_AUTO_OFF_READ):
+        for op in (OP_LINK, OP_BATTERY, OP_CHARGING, OP_MIC_MONITOR_READ, OP_MIC_MUTE_READ, OP_AUTO_OFF_READ):
             self._read(op)
 
     def _require_on(self) -> None:
@@ -315,10 +321,14 @@ class HidHeadset:
             self._state["auto_off_minutes"] = None if seconds in (0, AUTO_OFF_NEVER) else round(seconds / 60)
         elif op == OP_MIC_MONITOR_READ and value[0] in (0, 1):
             self._state["mic_monitor"] = value[0] == 1
+        elif op == OP_MIC_MUTE_READ and value[0] in (0, 1):
+            self._state["mic_muted"] = value[0] == 1
 
     def _handle_notification(self, kind: int, value: int) -> None:
         if kind == NOTIFY_BATTERY and 0 < value <= 100:
             self._state["battery"] = value
+        elif kind == NOTIFY_MIC_MUTE and value in (0, 1):
+            self._state["mic_muted"] = value == 1
         elif kind == NOTIFY_MIC_MONITOR and value in (0, 1):
             self._state["mic_monitor"] = value == 1
         elif kind == NOTIFY_CHARGING:
@@ -331,7 +341,7 @@ class HidHeadset:
     def _set_headset_on(self, on: bool) -> None:
         self._state["headset_on"] = on
         if not on:
-            for name in ("battery", "millivolts", "charging"):
+            for name in ("battery", "millivolts", "charging", "mic_muted"):
                 self._state[name] = None
 
 

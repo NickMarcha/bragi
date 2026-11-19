@@ -1,6 +1,6 @@
 {# Lives in the toolbar; applies on change, so there is no submit button. #}
 <form hx-post="/audio/microphone" hx-target="#microphone-routing" hx-swap="innerHTML" hx-trigger="change">
-  <label title="The microphone desktop peers hear. A phone appears here while it runs in microphone mode; an unavailable choice stays silent.">Desktop mic
+  <label title="The microphone desktop peers hear. A USB mic and a phone in microphone mode appear here; an unavailable choice stays silent. &quot;Headset when its mic is live&quot; switches to the USB mic when the headset's mute is on or the headset is off.">Desktop mic
     <select name="source">
       {% for option in microphone.options %}
       <option value="{{ option.key }}" {% if microphone.source == option.key %}selected{% endif %}>{{ option.label }}</option>
@@ -8,3 +8,9 @@
     </select>
   </label>
 </form>
+<form hx-post="/audio/microphone/mute" hx-target="#microphone-routing" hx-swap="innerHTML" class="mic-mute-form">
+  <input type="hidden" name="muted" value="{{ '0' if microphone.muted else '1' }}">
+  <button type="submit" class="{{ 'mic-muted' if microphone.muted }}" aria-pressed="{{ 'true' if microphone.muted else 'false' }}"
+          title="{{ 'Let the computers hear the mic again' if microphone.muted else 'Mute every mic the computers hear' }}">{{ 'Unmute mics' if microphone.muted else 'Mute mics' }}</button>
+</form>
+<span class="form-note mic-live" title="What the computers hear now">{{ microphone.live }}</span>

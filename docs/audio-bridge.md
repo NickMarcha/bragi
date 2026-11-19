@@ -32,6 +32,23 @@ An unavailable selected microphone leaves the desktops silent instead of falling
 back to another source. The supervisor restores links after nodes reconnect.
 Existing host mic links are untouched until the selector is first used.
 
+A USB mic plugged into the host (an AT2020 on the desk) is a choice too, by its
+ALSA card id, alongside "Headset when its mic is live, <mic> when it's muted".
+That one follows the headset's own mute button, read over its HID channel
+(`headset_hid.py`: notification kind 03 on each press, read op 04): headset
+mic while it's live, the desk mic while it's muted or the headset is off. The
+switch happens as the notification arrives. Telling the headset's mic from a
+USB mic needs the HyperX dongle, so without it USB mics aren't offered.
+
+Since the headset's button then switches mics, the toolbar's "Mute mics"
+button, and the "Mute or unmute all mics" macro button action, mute whatever
+the computers would hear (`muted` in `microphone.json`) until unmuted.
+
+The Pi 4's USB-A ports share one controller, and with the HyperX dongle's
+audio on it, an AT2020USB+ there failed with "Not enough bandwidth" and
+upset the HID receivers. The USB-C port is a separate controller (dwc2), and
+the mic works there.
+
 ## Two protocols, on purpose
 
 Roc for the Linux peers, VBAN for the Windows one. Both run on the Pi at
