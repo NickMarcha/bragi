@@ -347,15 +347,19 @@ decides what the request does.
 ## Moving to a new hub
 
 1. Install Bragi on the new box and work through Settings > Setup.
-2. Bring the configuration over: `~/.local/share/bragi/data`, and for the
-   KVM `~/.config/deskflow-headless` including `tls/deskflow.pem` (the
-   certificate the Deskflow clients trust). Keep the new box's Bragi and
-   peers stopped meanwhile, so two hubs don't send audio to the same peers.
-3. On the old hub: Settings > This hub > Move, with the new hub's address.
+2. On the old hub, Settings > Backup > Download backup. The file holds
+   Bragi's data (peers, layout, headset and mic choices, hotkeys, logins)
+   and the KVM's config, including `tls/deskflow.pem`, the certificate the
+   Deskflow clients trust. Keep it private: it has the dashboard's logins.
+3. On the new hub, Settings > Backup > Restore with that file. What was
+   there is kept in `data/backups/pre-restore-*.tar.gz`. Bragi restarts and
+   stays **paused**: the peers bridge and the KVM server don't run, even
+   after a reboot, so the two hubs never send audio to the same peers.
+4. On the old hub, Settings > This hub > Move, with the new hub's address.
    Tray apps 0.1.26+ switch, and the new hub's `hub` message fixes their
    audio address and Deskflow's server address. Older tray apps and phones
    need the new address by hand (phones: the QR code).
-4. Stop the old hub's services, start the new one's, move the USB devices.
+5. Stop the old hub, press Take over on the new one, move the USB devices.
 
 ## Updating a Docker install
 

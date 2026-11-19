@@ -1,0 +1,20 @@
+{# Settings > Backup (app/backup.py, bragi#60): back up this hub, restore one here. #}
+{% set b = backup %}
+<h3>Backup</h3>
+{% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+{% if note %}<p class="form-note">{{ note }}</p>{% endif %}
+{% if b.paused %}
+<p class="backup-paused"><strong>Paused after a restore.</strong> This hub isn't sending audio to the peers or running the KVM, so it doesn't clash with the hub the backup came from. Stop that one (or move its tray apps here with This hub &gt; Move), then take over.</p>
+<div class="dialog-actions">
+  <button type="button" class="primary" hx-post="/backup/take-over" hx-target="#backup" hx-swap="innerHTML" hx-disabled-elt="this">Take over</button>
+</div>
+{% endif %}
+<p class="form-note">One file with this hub's settings: peers, layout, headset and mic choices, hotkeys, the KVM's computers and its certificate. It also holds the dashboard's logins, so keep it private.</p>
+<p><a href="/backup/download" download>Download backup</a></p>
+<form class="backup-restore" hx-post="/backup/restore" hx-encoding="multipart/form-data" hx-target="#backup" hx-swap="innerHTML"
+      hx-confirm="Replace this hub's settings with the backup? What's here now is kept in data/backups first. The hub pauses until you take over.">
+  <label>Restore a backup on this hub
+    <input type="file" name="archive" accept=".gz,.tgz,application/gzip" required>
+  </label>
+  <button type="submit">Restore</button>
+</form>
