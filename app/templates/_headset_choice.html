@@ -15,3 +15,19 @@
   </label>
 </form>
 {% if h.missing %}<p class="form-note">The chosen headset isn't connected, so Bragi uses {{ h.current_label or "no headset" }} until it's back.</p>{% endif %}
+{% set s = second %}
+<h4>Second headset</h4>
+<p class="form-note">Plays everything the main headset plays, for a second person at the desk. Each headset needs its own USB lane (see USB below).</p>
+<form hx-post="/second-headset" hx-target="#headset-choice" hx-swap="innerHTML" hx-trigger="change">
+  <label>Second headset
+    <select name="card">
+      <option value="off" {% if s.choice == "off" %}selected{% endif %}>Off</option>
+      <option value="auto" {% if s.choice == "auto" %}selected{% endif %}>Another HyperX headset{% if s.choice == "auto" and s.current_label %} (now: {{ s.current_label }}){% endif %}</option>
+      {% for o in s.options %}
+      <option value="{{ o.key }}" {% if s.choice == o.key %}selected{% endif %}>{{ o.label }}</option>
+      {% endfor %}
+      {% if s.missing %}<option value="{{ s.choice }}" selected>{{ s.choice }} (not connected)</option>{% endif %}
+    </select>
+  </label>
+</form>
+{% if s.choice != "off" %}<p class="form-note">{% if s.playing %}Playing on {{ s.current_label }}.{% elif s.choice == "auto" %}No other HyperX headset is connected and switched on.{% else %}The chosen headset isn't connected or is switched off.{% endif %}</p>{% endif %}

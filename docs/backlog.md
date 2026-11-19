@@ -50,6 +50,10 @@ but not removable. Editing them means touching
 
 ### Dual-headset playback on a Pi
 
+Done on boxes with a USB lane per headset (bragi#75): Settings > Main headset >
+Second headset copies the main headset's output to a second one. The Pi
+notes below still apply to the Pi.
+
 Deprioritized in favor of one headset working reliably. The Pi 4's shared
 Full-Speed USB hub cannot carry two headset streams stably even forced to
 16-bit. Fixing it needs a udev or path-unit auto-relink-on-reconnect script,
