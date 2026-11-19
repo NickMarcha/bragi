@@ -13,8 +13,8 @@ namespace Bragi.Client.Tray;
 /// menu item instead of something the user has to set up by hand per
 /// machine. Resolves the Exec= line from the running process itself so it
 /// works whether launched via `dotnet Bragi.Client.dll` (framework-dependent
-/// build, what `dotnet build` produces) or a self-contained/published binary
-/// (e.g. a future Velopack install) without needing to know which in advance.
+/// build, what `dotnet build` produces), a self-contained/published binary,
+/// or the Velopack AppImage, without needing to know which in advance.
 /// </summary>
 public static class AutostartService
 {
@@ -56,7 +56,7 @@ public static class AutostartService
         if (enabled)
         {
             Directory.CreateDirectory(AutostartDir);
-            File.WriteAllText(DesktopFilePath, BuildDesktopFileContent());
+            File.WriteAllText(DesktopFilePath, BuildDesktopFileContent(CurrentExecCommand()));
         }
         else if (File.Exists(DesktopFilePath))
         {
@@ -87,40 +87,102 @@ public static class AutostartService
         return processPath;
     }
 
-    private static string BuildDesktopFileContent()
+    /// <summary>
+    /// Rewrites an existing Linux entry whose Exec= program no longer exists,
+    /// such as one written from inside an AppImage's /tmp/.mount_* dir, which
+    /// is gone once the app exits. Working entries are left alone, so running
+    /// a dev build doesn't take the entry over from the installed one.
+    /// </summary>
+    public static void RepairIfStale()
     {
-        var exec = ResolveExecCommand();
-        return "[Desktop Entry]\n" +
-               "Type=Application\n" +
-               "Name=Bragi Client\n" +
-               "Comment=Tray control for the Roc audio link to Bragi\n" +
-               $"Exec={exec}\n" +
-               "Terminal=false\n" +
-               "X-GNOME-Autostart-enabled=true\n";
+        if (!OperatingSystem.IsWindows())
+        {
+            RepairIfStale(DesktopFilePath, CurrentExecCommand(), File.Exists);
+        }
     }
 
-    /// <summary>
-    /// dotnet's own process path is the "dotnet" muxer when framework-dependent
-    /// (the dll path is a separate argument, not part of the process image), or
-    /// the app binary itself when self-contained/published - distinguish by name
-    /// rather than assuming one or the other.
-    /// </summary>
-    private static string ResolveExecCommand()
+    public static bool RepairIfStale(string desktopFilePath, string exec, Func<string, bool> fileExists)
     {
-        var processPath = Environment.ProcessPath;
+        if (!File.Exists(desktopFilePath))
+        {
+            return false;
+        }
+
+        var program = ExecProgram(File.ReadAllText(desktopFilePath));
+        if (program is not null && fileExists(program))
+        {
+            return false;
+        }
+
+        File.WriteAllText(desktopFilePath, BuildDesktopFileContent(exec));
+        return true;
+    }
+
+    public static string BuildDesktopFileContent(string exec) =>
+        "[Desktop Entry]\n" +
+        "Type=Application\n" +
+        "Name=Bragi Client\n" +
+        "Comment=Tray control for the Roc audio link to Bragi\n" +
+        $"Exec={exec}\n" +
+        "Terminal=false\n" +
+        "X-GNOME-Autostart-enabled=true\n";
+
+    /// <summary>The program part of the Exec= line, without quotes or arguments.</summary>
+    public static string? ExecProgram(string desktopFileContent)
+    {
+        var line = desktopFileContent.Split('\n')
+            .Select(l => l.Trim())
+            .FirstOrDefault(l => l.StartsWith("Exec=", StringComparison.Ordinal));
+        if (line is null)
+        {
+            return null;
+        }
+
+        var value = line["Exec=".Length..];
+        if (value.StartsWith('"'))
+        {
+            var end = value.IndexOf('"', 1);
+            return end > 0 ? value[1..end] : null;
+        }
+
+        var space = value.IndexOf(' ');
+        return space < 0 ? value : value[..space];
+    }
+
+    private static string CurrentExecCommand() => ResolveExecCommand(
+        Environment.GetEnvironmentVariable("APPIMAGE"),
+        Environment.ProcessPath,
+        Assembly.GetEntryAssembly()?.Location);
+
+    /// <summary>
+    /// Inside an AppImage the process path points into its /tmp/.mount_* dir,
+    /// which only exists while it runs. The AppImage runtime sets $APPIMAGE to
+    /// the .AppImage file itself, so that wins. Otherwise the process path is
+    /// the "dotnet" muxer for a framework-dependent build (the dll is a separate
+    /// argument) or the app binary itself when published; tell them apart by name.
+    /// </summary>
+    public static string ResolveExecCommand(string? appImage, string? processPath, string? entryAssemblyPath)
+    {
+        if (!string.IsNullOrEmpty(appImage))
+        {
+            return Quote(appImage);
+        }
+
         if (processPath is null)
         {
-            return $"dotnet {Assembly.GetEntryAssembly()?.Location}";
+            return $"dotnet {Quote(entryAssemblyPath ?? "")}";
         }
 
         var isDotnetHost = string.Equals(
             Path.GetFileNameWithoutExtension(processPath), "dotnet", StringComparison.OrdinalIgnoreCase);
         if (!isDotnetHost)
         {
-            return processPath;
+            return Quote(processPath);
         }
 
-        var dllPath = Assembly.GetEntryAssembly()?.Location;
-        return $"{processPath} {dllPath}";
+        return $"{Quote(processPath)} {Quote(entryAssemblyPath ?? "")}";
     }
+
+    // The desktop entry spec splits Exec= on spaces unless the argument is double-quoted.
+    private static string Quote(string path) => path.Contains(' ') ? $"\"{path}\"" : path;
 }
