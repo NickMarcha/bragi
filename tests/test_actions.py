@@ -95,8 +95,10 @@ def test_keys_go_through_a_tray_app_that_can_press_them_and_the_kvm_for_the_rest
         deck.receive_json(), sage.receive_json()  # the "kvm" view
         deck.send_json({"type": "client_hello", "features": ["keys"]})
         sage.send_json({"type": "client_hello", "features": []})
-        # The hellos land before the next message is handled.
+        # The hellos land before the next message is handled; each is answered
+        # with where the hub is (bragi#61).
         deck.send_json({"type": "kvm_switch", "computer": "ghost"})
+        assert deck.receive_json()["type"] == "hub"
         deck.receive_json()
         ok, text = asyncio.run(actions.run_kvm({"type": "kvm_keys", "keys": "Control+Shift+Alt+M",
                                                 "computers": ["sage", "sage-dev", "sagedeck"]}))

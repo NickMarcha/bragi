@@ -18,7 +18,7 @@ from dataclasses import asdict
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from . import gamepad, kvm, monitors, peer_presence, peers, ws
+from . import gamepad, hub_info, kvm, monitors, peer_presence, peers, ws
 
 logger = logging.getLogger("bragi.peer_control")
 
@@ -159,6 +159,9 @@ def _desktop_message(name: str, raw: str) -> None:
         return
     if message.get('type') == 'client_hello' and isinstance(message.get('features'), list):
         _features[name] = {f for f in message['features'] if f in ('keys',)}
+        # Where this hub is, so the tray app can fix stale addresses (bragi#61).
+        # From the cache hub_info.refresh() keeps warm, so this never blocks.
+        send(name, hub_info.message())
         return
     if message.get('type') == 'monitors':
         # This computer's monitors, for the KVM layout (app/monitors.py).
@@ -202,6 +205,19 @@ def _kvm_switch(name: str, raw: str) -> None:
             send(name, {'type': 'kvm_error', 'error': str(exc)})
 
     asyncio.get_running_loop().create_task(run())
+
+
+def move_clients(url: str) -> int:
+    """Tells every connected tray app to switch to another hub (bragi#61).
+    Returns how many tray apps were told. Raises ValueError for a bad URL."""
+    message = {'type': 'hub_moved', 'ws_url': hub_info.ws_url(url)}
+    count = 0
+    for connections in _connections.values():
+        for socket, queue in connections.items():
+            if socket not in _android:
+                queue.put_nowait(message)
+                count += 1
+    return count
 
 
 def remove(name: str) -> None:

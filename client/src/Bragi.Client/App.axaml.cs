@@ -96,6 +96,19 @@ public partial class App : Application
         _presenceClient.MessageReceived += _monitors.OnMessage;
         _presenceClient.Disconnected += _monitors.OnDisconnected;
         _monitors.Start();
+        // Where the hub is (bragi#61): fixes the audio address and Deskflow's
+        // server address when they're stale, and follows "move clients".
+        var hubSync = new HubSyncService
+        {
+            RestartRocLink = () => new RocLinkController().RestartAsync(),
+            Reconfigure = () => Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+            {
+                StopConfigured();
+                StartConfigured();
+                await _statusService!.EvaluateAsync();
+            }),
+        };
+        _presenceClient.MessageReceived += hubSync.OnMessage;
         // Windows: the app carries the audio itself, as VBAN (instead of Voicemeeter's).
         NativeMenuItem? audioItem = null;
         if (OperatingSystem.IsWindows() && config is { VbanPort: { } port, VbanStreamSend: { } fromHost, VbanStreamReceive: { } toHost })

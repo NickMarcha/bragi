@@ -1,0 +1,21 @@
+{# Settings > This hub (app/hub_info.py, bragi#61): what tray apps are told
+   about this hub when they connect, and moving them to another one. #}
+{% set h = hub %}
+<h3>This hub</h3>
+<p class="form-note">Tray apps get these addresses when they connect and fix their own settings to match: the audio link, and the Deskflow client's server address.</p>
+<ul class="hub-facts">
+  <li>Peer socket: <code>{{ h.info.ws_url or "unknown (no Tailscale name)" }}</code></li>
+  <li>Tailscale IP: <code>{{ h.info.tailscale_ip or "none" }}</code>, LAN IP: <code>{{ h.info.lan_ip or "unknown" }}</code></li>
+  {% if h.info.deskflow_hosts %}<li>Deskflow clients connect to: <code>{{ h.info.deskflow_hosts | join(", ") }}</code></li>{% endif %}
+  <li>Tray apps connected: {{ h.clients | length }}{% if h.clients %} ({{ h.clients | sort | join(", ") }}){% endif %}</li>
+</ul>
+{% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+{% if note %}<p class="form-note">{{ note }}</p>{% endif %}
+<form class="hub-move" hx-post="/hub/move" hx-target="#hub" hx-swap="innerHTML"
+      hx-confirm="Every connected tray app switches to the new hub and leaves this one. Go on?">
+  <label>Move tray apps to another hub
+    <input type="text" name="url" placeholder="newhub.your-tailnet.ts.net" required autocomplete="off">
+  </label>
+  <button type="submit">Move</button>
+</form>
+<p class="form-note">Set up the new hub first (its peers and KVM settings), then move. Phones connect to the new hub with its QR code.</p>

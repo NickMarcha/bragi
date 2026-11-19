@@ -335,6 +335,19 @@ listens on a socket.
 Bragi doesn't know what's behind the socket. Whatever answers there
 decides what the request does.
 
+## Moving to a new hub
+
+1. Install Bragi on the new box and work through Settings > Setup.
+2. Bring the configuration over: `~/.local/share/bragi/data`, and for the
+   KVM `~/.config/deskflow-headless` including `tls/deskflow.pem` (the
+   certificate the Deskflow clients trust). Keep the new box's Bragi and
+   peers stopped meanwhile, so two hubs don't send audio to the same peers.
+3. On the old hub: Settings > This hub > Move, with the new hub's address.
+   Tray apps 0.1.26+ switch, and the new hub's `hub` message fixes their
+   audio address and Deskflow's server address. Older tray apps and phones
+   need the new address by hand (phones: the QR code).
+4. Stop the old hub's services, start the new one's, move the USB devices.
+
 ## Updating a Docker install
 
 ```bash

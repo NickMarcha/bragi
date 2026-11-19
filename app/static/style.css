@@ -1541,3 +1541,22 @@ dialog h2 {
   padding-left: 1.25rem;
   font-size: 13px;
 }
+
+/* --- Settings > This hub (app/hub_info.py) --- */
+
+.hub-facts {
+  margin: 6px 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.hub-move {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 8px 0 4px;
+  font-size: 13px;
+}
+
+.hub-move label { display: grid; gap: 2px; flex: 1; min-width: 14em; }
