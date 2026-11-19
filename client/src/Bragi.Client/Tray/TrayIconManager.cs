@@ -78,6 +78,15 @@ public sealed class TrayIconManager : IDisposable
         var checkForUpdatesItem = new NativeMenuItem { Header = "Check for Updates" };
         checkForUpdatesItem.Click += (_, _) => UpdateService.CheckForUpdatesInteractive();
 
+        try
+        {
+            AutostartService.RepairIfStale();
+        }
+        catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException)
+        {
+            // A read-only or odd autostart dir shouldn't stop the tray from starting.
+        }
+
         _autostartItem = new NativeMenuItem
         {
             Header = "Start at Login",
