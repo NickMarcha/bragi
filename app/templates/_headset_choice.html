@@ -1,0 +1,17 @@
+{# Settings > Main headset (app/headset_choice.py, bragi#59). Applies on change. #}
+{% set h = headset_choice %}
+<h3>Main headset</h3>
+<p class="form-note">The USB audio device Bragi treats as the headset: phones hear its output, the computers get its mic, and it stays the box's default output. Other USB inputs (a desk mic) become mic choices.</p>
+{% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+<form hx-post="/headset-choice" hx-target="#headset-choice" hx-swap="innerHTML" hx-trigger="change">
+  <label>Headset
+    <select name="card">
+      <option value="auto" {% if h.choice == "auto" %}selected{% endif %}>Automatic{% if h.choice == "auto" and h.current_label %} (now: {{ h.current_label }}){% endif %}</option>
+      {% for o in h.options %}
+      <option value="{{ o.key }}" {% if h.choice == o.key %}selected{% endif %}>{{ o.label }}{% if not o.input %} (no mic){% elif not o.output %} (mic only){% endif %}</option>
+      {% endfor %}
+      {% if h.missing %}<option value="{{ h.choice }}" selected>{{ h.choice }} (not connected)</option>{% endif %}
+    </select>
+  </label>
+</form>
+{% if h.missing %}<p class="form-note">The chosen headset isn't connected, so Bragi uses {{ h.current_label or "no headset" }} until it's back.</p>{% endif %}

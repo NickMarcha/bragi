@@ -37,8 +37,15 @@ ALSA card id, alongside "Headset when its mic is live, <mic> when it's muted".
 That one follows the headset's own mute button, read over its HID channel
 (`headset_hid.py`: notification kind 03 on each press, read op 04): headset
 mic while it's live, the desk mic while it's muted or the headset is off. The
-switch happens as the notification arrives. Telling the headset's mic from a
-USB mic needs the HyperX dongle, so without it USB mics aren't offered.
+switch happens as the notification arrives.
+
+Which USB card is the headset is Settings > Main headset
+(`app/headset_choice.py`): Automatic picks a HyperX dongle by its USB serial,
+else the first USB card with an output and an input; or pick one. Every
+other USB input is offered as a mic. The managed peers config takes the
+headset's output (what phones hear) and input from it, and Bragi keeps the
+box's default output on the headset, so a device plugged in later, like the
+AT2020USB+ with its headphone jack, can't take the peers' incoming audio.
 
 Since the headset's button then switches mics, the toolbar's "Mute mics"
 button, and the "Mute or unmute all mics" macro button action, mute whatever

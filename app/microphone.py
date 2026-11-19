@@ -20,8 +20,8 @@ the computers until it's unmuted. The headset's macro button can toggle it
 instead of muting.
 
 The headset's mute state comes from its HID channel (headset_hid.py).
-Without a HyperX dongle Bragi can't tell the headset from a USB mic, so
-"headset" is then any USB input, as before USB mics were choices.
+Which USB card is the headset is headset_choice.py's call (Settings, or
+a HyperX dongle, or the first USB card); every other USB input is a mic.
 """
 from __future__ import annotations
 
@@ -30,7 +30,9 @@ import json
 import logging
 import threading
 
-from . import headset_hid, headsets, peers, pipewire
+from types import SimpleNamespace
+
+from . import headset_choice, headset_hid, headsets, peers, pipewire
 
 logger = logging.getLogger('bragi.microphone')
 _lock = threading.RLock()
@@ -85,28 +87,27 @@ def _usb_inputs(nodes: dict[int, dict]) -> list[tuple[int, str, dict]]:
     return out
 
 
-def _is_headset(card: str) -> bool:
-    return any(headset_hid.serial_matches(card, serial) for serial in headset_hid.serials())
+def _as_nodes(nodes: dict[int, dict]) -> list:
+    """The nodes as headset_choice expects them (id, name, media_class)."""
+    return [SimpleNamespace(id=i, name=props.get('node.name', ''), media_class=props.get('media.class', ''))
+            for i, props in nodes.items()]
+
+
+def _headset_card(nodes: dict[int, dict]) -> str | None:
+    return headset_choice.card(_as_nodes(nodes))
 
 
 def _headset_source(nodes: dict[int, dict]) -> int | None:
-    inputs = _usb_inputs(nodes)
-    known = [node_id for node_id, card, _ in inputs if _is_headset(card)]
-    if known:
-        return known[0]
-    if headset_hid.serials():
-        return None  # the HyperX dongle is there, its mic isn't
-    return inputs[0][0] if inputs else None
+    name = headset_choice.input_name(_as_nodes(nodes))
+    return next((i for i, props in nodes.items() if props.get('node.name') == name), None) if name else None
 
 
 def _usb_mics(nodes: dict[int, dict]) -> list[tuple[int, str, str]]:
-    """(node id, card id, label) of USB mics that aren't the headset. Only
-    known with a HyperX dongle to tell them apart."""
-    if not headset_hid.serials():
-        return []
+    """(node id, card id, label) of the USB inputs that aren't the headset."""
+    headset = _headset_card(nodes)
     out = []
     for node_id, card, props in _usb_inputs(nodes):
-        if _is_headset(card):
+        if card == headset:
             continue
         label = props.get('node.description') or card
         for suffix in (' Analog Stereo', ' Mono', ' Multichannel Input'):

@@ -200,6 +200,11 @@ def test_phones_hear_the_headset_not_a_desk_mics_headphone_jack(session, monkeyp
     text = peers.MANAGED_CONF_FILE.read_text()
     assert f'target.object = "alsa_output.{HEADSET_CARD_ID}.analog-stereo"' in text
     assert "AT2020" not in text
-    # Without a recognised dongle it's the first USB node, as before.
+    # Without a recognised dongle: the first USB card with an output and an
+    # input, in a stable order (not pw-dump's order).
     monkeypatch.setattr(headset_hid, "find_devices", lambda: {})
+    assert peers._headset_playback_name() == f"alsa_output.{HEADSET_CARD_ID}.analog-stereo"
+    # A choice made in Settings wins (bragi#59).
+    from app import headset_choice
+    headset_choice.save(at2020)
     assert peers._headset_playback_name() == f"alsa_output.{at2020}.analog-stereo"
