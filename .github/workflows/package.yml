@@ -1,7 +1,8 @@
 name: Bragi package
 
-# Builds the bragi .deb for Raspberry Pi OS / Debian trixie (arm64). On a
-# bragi-v* tag the package is attached to a GitHub release; from the
+# Builds the bragi .deb for Debian trixie on arm64 (Raspberry Pi OS) and
+# amd64 (an x86 box such as the HP MicroServer). On a bragi-v* tag both
+# packages are attached to one GitHub release; from the
 # Actions tab (workflow_dispatch) it's built as an artifact only, for
 # testing. See docs/deployment.md.
 on:
@@ -26,9 +27,20 @@ permissions:
   contents: write
 
 jobs:
-  deb-trixie-arm64:
-    runs-on: ubuntu-24.04-arm
+  deb:
+    name: deb-trixie-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+          - arch: amd64
+            runner: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     container: debian:trixie
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     timeout-minutes: 30
     steps:
       - name: Install build tools
@@ -63,18 +75,30 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: bragi-${{ steps.version.outputs.version }}-trixie-arm64
+          name: bragi-${{ steps.version.outputs.version }}-trixie-${{ matrix.arch }}
           path: dist/*.deb
 
+  # One release with both packages, once both built: a release step in each
+  # build job would race to create the same release.
+  release:
+    if: github.ref_type == 'tag'
+    needs: deb
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bragi-*
+          path: dist
+          merge-multiple: true
+
       - name: Release
-        if: github.ref_type == 'tag'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          apt-get install -y -qq --no-install-recommends gh >/dev/null 2>&1 || true
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          ls -la dist
           # --latest=false: "Latest" stays with the tray app's releases
           # (client-v*), which is what people download by hand.
-          gh release create "$GITHUB_REF_NAME" dist/*.deb --latest=false --title "Bragi ${{ steps.version.outputs.version }}" \
-            --notes "Bragi ${{ steps.version.outputs.version }} for Raspberry Pi OS / Debian trixie (arm64). Install from the apt repository (docs/deployment.md) or with \`sudo apt install ./bragi_*.deb\`."
+          gh release create "$GITHUB_REF_NAME" dist/*.deb --repo "$GITHUB_REPOSITORY" --latest=false \
+            --title "Bragi ${{ needs.deb.outputs.version }}" \
+            --notes "Bragi ${{ needs.deb.outputs.version }} for Debian trixie on arm64 (Raspberry Pi OS) and amd64. Install from the apt repository (docs/deployment.md) or with \`sudo apt install ./bragi_*.deb\`."
