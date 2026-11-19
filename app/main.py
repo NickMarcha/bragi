@@ -40,6 +40,7 @@ from . import setup_checks
 from . import hub_info
 from . import headset_choice
 from . import backup
+from . import usb_topology
 from . import level_meter
 from . import peer_control
 from . import key_bindings
@@ -549,6 +550,14 @@ def hub_move(request: Request, url: str = Form(...)):
     target = hub_info.ws_url(url)
     return _hub_section(request, note=f"Told {count} tray app{'s' if count != 1 else ''} to switch to {target}."
                         if count else "No tray app is connected, so nothing was moved.")
+
+
+# --- Settings > USB (app/usb_topology.py) ---
+
+@app.get("/usb", response_class=HTMLResponse)
+def usb_section(request: Request):
+    """Which USB devices share a full-speed lane, and recent bandwidth refusals."""
+    return templates.TemplateResponse(request, "_usb.html", {"usb": usb_topology.view()})
 
 
 # --- Settings > Setup (app/setup_checks.py) ---
