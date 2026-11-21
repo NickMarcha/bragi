@@ -112,7 +112,23 @@ public sealed class PeerPresenceClient : IDisposable
                 // the socket fails within about 15 seconds.
                 socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(5);
                 socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(10);
-                await socket.ConnectAsync(uri, token);
+                // A connect started while the hub was unreachable could hang
+                // for good (TCP connected, TLS or the upgrade never answered),
+                // and the loop never retried: after a LAN fallback test no
+                // tray app came back until it was restarted. Give each try
+                // 10 s.
+                using (var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(token))
+                {
+                    connectTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+                    try
+                    {
+                        await socket.ConnectAsync(uri, connectTimeout.Token);
+                    }
+                    catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                    {
+                        throw new WebSocketException("Connecting to the hub timed out");
+                    }
+                }
                 _socket = socket;
                 delay = TimeSpan.FromSeconds(2); // reset backoff after a successful connect
                 while (!token.IsCancellationRequested && socket.State == WebSocketState.Open)

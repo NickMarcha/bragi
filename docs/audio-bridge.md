@@ -238,8 +238,13 @@ So both ends fall back to the home network:
 - `app/lan_fallback.py` checks every 5 s whether the hub itself has an
   address in 100.64.0.0/10 (from `/proc/net/fib_trie`). After three checks
   without one it rewrites `peers.conf` with the LAN address of every desktop
-  peer that reported one: the Roc and VBAN send targets and the VBAN receive
-  rule's `vban.ip`. The path unit restarts the peers once. At the first check
+  peer that reported one: the Roc and VBAN send targets. The path unit
+  restarts the peers once. A VBAN peer's receive rule accepts either of its
+  addresses in both modes (`peers.vban_sender`): `module-vban-recv` keys
+  streams by stream name only and checks the rules once, on the first
+  packet, so a first packet from the address the rule didn't name left the
+  peer silent until the peers restarted. That happened when a tray app was
+  still on the LAN after the hub switched back. At the first check
   that finds a Tailscale address again it writes the Tailscale addresses
   back. Peers without a LAN address and phones stay on Tailscale.
 - The tray apps remember the hub's LAN address from the `hub` message. When
