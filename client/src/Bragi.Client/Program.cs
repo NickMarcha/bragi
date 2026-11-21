@@ -16,7 +16,7 @@ class Program
         // Velopack intercepts its own install/update/uninstall lifecycle
         // hooks, which arrive as CLI args on first launch after an update.
         VelopackApp.Build().Run();
-        WorkingDirectory.LeaveAppImageMount();
+        WorkingDirectory.LeaveInstallDir();
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }

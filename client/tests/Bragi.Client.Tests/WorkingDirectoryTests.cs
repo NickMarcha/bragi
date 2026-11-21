@@ -19,4 +19,19 @@ public class WorkingDirectoryTests
     [Fact]
     public void Stays_without_a_home() =>
         Assert.Null(WorkingDirectory.Target("/tmp/.mount_x/usr/bin", ""));
+
+    private const string AppDir = @"C:\Users\u\AppData\Local\BragiClient\current\";
+
+    [Theory]
+    [InlineData(@"C:\Users\u\AppData\Local\BragiClient\current")]
+    [InlineData(@"C:\Users\u\AppData\Local\BragiClient\current\")]
+    [InlineData(@"c:\users\u\appdata\local\bragiclient\current\runtimes")]
+    public void Leaves_the_install_dir(string current) =>
+        Assert.Equal(@"C:\Users\u", WorkingDirectory.Target(current, @"C:\Users\u", AppDir));
+
+    [Theory]
+    [InlineData(@"C:\Users\u\AppData\Local\BragiClient\currently")]
+    [InlineData(@"C:\Users\u")]
+    public void Stays_outside_the_install_dir(string current) =>
+        Assert.Null(WorkingDirectory.Target(current, @"C:\Users\u", AppDir));
 }

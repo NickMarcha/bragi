@@ -162,7 +162,9 @@ public static class DeskflowClient
         }
         if (exe is not null && File.Exists(exe))
         {
-            Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false });
+            // Deskflow keeps its working directory busy for as long as it runs:
+            // its own, not ours, which an update replaces.
+            Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! });
         }
     }
 }
