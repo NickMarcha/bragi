@@ -222,6 +222,49 @@ Two details matter, both verified against PipeWire 1.4.2 in a container:
   (an old `vban_receptor`), VBAN receiving fails but the Roc peers in the same
   file still start.
 
+## When Tailscale is down
+
+Every peer's audio goes to its Tailscale address. If the hub boots while the
+internet is down, tailscaled can't log in and the hub has no 100.x address,
+so no audio arrives anywhere, even though the KVM keeps working over the LAN
+(bragi#81).
+
+So both ends fall back to the home network:
+
+- Each tray app reports its LAN address (`peer_lan`) after each `hub`
+  message: the private IPv4 address on the same subnet as the hub's LAN
+  address, or none when it's on another network. Bragi stores it as `lan_ip`
+  in `peers.yaml`.
+- `app/lan_fallback.py` checks every 5 s whether the hub itself has an
+  address in 100.64.0.0/10 (from `/proc/net/fib_trie`). After three checks
+  without one it rewrites `peers.conf` with the LAN address of every desktop
+  peer that reported one: the Roc and VBAN send targets and the VBAN receive
+  rule's `vban.ip`. The path unit restarts the peers once. At the first check
+  that finds a Tailscale address again it writes the Tailscale addresses
+  back. Peers without a LAN address and phones stay on Tailscale.
+- The tray apps remember the hub's LAN address from the `hub` message. When
+  the peer socket has been down for 20 s and that address answers a ping,
+  the Linux tray app points the Roc link there and restarts it; the Windows
+  tray app retargets its VBAN link live. The next message on the socket
+  points them back.
+
+Only the hub losing its own Tailscale address switches the hub. A peer whose
+Tailscale is down, or a hub with an address that can't reach anyone, changes
+nothing there, so a handheld away from home is never sent to a home address.
+
+The peer socket itself doesn't fall back: Bragi listens on 127.0.0.1 and
+the tray apps reach it through `tailscale serve`, so while Tailscale is down
+they can't connect, and the dashboard can't be opened from other machines.
+This change doesn't open Bragi to the LAN.
+
+Audio over the LAN is not encrypted. Over Tailscale it travels inside
+WireGuard; over the home network Roc and VBAN packets are plain UDP that
+anyone on the LAN can capture.
+
+Settings > This hub says "Audio over the home network (Tailscale is down)"
+while the hub's side is switched, and the tray app's status line and
+tooltip say the same on each computer.
+
 ## Dual-headset playback, and why the Pi runs one headset
 
 The goal was two physical headsets on the Pi playing the same mixed feed.

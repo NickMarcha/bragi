@@ -103,6 +103,7 @@ that shape still need the real thing:
 | `eq_presets.py` | ~110 | EQ presets for the HyperX dialog: the built-ins from `eq_presets_builtin.yaml` (one data file; the basis for each curve is in [`eq-presets.md`](eq-presets.md)) and presets saved from the dialog. The active preset is matched from the headset's current gains, never stored. |
 | `knob_watcher.py` | ~150 | Reads `/dev/input/eventN` directly for the headset's hardware volume knob, which sends standard `KEY_VOLUMEUP` / `KEY_VOLUMEDOWN` HID events that nothing catches on a headless Pi. Translates knob turns into real volume steps. |
 | `audio_state.py` | ~65 | Persists an authoritative `(volume, balance)` pair per pannable node to `data/balance.yaml` and reapplies both together on every change, so the volume fader and the balance pad do not fight each other (both are the same raw `channelVolumes` write underneath). |
+| `lan_fallback.py` | ~110 | Sends the peers' audio to their LAN addresses while this hub has no Tailscale address, and back when it has one (bragi#81). See [`audio-bridge.md`](audio-bridge.md#when-tailscale-is-down). |
 | `peer_presence.py` | ~15 | The `/ws/peer/{name}` endpoint. The Bragi Client tray app holds this open for as long as its Roc link is enabled; that live socket is the peer card's real reachability signal, which a loaded Roc module cannot give on its own over UDP. |
 | `level_meter.py` | ~260 | Live VU-style metering. Captures each node's signal with `pw-cat --record`, and a single ticker pushes every meter's current level as one `levels` frame per ~50ms rather than one frame per meter. Two gates in `supervise()`: `viz_settings.get_enabled()` (a real off switch, not a display toggle) and `ws.manager.has_clients()`; it reconciles on `ws.manager.wake` as well as its own timer, so opening a tab starts the meters at once. |
 | `viz_settings.py` | ~45 | One global on/off toggle for the level meters, persisted to `data/viz_settings.yaml`. Separate from `audio_state.py` because it is global, not per-node, and it gates whether `level_meter.py` captures anything at all. |
@@ -123,6 +124,7 @@ Everything under `data/` is bind-mounted in production (see
     tailscale_ip: 100.x.x.x
     protocol: roc          # roc | vban
     managed: true          # true = Bragi owns it, removable from the UI
+    lan_ip: 192.168.1.20   # optional, reported by its tray app; used while Tailscale is down
     ports:
       mic_source: 10041
       mic_repair: 10042

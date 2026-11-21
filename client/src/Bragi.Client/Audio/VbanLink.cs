@@ -75,7 +75,9 @@ public sealed class VbanLink : IDisposable
     private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(500);
     private const int StuckTicks = 6; // 3 s of sound on the device and none captured
 
-    private readonly IPAddress _host;
+    // Changed live by SetHost (LAN fallback, bragi#81): the send loop's
+    // target and the receive loop's sender filter.
+    private volatile IPAddress _host;
     private readonly int _port;
     private readonly string _receiveStream; // what the host sends us
     private readonly string _sendStream;    // what we send the host
@@ -106,6 +108,9 @@ public sealed class VbanLink : IDisposable
         _sendStream = sendStream;
         _health = new Timer(_ => HealthCheck(), null, Tick, Tick);
     }
+
+    /// <summary>Sends to, and accepts audio from, this address from now on.</summary>
+    public void SetHost(string host) => _host = IPAddress.Parse(host);
 
     public bool Receiving => _session is { } s && DateTime.UtcNow - s.LastReceived < TimeSpan.FromSeconds(2);
 

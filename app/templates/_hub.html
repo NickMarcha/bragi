@@ -7,6 +7,7 @@
   <li>Peer socket: <code>{{ h.info.ws_url or "unknown (no Tailscale name)" }}</code></li>
   <li>Tailscale IP: <code>{{ h.info.tailscale_ip or "none" }}</code>, LAN IP: <code>{{ h.info.lan_ip or "unknown" }}</code></li>
   {% if h.info.deskflow_hosts %}<li>Deskflow clients connect to: <code>{{ h.info.deskflow_hosts | join(", ") }}</code></li>{% endif %}
+  {% if h.lan_audio %}<li><strong>Audio over the home network (Tailscale is down).</strong> Peers that reported a LAN address get their audio there until this hub's Tailscale is back.</li>{% endif %}
   <li>Tray apps connected: {{ h.clients | length }}{% if h.clients %} ({{ h.clients | sort | join(", ") }}){% endif %}</li>
 </ul>
 {% if error %}<p class="form-error">{{ error }}</p>{% endif %}

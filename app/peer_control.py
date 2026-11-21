@@ -3,7 +3,8 @@
 Android clients opt in with ?client=android and receive configuration and
 stream commands. Desktop tray apps receive the gamepad status and, on the
 computer that has the controllers, their input (gamepad.py); they can send
-gamepad_claim and gamepad_release. Older desktop clients read and ignore
+gamepad_claim and gamepad_release, and peer_lan with their LAN address
+(lan_fallback.py). Older desktop clients read and ignore
 whatever arrives.
 Each connection has one writer; dashboard actions only enqueue commands.
 """
@@ -162,6 +163,16 @@ def _desktop_message(name: str, raw: str) -> None:
         # Where this hub is, so the tray app can fix stale addresses (bragi#61).
         # From the cache hub_info.refresh() keeps warm, so this never blocks.
         send(name, hub_info.message())
+        return
+    if message.get('type') == 'peer_lan':
+        # This computer's home-network address, for when this hub's
+        # Tailscale is down (app/lan_fallback.py, bragi#81).
+        lan_ip = message.get('lan_ip')
+        if lan_ip is None or peers.is_lan_ipv4(lan_ip):
+            try:
+                peers.set_lan_ip(name, lan_ip)
+            except (ValueError, peers.ConfigWriteError) as exc:
+                logger.info("LAN address from %s not stored: %s", name, exc)
         return
     if message.get('type') == 'monitors':
         # This computer's monitors, for the KVM layout (app/monitors.py).
