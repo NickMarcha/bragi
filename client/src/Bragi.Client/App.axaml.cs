@@ -41,6 +41,7 @@ public partial class App : Application
             _statusService.StatusChanged += snapshot => _presenceClient?.SetEnabled(snapshot.State == TrayState.Enabled);
             StartConfigured();
             _ = UpdateService.CheckSilentlyAsync();
+            _ = UpdateService.CheckNightlyAsync();
             if (!OperatingSystem.IsWindows())
             {
                 _ = PatchedLibrocInstaller.EnsureInstalledAsync(new RocLinkController());

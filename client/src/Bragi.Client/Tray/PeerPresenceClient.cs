@@ -105,6 +105,13 @@ public sealed class PeerPresenceClient : IDisposable
             try
             {
                 using var socket = new ClientWebSocket();
+                // Without a ping timeout a dead hub isn't noticed: on Linux
+                // the kernel retries an unanswered connection for about 15
+                // minutes, so the LAN fallback (LanFallbackService) never
+                // started when the hub's Tailscale went away. With these
+                // the socket fails within about 15 seconds.
+                socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(5);
+                socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(10);
                 await socket.ConnectAsync(uri, token);
                 _socket = socket;
                 delay = TimeSpan.FromSeconds(2); // reset backoff after a successful connect
