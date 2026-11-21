@@ -149,13 +149,17 @@ public sealed class PeerPresenceClient : IDisposable
                     message.SetLength(0);
                 }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
                 break;
             }
             catch
             {
-                // Connection failed/dropped - fall through to the retry delay below.
+                // Connection failed/dropped, timed out included. An aborted
+                // socket (keepalive timeout) can throw OperationCanceledException
+                // without our token being cancelled; before 0.1.32 that ended
+                // this loop for good, and the tray never reconnected to the hub.
+                // Fall through to the retry delay below.
             }
             finally
             {
