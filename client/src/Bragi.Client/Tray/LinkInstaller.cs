@@ -56,6 +56,82 @@ public static class LinkInstaller
     }
 
     /// <summary>
+    /// Which installed files (by bundled name) differ from the copies this
+    /// app ships, compared without CRLF. A missing file isn't stale: that's
+    /// for "Connect to Bragi..." to set up.
+    /// </summary>
+    public static IReadOnlyList<string> Stale(IReadOnlyDictionary<string, string?> installed, IReadOnlyDictionary<string, string> bundled) =>
+        bundled
+            .Where(pair => installed.TryGetValue(pair.Key, out var text) && text is not null
+                && text.Replace("\r\n", "\n", StringComparison.Ordinal) != pair.Value)
+            .Select(pair => pair.Key)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>
+    /// At startup on Linux: puts this version's script and unit in place when
+    /// the installed ones differ, then points the unit at the patched libroc.
+    /// Only "Connect to Bragi..." wrote them before, so a machine kept the
+    /// copy from its first setup: on 2026-11-21 sagedeck's link had been
+    /// failing for hours on an August script that still wanted
+    /// SAGEPI_TAILSCALE_IP. The old file is kept as *.bak-yyyyMMdd. A link
+    /// that was on (or failing) restarts; one turned off stays off.
+    /// </summary>
+    public static async Task StartupAsync(RocLinkController controller)
+    {
+        try
+        {
+            if (RocLinkConfig.IsInstalled())
+            {
+                await RefreshAsync(controller);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or LinkSetupException or ProcessRunException)
+        {
+            Console.Error.WriteLine($"Bragi: couldn't update the link's files: {ex.Message}");
+        }
+        await PatchedLibrocInstaller.EnsureInstalledAsync(controller);
+    }
+
+    private static async Task RefreshAsync(RocLinkController controller)
+    {
+        var paths = new Dictionary<string, string>
+        {
+            ["bragi-roc-link-run.sh"] = RocLinkConfig.RunScriptPath,
+            ["bragi-roc-link.service"] = RocLinkConfig.UnitFilePath,
+        };
+        var installed = paths.ToDictionary(p => p.Key, p => File.Exists(p.Value) ? (string?)File.ReadAllText(p.Value) : null);
+        var bundled = paths.Keys.ToDictionary(name => name, Bundled);
+        var stale = Stale(installed, bundled);
+        if (stale.Count == 0)
+        {
+            return;
+        }
+        var stamp = DateTime.Now.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+        foreach (var name in stale)
+        {
+            File.Copy(paths[name], $"{paths[name]}.bak-{stamp}", overwrite: true);
+        }
+        if (stale.Contains("bragi-roc-link-run.sh"))
+        {
+            WriteFile(RocLinkConfig.RunScriptPath, bundled["bragi-roc-link-run.sh"],
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+        if (stale.Contains("bragi-roc-link.service"))
+        {
+            WriteFile(RocLinkConfig.UnitFilePath, bundled["bragi-roc-link.service"],
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+        }
+        await ProcessRunner.RunOrThrowAsync("systemctl", ["--user", "daemon-reload"]);
+        Console.Error.WriteLine($"Bragi: updated the link's {string.Join(" and ", stale)} (old copies kept as .bak-{stamp})");
+        if (await controller.GetStateAsync() != UnitState.Inactive)
+        {
+            await controller.RestartAsync();
+        }
+    }
+
+    /// <summary>
     /// pipewire.conf.d files that already load Roc modules. Left in place,
     /// they bind the same ports as the unit; the window warns about them.
     /// </summary>

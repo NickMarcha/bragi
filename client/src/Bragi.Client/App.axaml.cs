@@ -44,7 +44,7 @@ public partial class App : Application
             _ = UpdateService.CheckNightlyAsync();
             if (!OperatingSystem.IsWindows())
             {
-                _ = PatchedLibrocInstaller.EnsureInstalledAsync(new RocLinkController());
+                _ = LinkInstaller.StartupAsync(new RocLinkController());
             }
 
             // First run: nothing to link to yet, so ask.
