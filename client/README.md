@@ -92,7 +92,10 @@ sent as VBAN.
   `Tray/LinkInstaller.cs` are "Connect to Bragi...".
 - `systemd/` is the `systemd --user` unit and wrapper script that own the
   Roc link. The app ships a copy and installs it; `install.sh` does the
-  same by hand. Day to day the app only calls `systemctl --user
+  same by hand. From 0.1.33 the app also replaces an installed copy that
+  differs from its own at startup (old files kept as `*.bak-yyyyMMdd`) and
+  restarts the link unless it's turned off. Before that a machine kept the
+  copy from its first setup. Day to day the app only calls `systemctl --user
   start/stop/is-active` on the unit and never talks to PipeWire directly.
 - `roc/` builds the patched libroc that releases bundle (see below).
 
