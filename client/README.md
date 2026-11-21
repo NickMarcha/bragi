@@ -197,11 +197,23 @@ should use (`app/hub_info.py`). If this computer's settings point
 elsewhere, the tray app fixes them:
 
 - `BRAGI_HOST_IP` in the env file, where the audio goes. The old name
-  `SAGEPI_TAILSCALE_IP` is replaced. On Linux the Roc link restarts; on
-  Windows the VBAN link is rebuilt.
+  `SAGEPI_TAILSCALE_IP` is replaced, so the link script has to be the
+  current one too (0.1.33 keeps it current; an August script failed on
+  this). On Linux the Roc link restarts; on Windows the VBAN link is rebuilt.
 - `remoteHost` in the Deskflow client's `Deskflow.conf`, then the Deskflow
   app restarts so it connects there. Skipped when Deskflow isn't set up as a
-  client here.
+  client here. On Linux (0.1.34+) the restart goes through systemd: the
+  desktop's autostart unit (`app-org.deskflow.deskflow@autostart.service`)
+  when there is one, otherwise a transient unit. Before that Deskflow ran as
+  the tray app's child, inside the tray's own unit, and restarting the tray
+  stopped it.
+
+On Linux the tray app also starts Deskflow when it's set up as a client
+here but hasn't been running for a minute (`DeskflowClient.WatchAsync`).
+
+The hub keeps its last Tailscale address while Tailscale has none (starting,
+or logged out without internet), so the Deskflow address list doesn't
+shrink for a moment and set off a needless Deskflow restart.
 
 The dashboard's Settings > This hub > Move sends `hub_moved` with another
 hub's URL: the tray app saves it as `BRAGI_WS_URL`, connects there, and that
