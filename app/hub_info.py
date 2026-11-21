@@ -31,6 +31,23 @@ _cache: tuple[float, dict] | None = None
 _HOST = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?)*$")
 
 
+_last_tailscale: dict = {}
+
+
+def _tailscale_or_last() -> dict:
+    """This node's Tailscale name and IPv4, or the last ones seen while
+    Tailscale has none (starting, or logged out with no internet). Without
+    this the "hub" message right after Tailscale came back listed only the
+    LAN address for Deskflow, the tray apps rewrote remoteHost and restarted
+    Deskflow, and once more when the full list came (2026-11-21)."""
+    global _last_tailscale
+    ts = _tailscale()
+    if ts.get("ip"):
+        _last_tailscale = ts
+        return ts
+    return _last_tailscale or ts
+
+
 def _tailscale() -> dict:
     """This node's Tailscale name and IPv4, or {} without Tailscale."""
     if not shutil.which("tailscale"):
@@ -74,7 +91,7 @@ def message() -> dict:
 def _compute() -> dict:
     global _cache
     now = time.monotonic()
-    ts = _tailscale()
+    ts = _tailscale_or_last()
     lan = lan_ip()
     msg = {
         "type": "hub",

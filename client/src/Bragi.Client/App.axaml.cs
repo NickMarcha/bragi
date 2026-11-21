@@ -23,6 +23,7 @@ public partial class App : Application
     private MonitorReporter? _monitors;
     private Audio.VbanLink? _audio;
     private LanFallbackService? _lanFallback;
+    private static System.Threading.Tasks.Task? _deskflowWatch;
 
     public override void Initialize()
     {
@@ -111,6 +112,7 @@ public partial class App : Application
             }),
         };
         _presenceClient.MessageReceived += hubSync.OnMessage;
+        _deskflowWatch ??= DeskflowClient.WatchAsync();
         // Windows: the app carries the audio itself, as VBAN (instead of Voicemeeter's).
         NativeMenuItem? audioItem = null;
         if (OperatingSystem.IsWindows() && config is { VbanPort: { } port, VbanStreamSend: { } fromHost, VbanStreamReceive: { } toHost })

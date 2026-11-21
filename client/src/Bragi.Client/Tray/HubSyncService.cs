@@ -153,6 +153,72 @@ public static class DeskflowClient
         RestartApp();
     }
 
+    /// <summary>The unit systemd-xdg-autostart-generator makes from Deskflow's
+    /// autostart entry on Linux.</summary>
+    private const string AutostartUnit = "app-org.deskflow.deskflow@autostart.service";
+
+    private static int _missing;
+
+    /// <summary>
+    /// Linux: starts Deskflow when it's set up as a client here but hasn't been
+    /// running for two checks in a row (a minute). On 2026-11-21 sage-dev's
+    /// Deskflow was gone after a tray restart and only a keyboard plugged into
+    /// sage-dev could start it again; nothing at the desk could.
+    /// </summary>
+    public static async Task WatchAsync()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+        while (true)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            try
+            {
+                var configured = File.Exists(ConfPath) && File.ReadAllText(ConfPath).Contains("remoteHost=", StringComparison.Ordinal);
+                if (!configured || Process.GetProcessesByName("deskflow").Length > 0)
+                {
+                    _missing = 0;
+                    continue;
+                }
+                if (++_missing >= 2)
+                {
+                    _missing = 0;
+                    Console.Error.WriteLine("Bragi: Deskflow wasn't running; starting it");
+                    await StartLinuxAsync(null);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ProcessRunException)
+            {
+                Console.Error.WriteLine($"Bragi: couldn't check on Deskflow: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Linux: starts Deskflow through systemd, never as this app's child. A
+    /// child lands in the tray app's own unit, and the next restart of the
+    /// tray (an update) stops it too; that's how sage-dev lost its Deskflow.
+    /// The desktop's autostart unit is used when there is one, so Deskflow runs
+    /// as it does after a login; otherwise a transient unit.
+    /// </summary>
+    private static async Task StartLinuxAsync(string? exe)
+    {
+        var load = await ProcessRunner.RunAsync("systemctl", ["--user", "show", "-p", "LoadState", "--value", AutostartUnit]);
+        if (load.ExitCode == 0 && load.Stdout.Trim() == "loaded")
+        {
+            await ProcessRunner.RunAsync("systemctl", ["--user", "reset-failed", AutostartUnit]);
+            await ProcessRunner.RunAsync("systemctl", ["--user", "restart", AutostartUnit]);
+            return;
+        }
+        exe ??= File.Exists("/usr/bin/deskflow") ? "/usr/bin/deskflow" : null;
+        if (exe is not null)
+        {
+            await ProcessRunner.RunAsync("systemd-run", ["--user", "--collect", "--quiet", exe]);
+        }
+    }
+
     /// <summary>Restarts the Deskflow app (not its background service on
     /// Windows): it reads remoteHost at start and hands it to the client.</summary>
     private static void RestartApp()
@@ -170,6 +236,11 @@ public static class DeskflowClient
             catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
             {
             }
+        }
+        if (OperatingSystem.IsLinux())
+        {
+            _ = StartLinuxAsync(exe);
+            return;
         }
         if (exe is null && OperatingSystem.IsWindows() && Process.GetProcessesByName("deskflow-daemon").Length > 0)
         {

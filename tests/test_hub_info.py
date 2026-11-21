@@ -33,8 +33,10 @@ def test_the_hub_message(monkeypatch):
     assert hub_info.message() == {
         "type": "hub", "ws_url": "wss://sagehub.tail08dfa.ts.net/ws/peer", "tailscale_ip": "100.84.140.96",
         "lan_ip": "192.168.1.32", "deskflow_hosts": ["192.168.1.32", "100.84.140.96"]}
-    # Without Tailscale and without the KVM.
+    # A hub that never had Tailscale, and no KVM. (One that had it keeps the
+    # last address: see the test below.)
     monkeypatch.setattr(hub_info, "_tailscale", lambda: {})
+    monkeypatch.setattr(hub_info, "_last_tailscale", {})
     monkeypatch.setattr(hub_info, "_kvm_installed", lambda: False)
     hub_info.forget()
     msg = hub_info.message()
@@ -69,3 +71,26 @@ def test_the_settings_section(session):
     page = TestClient(app).get("/hub").text
     assert "wss://hub.example.ts.net/ws/peer" in page and "192.168.1.32" in page
     assert "Move tray apps and phones to another hub" in page
+
+
+def test_the_last_tailscale_address_stays_while_tailscale_has_none(monkeypatch):
+    # Right after tailscaled starts (or while it's logged out) it has no
+    # address; the Deskflow hosts must not shrink to the LAN address alone.
+    answers = iter([{"name": "hub.example.ts.net", "ip": "100.64.0.1"}, {}])
+    monkeypatch.setattr(hub_info, "_tailscale", lambda: next(answers))
+    monkeypatch.setattr(hub_info, "_last_tailscale", {})
+    monkeypatch.setattr(hub_info, "lan_ip", lambda: "192.168.1.32")
+    monkeypatch.setattr(hub_info, "_kvm_installed", lambda: True)
+    first = hub_info._compute()
+    second = hub_info._compute()
+    assert first["deskflow_hosts"] == ["192.168.1.32", "100.64.0.1"]
+    assert second["deskflow_hosts"] == first["deskflow_hosts"]
+    assert second["ws_url"] == "wss://hub.example.ts.net/ws/peer"
+
+
+def test_without_ever_having_tailscale_only_the_lan_address(monkeypatch):
+    monkeypatch.setattr(hub_info, "_tailscale", lambda: {})
+    monkeypatch.setattr(hub_info, "_last_tailscale", {})
+    monkeypatch.setattr(hub_info, "lan_ip", lambda: "192.168.1.32")
+    monkeypatch.setattr(hub_info, "_kvm_installed", lambda: True)
+    assert hub_info._compute()["deskflow_hosts"] == ["192.168.1.32"]
