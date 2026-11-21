@@ -92,8 +92,19 @@ Still open:
 
 ### Windows tray client
 
-A VBAN peer's link has no enable/disable/status control outside the web UI.
-The Avalonia tray client is Linux-only right now.
+It carries the VBAN audio itself and plays controllers through ViGEmBus.
+A VBAN peer's link still has no enable/disable control in the tray, only
+in the web UI.
+
+### Tray connection over the home network
+
+When the hub's Tailscale is down, audio falls back to the LAN (bragi#81),
+but the tray apps' peer socket doesn't: Bragi listens on 127.0.0.1 behind
+`tailscale serve`. Display reports, the KVM menu and hub address updates
+stop until Tailscale is back. On 2026-11-21 sage switched to one display
+during an outage and the hub kept the old two-monitor shape, leaving the
+top right of the screen unreachable. Fixing it means Bragi listening on
+the LAN, which needs its own authentication story.
 
 ### Realtime control plane
 

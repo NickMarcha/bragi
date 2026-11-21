@@ -107,6 +107,11 @@ client.
   usual reason a second headset or a mic crackles.
 - **Backup and move.** One file holds a hub's settings. Restore it on a new
   box, then "Move" tells every tray app and phone to follow it there.
+- **Audio over the home network when Tailscale is down.** If the hub has
+  no Tailscale address (it rebooted while the internet was out), it sends
+  audio to the LAN addresses the tray apps reported, and the tray apps
+  find the hub on the LAN. See
+  [`docs/audio-bridge.md`](docs/audio-bridge.md#when-tailscale-is-down).
 - **Updates from the dashboard** for Bragi and the Deskflow server.
 - **Sign-in** with a password, a passkey, or your Tailscale account, and
   API keys for other tools. The API guide is served at `/api/v1/help`.
@@ -241,6 +246,11 @@ These are design constraints. Open bugs are in
   as one rectangle. Bragi only writes the monitors when the server reports
   it understands them, otherwise the layout falls back to whole-computer
   edges.
+- **Only audio falls back to the home network.** With the hub's Tailscale
+  down, the dashboard and the tray apps' connection to the hub are gone,
+  so display changes don't reach the KVM layout and the tray's KVM menu
+  is empty until Tailscale is back. Bragi only listens on the hub itself,
+  behind `tailscale serve`.
 - **VBAN peers share one port and one format.** All use port 6980 at 48 kHz,
   16-bit stereo, and each needs a stream name no other VBAN peer uses.
 - **Adding or removing a managed peer briefly drops all of them.** The host
