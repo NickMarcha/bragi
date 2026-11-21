@@ -121,6 +121,21 @@ def target_ip(peer: Peer) -> str:
     return peer.tailscale_ip
 
 
+def vban_sender(peer: Peer) -> str:
+    """The vban.ip match for this peer's receive rule: its Tailscale
+    address, or either address once it reported a LAN one, whichever mode
+    the hub is in. module-vban-recv keys its streams by stream name only
+    and checks the rules once, on the first packet. If that packet came
+    from the address the rule didn't name (the peer still on the LAN after
+    the hub switched back, or the other way round), the name stayed tied to
+    a stream with no node until bragi-peers restarted, and the peer was
+    silent. [.] rather than an escaped dot keeps SPA-JSON escapes out of it."""
+    if peer.lan_ip and peer.client_kind != "android":
+        either = "|".join(ip.replace(".", "[.]") for ip in (peer.tailscale_ip, peer.lan_ip))
+        return f"~^({either})$"
+    return peer.tailscale_ip
+
+
 def using_lan() -> bool:
     return _use_lan
 
@@ -299,7 +314,7 @@ def _vban_recv_block(peers: list[Peer]) -> str:
     (port,) = {p.vban_port for p in peers}
     rules = "".join(f"""
               {{ matches = [ {{ sess.name = "{p.stream_receive}"
-                               vban.ip = "{target_ip(p)}" }} ]
+                               vban.ip = "{vban_sender(p)}" }} ]
                 actions = {{ create-stream = {{
                     node.name = "{p.incoming_source_name}"
                     node.description = "{p.name} (VBAN, via Bragi)"

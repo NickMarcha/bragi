@@ -107,7 +107,9 @@ def test_day_to_day_the_conf_uses_tailscale_addresses(session):
     peers.sync_managed_conf()
     text = conf()
     assert "remote.ip = 100.64.0.30" in text and "192.168.1.20" not in text
-    assert "destination.ip = 100.64.0.13" in text and 'vban.ip = "100.64.0.13"' in text
+    assert "destination.ip = 100.64.0.13" in text
+    # The receive rule takes either address in either mode (vban_sender).
+    assert 'vban.ip = "~^(100[.]64[.]0[.]13|192[.]168[.]1[.]9)$"' in text
 
 
 def test_with_tailscale_down_the_conf_uses_lan_addresses(session):
@@ -121,12 +123,13 @@ def test_with_tailscale_down_the_conf_uses_lan_addresses(session):
     text = conf()
     assert "remote.ip = 192.168.1.20" in text
     # VBAN: the send target and the receive rule that matches the sender.
-    assert "destination.ip = 192.168.1.9" in text and 'vban.ip = "192.168.1.9"' in text
+    assert "destination.ip = 192.168.1.9" in text and 'vban.ip = "~^(100[.]64[.]0[.]13|192[.]168[.]1[.]9)$"' in text
     assert "remote.ip = 100.64.0.31" in text  # no LAN address: as it was
     assert "remote.ip = 100.64.0.20" in text  # phones stay on Tailscale
 
     assert peers.set_lan_mode(False) is True
-    assert "192.168.1." not in conf()
+    back = conf()
+    assert "remote.ip = 192.168.1." not in back and "destination.ip = 192.168.1." not in back
 
 
 def test_a_new_lan_address_reaches_the_conf_only_in_lan_mode(session):
@@ -173,3 +176,16 @@ def test_settings_says_when_audio_goes_over_the_home_network(session):
     assert "Tailscale is down" not in client.get("/hub").text
     peers.set_lan_mode(True)
     assert "Audio over the home network (Tailscale is down)" in client.get("/hub").text
+
+
+def test_a_vban_rule_without_a_lan_address_names_only_tailscale(session):
+    peers.sync_managed_conf()
+    assert 'vban.ip = "100.64.0.13"' in conf()
+
+
+def test_the_either_address_rule_matches_both_and_nothing_else():
+    import re
+    peer = peers.Peer(name="x", tailscale_ip="100.64.0.13", lan_ip="192.168.1.9", protocol="vban")
+    pattern = peers.vban_sender(peer)[1:]
+    assert re.fullmatch(pattern, "100.64.0.13") and re.fullmatch(pattern, "192.168.1.9")
+    assert not re.fullmatch(pattern, "192.168.1.90") and not re.fullmatch(pattern, "100x64.0.13")
