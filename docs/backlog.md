@@ -96,6 +96,14 @@ It carries the VBAN audio itself and plays controllers through ViGEmBus.
 A VBAN peer's link still has no enable/disable control in the tray, only
 in the web UI.
 
+### Linux self-update leaves the old AppImage runtime running
+
+After a Velopack update the previous AppImage's runtime (`BragiClient.App`,
+its exe shown as deleted) stays alive with its /tmp/.mount_ mount, though
+its working directory is / and it has no children. Seen on sage-dev and
+sagedeck after 0.1.30 and 0.1.31 (2026-11-21); killed by hand. The 0.1.25
+fix (leaving the mount as working directory) isn't enough.
+
 ### Tray connection over the home network
 
 When the hub's Tailscale is down, audio falls back to the LAN (bragi#81),
