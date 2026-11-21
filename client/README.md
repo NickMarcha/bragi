@@ -213,7 +213,10 @@ this computer's LAN address (`peer_lan`): the private IPv4 address on the
 same subnet as the hub's, or none on another network.
 
 When the peer socket has been down for 20 s and the hub's LAN address
-answers a ping, the audio goes there:
+answers a ping, the audio goes there. The socket pings the hub every 5 s
+and gives up after 10 s without an answer (0.1.30+). Before that a Linux
+tray never noticed the hub was gone: the kernel kept retrying the dead
+connection for about 15 minutes, so the 20 s never started.
 
 - Linux: `BRAGI_HOST_IP` is set to the LAN address and the Roc link
   restarts.
@@ -322,8 +325,9 @@ restart the unit.
 ## Releases and self-update (Velopack)
 
 `Program.cs` runs `VelopackApp.Build().Run()` before anything else. The tray
-app checks for updates silently on startup and on demand from "Check for
-Updates" (`Tray/UpdateService.cs`), against the GitHub Releases of the repo
+app checks for updates silently on startup, once a night between 04:00 and
+05:00 local time (0.1.30+), and on demand from "Check for Updates"
+(`Tray/UpdateService.cs`), against the GitHub Releases of the repo
 it was built from, on the `linux` or `win` channel. The repo is baked in at build
 time from the csproj's `BragiRepoUrl` property; the release workflow sets it
 to the repo it runs in, so a fork's builds update from the fork.

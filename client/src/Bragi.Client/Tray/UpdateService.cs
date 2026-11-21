@@ -71,6 +71,35 @@ public static class UpdateService
         }
     }
 
+    /// <summary>The hour (local time) of the nightly check.</summary>
+    public const int NightlyHour = 4;
+
+    /// <summary>Whether a nightly check is due: in the nightly hour, and not
+    /// already done today.</summary>
+    public static bool NightlyDue(DateTime now, DateTime? lastDone) =>
+        now.Hour == NightlyHour && (lastDone is null || lastDone.Value.Date != now.Date);
+
+    /// <summary>
+    /// Checks once a night as well as at startup. The tray apps run for days,
+    /// so a release otherwise waited for the next reboot. At night because
+    /// applying an update restarts the app, and on Windows the app carries
+    /// the audio, so a daytime update would cut a call for a few seconds.
+    /// </summary>
+    public static async Task CheckNightlyAsync()
+    {
+        DateTime? lastDone = null;
+        while (true)
+        {
+            await Task.Delay(TimeSpan.FromMinutes(10));
+            var now = DateTime.Now;
+            if (NightlyDue(now, lastDone))
+            {
+                lastDone = now;
+                await CheckSilentlyAsync();
+            }
+        }
+    }
+
     /// <summary>Tray menu's "Check for Updates" - same flow, but reports the result visibly.</summary>
     public static void CheckForUpdatesInteractive()
     {
