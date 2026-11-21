@@ -74,6 +74,11 @@ each value) and run `systemctl --user enable --now bragi-roc-link.service`.
    back: what plays on an output (its loopback), or a microphone or input.
    Voicemeeter isn't needed. If you used its VBAN before, turn that off so
    the streams aren't sent twice.
+
+   Check the recording level of the virtual mic that apps like Discord
+   use. Some virtual devices go above 0 dB: the Steam Streaming
+   Microphone's slider at 100 is +30 dB, which made the headset mic clip
+   badly. 0 dB is 54 on its slider.
 4. Turn on "Start at Login" (a value under
    `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
 
@@ -322,6 +327,14 @@ Updates" (`Tray/UpdateService.cs`), against the GitHub Releases of the repo
 it was built from, on the `linux` or `win` channel. The repo is baked in at build
 time from the csproj's `BragiRepoUrl` property; the release workflow sets it
 to the repo it runs in, so a fork's builds update from the fork.
+
+The app moves its working directory out of its install directory at
+startup (`WorkingDirectory.cs`), and starts Deskflow in Deskflow's own
+directory. Before 0.1.28 Deskflow inherited `<root>\current` on Windows;
+an update has to move that directory aside, so it failed, the old version
+started and tried again, and the "Installing Update" dialog came back every
+ten seconds. If that loop ever shows up again, look for a process whose
+working directory is in the install directory.
 
 Only a Velopack-installed build checks for updates. A plain `dotnet build`
 reports `IsInstalled == false` and both checks do nothing. On first run the
