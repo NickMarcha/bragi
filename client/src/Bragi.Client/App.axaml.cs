@@ -22,6 +22,7 @@ public partial class App : Application
     private KeyPresser? _keys;
     private MonitorReporter? _monitors;
     private Audio.VbanLink? _audio;
+    private LanFallbackService? _lanFallback;
 
     public override void Initialize()
     {
@@ -119,6 +120,34 @@ public partial class App : Application
         }
         _trayIconManager = new TrayIconManager(_statusService!, _gamepads, _kvm, audioItem);
         _trayIconManager.SetupRequested += ShowSetup;
+        // The hub's LAN address while it can't be reached over Tailscale
+        // (bragi#81): Windows retargets its VBAN link, Linux its Roc link.
+        if (config is not null)
+        {
+            string? hubLan = null;
+            RocLinkConfig.ReadValues()?.TryGetValue("BRAGI_HUB_LAN_IP", out hubLan);
+            var audio = _audio;
+            _lanFallback = new LanFallbackService(config.BragiHostIp, hubLan)
+            {
+                Send = _presenceClient.SendAsync,
+                LinkEnabled = () => _statusService!.Current.State == TrayState.Enabled,
+                PointAudioAt = async ip =>
+                {
+                    if (audio is not null && OperatingSystem.IsWindows())
+                    {
+                        audio.SetHost(ip);
+                    }
+                    else if (OperatingSystem.IsLinux() && HubSyncService.SetHostIp(ip))
+                    {
+                        await new RocLinkController().RestartAsync();
+                    }
+                },
+            };
+            var tray = _trayIconManager;
+            _lanFallback.Changed += tray.SetLanAudio;
+            _presenceClient.MessageReceived += _lanFallback.OnMessage;
+            _presenceClient.Disconnected += _lanFallback.OnDisconnected;
+        }
         _presenceClient.SetEnabled(_statusService!.Current.State == TrayState.Enabled);
     }
 
@@ -131,6 +160,8 @@ public partial class App : Application
         _keys = null;
         _monitors?.Dispose();
         _monitors = null;
+        _lanFallback?.Dispose();
+        _lanFallback = null;
         _audio?.Dispose();
         _audio = null;
         _trayIconManager = null;

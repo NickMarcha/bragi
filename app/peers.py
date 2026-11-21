@@ -18,6 +18,7 @@ reached the graph until the next pipewire.service restart.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import re
@@ -82,10 +83,46 @@ class Peer:
     capture_mode: str = "microphone"
     send_enabled: bool = True
     receive_enabled: bool = False
+    # The computer's home-network address, as its tray app reports it
+    # (bragi#81). Only used while this hub's Tailscale is down.
+    lan_ip: str | None = None
 
     def to_dict(self) -> dict:
         d = asdict(self)
+        if d["lan_ip"] is None:
+            # Left out, so a peers.yaml without LAN addresses reads the same
+            # in a Bragi from before they existed.
+            del d["lan_ip"]
         return d
+
+
+# Set by lan_fallback.py while this hub has no Tailscale address (bragi#81).
+_use_lan = False
+
+_LAN_NETWORKS = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+
+
+def is_lan_ipv4(text: object) -> bool:
+    """A private (RFC 1918) IPv4 address: what a tray app may report as its
+    home-network address. Tailscale's 100.64.0.0/10 is not one of them."""
+    try:
+        address = ipaddress.ip_address(text) if isinstance(text, str) else None
+    except ValueError:
+        return False
+    return address is not None and address.version == 4 and any(address in n for n in _LAN_NETWORKS)
+
+
+def target_ip(peer: Peer) -> str:
+    """Where this peer's audio goes, and comes from: its Tailscale address,
+    or its LAN address while this hub's Tailscale is down and the peer
+    reported one. Phones stay on Tailscale."""
+    if _use_lan and peer.lan_ip and peer.client_kind != "android":
+        return peer.lan_ip
+    return peer.tailscale_ip
+
+
+def using_lan() -> bool:
+    return _use_lan
 
 
 def _vban_peer(name: str, tailscale_ip: str, stream_send: str, stream_receive: str) -> Peer:
@@ -179,7 +216,7 @@ def _roc_conf_block(peer: Peer) -> str:
     return f"""\
     {{ name = libpipewire-module-roc-sink
       args = {{
-          remote.ip = {peer.tailscale_ip}
+          remote.ip = {target_ip(peer)}
           remote.source.port = {peer.ports.mic_source}
           remote.repair.port = {peer.ports.mic_repair}
           remote.control.port = {peer.ports.mic_control}
@@ -235,7 +272,7 @@ def _vban_send_block(peer: Peer) -> str:
     return f"""\
     {{ name = libpipewire-module-vban-send
       args = {{
-          destination.ip = {peer.tailscale_ip}
+          destination.ip = {target_ip(peer)}
           destination.port = {peer.vban_port}
           sess.name = "{peer.stream_send}"
           audio.format = "S16LE"
@@ -262,7 +299,7 @@ def _vban_recv_block(peers: list[Peer]) -> str:
     (port,) = {p.vban_port for p in peers}
     rules = "".join(f"""
               {{ matches = [ {{ sess.name = "{p.stream_receive}"
-                               vban.ip = "{p.tailscale_ip}" }} ]
+                               vban.ip = "{target_ip(p)}" }} ]
                 actions = {{ create-stream = {{
                     node.name = "{p.incoming_source_name}"
                     node.description = "{p.name} (VBAN, via Bragi)"
@@ -353,6 +390,43 @@ def sync_managed_conf() -> None:
             logger.warning("no headset mic in the graph - leaving %s as it is", MANAGED_CONF_FILE)
             return
         _regenerate_managed_conf(peers)
+
+
+def set_lan_mode(on: bool) -> bool:
+    """Rewrites the managed config with LAN addresses (on) or Tailscale
+    addresses (off); the path unit restarts the peers once if that changed
+    the file. False, with nothing changed, while there's no headset mic to
+    name (see sync_managed_conf): the caller tries again later."""
+    global _use_lan
+    with _lock:
+        peers = load_peers()
+        if any(p.managed for p in peers) and _headset_mic_source_name() is None:
+            return False
+        before, _use_lan = _use_lan, on
+        try:
+            _regenerate_managed_conf(peers)
+        except ConfigWriteError:
+            _use_lan = before
+            raise
+        return True
+
+
+def set_lan_ip(name: str, lan_ip: str | None) -> bool:
+    """Stores the LAN address a desktop peer's tray app reported (None
+    clears it). True when it changed. Rewrites the config only while the
+    LAN addresses are in use."""
+    if lan_ip is not None and not is_lan_ipv4(lan_ip):
+        raise ValueError(f"{lan_ip!r} is not a private IPv4 address")
+    with _lock:
+        peers = load_peers()
+        peer = next((p for p in peers if p.name == name), None)
+        if peer is None or not peer.managed or peer.client_kind == "android" or peer.lan_ip == lan_ip:
+            return False
+        peer.lan_ip = lan_ip
+        save_peers(peers)
+        if _use_lan:
+            _regenerate_managed_conf(peers)
+        return True
 
 
 def add_roc_peer(name: str, tailscale_ip: str) -> Peer:

@@ -38,6 +38,7 @@ from . import modules
 from . import updates
 from . import setup_checks
 from . import hub_info
+from . import lan_fallback
 from . import headset_choice
 from . import second_headset
 from . import backup
@@ -82,6 +83,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(level_meter.supervise()),
         asyncio.create_task(microphone.supervise()),
         asyncio.create_task(hub_info.refresh()),
+        asyncio.create_task(lan_fallback.supervise()),
         asyncio.create_task(headset_choice.supervise()),
         asyncio.create_task(second_headset.supervise()),
         asyncio.create_task(mic_monitor.supervise()),
@@ -549,7 +551,8 @@ def second_headset_set(request: Request, card: str = Form(...)):
 # --- Settings > This hub (app/hub_info.py) ---
 
 def _hub_section(request: Request, error: str | None = None, note: str | None = None):
-    view = {"info": hub_info.message(), "clients": sorted(peer_control.desktop_peers())}
+    view = {"info": hub_info.message(), "clients": sorted(peer_control.desktop_peers()),
+            "lan_audio": lan_fallback.active()}
     return templates.TemplateResponse(request, "_hub.html", {"hub": view, "error": error, "note": note})
 
 

@@ -200,6 +200,31 @@ hub's URL: the tray app saves it as `BRAGI_WS_URL`, connects there, and that
 hub's `hub` message fixes the rest. Logic in `Config/HubSync.cs`, effects
 in `Tray/HubSyncService.cs`.
 
+## When Tailscale is down (0.1.29+)
+
+The tray app keeps the hub's LAN address from the `hub` message as
+`BRAGI_HUB_LAN_IP` in the env file, and after each `hub` message reports
+this computer's LAN address (`peer_lan`): the private IPv4 address on the
+same subnet as the hub's, or none on another network.
+
+When the peer socket has been down for 20 s and the hub's LAN address
+answers a ping, the audio goes there:
+
+- Linux: `BRAGI_HOST_IP` is set to the LAN address and the Roc link
+  restarts.
+- Windows: the VBAN link sends to, and accepts audio from, the LAN address.
+  Nothing is written.
+
+The status line and tooltip then say "Audio over the home network
+(Tailscale is down)". The next message on the socket points the audio back
+at the Tailscale address. On Linux, if the app quits while switched, the
+`hub` message on the next connect sets `BRAGI_HOST_IP` back.
+
+The hub switches its own side only when it has no Tailscale address itself
+(see [`docs/audio-bridge.md`](../docs/audio-bridge.md#when-tailscale-is-down)).
+Audio over the LAN isn't encrypted. Logic in `Config/LanFallback.cs`,
+effects in `Tray/LanFallbackService.cs`.
+
 ## Client tests
 
 ```bash

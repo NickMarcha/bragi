@@ -63,9 +63,13 @@ public sealed class HubSyncService
         if (values is not null)
         {
             var changes = HubSync.EnvChanges(values, hub);
+            var remember = HubSync.RememberChanges(values, hub);
+            if (changes.Count + remember.Count > 0)
+            {
+                WriteEnv(changes.Concat(remember).ToDictionary());
+            }
             if (changes.Count > 0)
             {
-                WriteEnv(changes);
                 if (OperatingSystem.IsLinux() && RestartRocLink is not null)
                 {
                     await RestartRocLink();
@@ -91,6 +95,19 @@ public sealed class HubSyncService
         // Connects to the new hub; its "hub" message fixes the rest.
         Reconfigure?.Invoke();
         return Task.CompletedTask;
+    }
+
+    /// <summary>Linux, LAN fallback (bragi#81): points the Roc link at this
+    /// address. True when the env file changed and the link needs a restart.</summary>
+    public static bool SetHostIp(string ip)
+    {
+        var values = RocLinkConfig.ReadValues();
+        if (values is null || (values.TryGetValue("BRAGI_HOST_IP", out var now) && now == ip))
+        {
+            return false;
+        }
+        WriteEnv(new Dictionary<string, string?> { ["BRAGI_HOST_IP"] = ip });
+        return true;
     }
 
     private static void WriteEnv(IReadOnlyDictionary<string, string?> changes)

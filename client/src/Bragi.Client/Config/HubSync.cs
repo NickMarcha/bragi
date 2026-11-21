@@ -71,6 +71,19 @@ public static partial class HubSync
         return changes;
     }
 
+    /// <summary>Remembers the hub's LAN address (BRAGI_HUB_LAN_IP) for when
+    /// Tailscale is down (bragi#81, Tray/LanFallbackService.cs). Nothing
+    /// reads it at start, so changing it restarts nothing.</summary>
+    public static Dictionary<string, string?> RememberChanges(IReadOnlyDictionary<string, string> current, HubInfo hub)
+    {
+        var changes = new Dictionary<string, string?>();
+        if (hub.LanIp is { } lan && (!current.TryGetValue("BRAGI_HUB_LAN_IP", out var now) || now != lan))
+        {
+            changes["BRAGI_HUB_LAN_IP"] = lan;
+        }
+        return changes;
+    }
+
     /// <summary>The env file's lines with these changes: keys set in place (or
     /// appended), removed ones dropped, everything else as it was.</summary>
     public static List<string> UpdateEnvLines(IEnumerable<string> lines, IReadOnlyDictionary<string, string?> changes)

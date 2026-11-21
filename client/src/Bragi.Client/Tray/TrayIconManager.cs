@@ -291,10 +291,25 @@ public sealed class TrayIconManager : IDisposable
 
     private void OnStatusChanged(StatusSnapshot snapshot) => Dispatcher.UIThread.Post(() => Render(snapshot));
 
+    private bool _lanAudio;
+
+    /// <summary>Says so in the status line and tooltip while the audio goes
+    /// over the home network (bragi#81, LanFallbackService). Any thread.</summary>
+    public void SetLanAudio(bool on) => Dispatcher.UIThread.Post(() =>
+    {
+        _lanAudio = on;
+        Render(_statusService.Current);
+    });
+
+    /// <summary>The status line's text, with the LAN fallback note when it's on.</summary>
+    public static string StatusDetail(string detail, bool lanAudio) =>
+        lanAudio ? $"{detail}. Audio over the home network (Tailscale is down)" : detail;
+
     private void Render(StatusSnapshot snapshot)
     {
-        _statusItem.Header = $"Status: {snapshot.Detail}";
-        _trayIcon.ToolTipText = $"Bragi Client {Version} - {snapshot.Detail}";
+        var detail = StatusDetail(snapshot.Detail, _lanAudio);
+        _statusItem.Header = $"Status: {detail}";
+        _trayIcon.ToolTipText = $"Bragi Client {Version} - {detail}";
 
         switch (snapshot.State)
         {
