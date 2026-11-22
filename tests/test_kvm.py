@@ -8,6 +8,7 @@ import json
 import socket
 import socketserver
 import threading
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -74,6 +75,70 @@ def test_the_engine_is_asked_over_its_core_socket(engine):
         server.shutdown()
         server.server_close()
     assert seen == ["switch=sage", "switch=sagedeck", "keystroke=Control+Shift+Alt+M,sage:sagedeck"]
+
+
+def _core(engine, reply):
+    """A fake core socket; reply(line) is what it writes back (None: nothing)."""
+    class Handler(socketserver.StreamRequestHandler):
+        def handle(self):
+            answer = reply(self.rfile.readline().decode().strip())
+            if answer is None:
+                time.sleep(0.5)  # hung: reads, never answers
+            else:
+                self.wfile.write(answer.encode() + b"\n")
+
+    server = socketserver.ThreadingUnixStreamServer(str(engine / "core.sock"), Handler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="needs Unix sockets")
+def test_the_probe_asks_the_core_thread_and_switches_nothing(engine, monkeypatch):
+    monkeypatch.setattr(kvm, "_TIMEOUT", 0.1)
+    assert kvm.probe() is None  # no server: systemd's business
+    seen = []
+    answers = {"mode": "error=-bragi-probe- isn't connected"}
+    server = _core(engine, lambda line: seen.append(line) or answers["mode"])
+    try:
+        assert kvm.probe() is True
+        answers["mode"] = None
+        assert kvm.probe() is False
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert seen == ["switch=-bragi-probe-"] * 2
+
+
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="needs Unix sockets")
+def test_the_watchdog_kills_a_server_that_stopped_answering(engine, monkeypatch):
+    """2026-11-22: deskflow-core's core thread hung; nobody could connect."""
+    import asyncio
+    monkeypatch.setattr(kvm, "_TIMEOUT", 0.05)
+    answers = {"mode": "error=-bragi-probe- isn't connected"}
+    server = _core(engine, lambda line: answers["mode"])
+    kills = []
+
+    async def run(seconds):
+        task = asyncio.create_task(kvm.watchdog(lambda: kills.append(1), every=0.01, misses=3))
+        await asyncio.sleep(seconds)
+        task.cancel()
+
+    try:
+        asyncio.run(run(0.3))
+        assert kills == []  # answering
+        answers["mode"] = None
+        asyncio.run(run(0.6))
+        assert len(kills) >= 1
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    # A stopped server (no socket) is left to systemd.
+    kills.clear()
+    (engine / "core.sock").unlink(missing_ok=True)
+    asyncio.run(run(0.2))
+    assert kills == []
 
 
 def test_the_dashboard_bar_shows_the_computers_and_switches(engine, monkeypatch, session):
