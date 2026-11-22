@@ -90,6 +90,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(gamepad.supervise(peer_control.send, peer_control.broadcast_desktop,
                                               ws.manager.broadcast_levels_nowait)),
         asyncio.create_task(kvm.supervise(_kvm_changed)),
+        asyncio.create_task(kvm.watchdog(kvm_config.kill_hung_engine)),
         asyncio.create_task(hardware.watch_batteries()),
         asyncio.create_task(hidpp.supervise()),
         asyncio.create_task(kvm.listen_actions(hotkey_actions.run)),

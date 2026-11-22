@@ -21,6 +21,9 @@ logger = logging.getLogger("bragi.kvm")
 
 _POLL_SECONDS = 0.5
 _TIMEOUT = 5
+# A name no computer can have: the core thread has to look it up and answer
+# "isn't connected", so a reply proves it runs. Nothing switches.
+_PROBE = "switch=-bragi-probe-"
 
 
 def features() -> set[str]:
@@ -136,6 +139,45 @@ async def listen_actions(on_action) -> None:
         except Exception:
             logger.exception("kvm action listener failed")
         await asyncio.sleep(2)
+
+
+def probe() -> bool | None:
+    """True when the server's core thread answers, False when it doesn't
+    in _TIMEOUT, None when there's no server to ask (stopped, restarting:
+    systemd's business). `noop` isn't enough: the IPC socket is served by
+    Qt's main thread, which kept answering while the core thread hung."""
+    try:
+        core_command(_PROBE)
+    except KvmError as exc:
+        if isinstance(exc.__cause__, TimeoutError):
+            return False
+        if exc.__cause__ is not None or str(exc).startswith("The KVM"):
+            return None
+    return True
+
+
+async def watchdog(kill, every: float = 20, misses: int = 3) -> None:
+    """Calls kill() when the server hasn't answered `misses` probes in a row.
+    On 2026-11-22 its core thread hung: the process lived, clients couldn't
+    connect, and it ignored SIGTERM until systemd's 90 s stop timeout."""
+    missed = 0
+    while True:
+        await asyncio.sleep(every)
+        try:
+            alive = await asyncio.to_thread(probe)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("kvm probe failed")
+            continue
+        missed = missed + 1 if alive is False else 0
+        if missed >= misses:
+            logger.warning("the KVM hasn't answered for %d probes; restarting it", missed)
+            missed = 0
+            try:
+                await asyncio.to_thread(kill)
+            except Exception:
+                logger.exception("restarting the hung KVM failed")
 
 
 async def supervise(broadcast) -> None:

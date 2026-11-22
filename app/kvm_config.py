@@ -27,6 +27,7 @@ doesn't manage (e.g. DESKFLOW_EVDEV_HIDPP).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import signal
@@ -38,6 +39,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import kvm, kvm_layout, monitors
+
+logger = logging.getLogger("bragi.kvm")
 
 UNIT = "deskflow-headless.service"
 KEEP_BACKUPS = 20
@@ -500,6 +503,23 @@ def _reload() -> str | None:
     if _main_pid() != pid:
         return "The KVM restarted instead of reloading"
     return "The KVM didn't confirm the reload"
+
+
+def kill_hung_engine() -> None:
+    """For kvm.watchdog: logs where each thread waits (there's no debugger
+    on the hub), then SIGKILLs the server; Restart=always starts it again.
+    A hung server doesn't act on SIGTERM, so a plain restart waits 90 s."""
+    pid = _main_pid()
+    if pid <= 0:
+        return
+    threads = []
+    for task in sorted(Path(f"/proc/{pid}/task").glob("*")):
+        try:
+            threads.append(f"{task.name}:{(task / 'wchan').read_text().strip()}")
+        except OSError:
+            pass
+    logger.warning("KVM pid %d threads: %s", pid, " ".join(threads))
+    subprocess.run(["systemctl", "--user", "kill", "--signal=SIGKILL", UNIT], capture_output=True, timeout=10)
 
 
 def _restart() -> bool:
