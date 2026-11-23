@@ -111,7 +111,17 @@ public partial class App : Application
                 await _statusService!.EvaluateAsync();
             }),
         };
-        _presenceClient.MessageReceived += hubSync.OnMessage;
+        // Over the LAN (bragi#90) the hub's Tailscale address isn't
+        // reachable, so its "hub" message mustn't rewrite where things go.
+        var presence = _presenceClient;
+        presence.MessageReceived += m =>
+        {
+            if (!presence.ViaLan)
+            {
+                hubSync.OnMessage(m);
+            }
+        };
+        presence.LanEndpoint = () => HubSync.LanEndpointFrom(RocLinkConfig.ReadValues(), config?.PeerName);
         _deskflowWatch ??= DeskflowClient.WatchAsync();
         // Windows: the app carries the audio itself, as VBAN (instead of Voicemeeter's).
         NativeMenuItem? audioItem = null;
@@ -148,7 +158,15 @@ public partial class App : Application
             };
             var tray = _trayIconManager;
             _lanFallback.Changed += tray.SetLanAudio;
-            _presenceClient.MessageReceived += _lanFallback.OnMessage;
+            // A message over the LAN doesn't mean Tailscale is back.
+            var fallback = _lanFallback;
+            presence.MessageReceived += m =>
+            {
+                if (!presence.ViaLan)
+                {
+                    fallback.OnMessage(m);
+                }
+            };
             _presenceClient.Disconnected += _lanFallback.OnDisconnected;
         }
         _presenceClient.SetEnabled(_statusService!.Current.State == TrayState.Enabled);

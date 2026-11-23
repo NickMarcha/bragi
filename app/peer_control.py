@@ -19,7 +19,7 @@ from dataclasses import asdict
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from . import gamepad, hub_info, kvm, monitors, peer_presence, peers, ws
+from . import gamepad, hub_info, kvm, lan_peer, monitors, peer_presence, peers, ws
 
 logger = logging.getLogger("bragi.peer_control")
 
@@ -162,7 +162,11 @@ def _desktop_message(name: str, raw: str) -> None:
         _features[name] = {f for f in message['features'] if f in ('keys',)}
         # Where this hub is, so the tray app can fix stale addresses (bragi#61).
         # From the cache hub_info.refresh() keeps warm, so this never blocks.
-        send(name, hub_info.message())
+        message = hub_info.message()
+        if lan := lan_peer.info(name):
+            # This socket over the LAN for when Tailscale is down (bragi#90).
+            message = {**message, 'lan_peer': lan}
+        send(name, message)
         return
     if message.get('type') == 'peer_lan':
         # This computer's home-network address, for when this hub's

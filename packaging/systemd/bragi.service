@@ -7,6 +7,9 @@ After=pipewire.service wireplumber.service
 
 [Service]
 Environment=BRAGI_DATA_DIR=%h/.local/share/bragi/data
+# The tray apps' peer socket on the LAN, for when Tailscale is down
+# (app/lan_peer.py): TLS with a pinned certificate and a token per computer.
+Environment=BRAGI_LAN_PEER_PORT=8443
 WorkingDirectory=/opt/bragi
 ExecStart=/opt/bragi/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 Restart=on-failure
