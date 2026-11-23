@@ -150,7 +150,11 @@ async def serve(app) -> None:
 
     cert, key = _paths()
     config = uvicorn.Config(LanPeerApp(app), host="0.0.0.0", port=p, ssl_certfile=str(cert),
-                            ssl_keyfile=str(key), lifespan="off", log_level="warning",
+                            ssl_keyfile=str(key), lifespan="off",
+                            # Leave logging alone: log_level and access_log apply to
+                            # the uvicorn loggers process-wide, and 0.3.34 silenced
+                            # the main server's access log that way.
+                            log_config=None,
                             ws_ping_interval=20, ws_ping_timeout=20)
     server = _Server(config)
     try:
