@@ -23,7 +23,7 @@ import logging
 import os
 import re
 import threading
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 import yaml
@@ -49,6 +49,9 @@ _PORT_BLOCK_SIZE = 10
 VBAN_PORT = 6980
 # VBAN stream names are at most 16 bytes on the wire, and land in peers.conf.
 _VBAN_STREAM_NAME = re.compile(r"^[A-Za-z0-9_-]{1,16}$")
+# Audio groups a Windows tray app can send as streams of their own, besides
+# its main one (bragi#93): "comms" is Discord, captured by process.
+GROUPS = ("comms",)
 
 logger = logging.getLogger("bragi.peers")
 
@@ -86,14 +89,21 @@ class Peer:
     # The computer's home-network address, as its tray app reports it
     # (bragi#81). Only used while this hub's Tailscale is down.
     lan_ip: str | None = None
+    # VBAN peers: group -> stream name, for the audio groups its tray app
+    # sends separately (bragi#93). Each gets a node of its own here.
+    group_streams: dict[str, str] | None = None
 
     def to_dict(self) -> dict:
         d = asdict(self)
-        if d["lan_ip"] is None:
-            # Left out, so a peers.yaml without LAN addresses reads the same
-            # in a Bragi from before they existed.
-            del d["lan_ip"]
+        # Left out when unset, so a peers.yaml without them reads the same
+        # in a Bragi from before they existed.
+        for key in ("lan_ip", "group_streams"):
+            if not d[key]:
+                del d[key]
         return d
+
+    def group_source_name(self, group: str) -> str:
+        return f"{self.name}-{group}-incoming-source"
 
 
 # Set by lan_fallback.py while this hub has no Tailscale address (bragi#81).
@@ -164,10 +174,12 @@ def load_peers() -> list[Peer]:
     if not PEERS_FILE.exists():
         return []
     raw = yaml.safe_load(PEERS_FILE.read_text()) or []
+    known = {f.name for f in fields(Peer)}
     peers = []
     for item in raw:
         ports = RocPorts(**item["ports"]) if item.get("ports") else None
-        item = {**item, "ports": ports}
+        # Keys from a newer Bragi are skipped, so a downgrade still starts.
+        item = {k: v for k, v in item.items() if k in known} | {"ports": ports}
         peers.append(Peer(**item))
     return peers
 
@@ -312,14 +324,17 @@ def _vban_recv_block(peers: list[Peer]) -> str:
     from anyone else are ignored. nofail, because a port clash (an old
     vban_receptor still running) must not stop the Roc peers starting."""
     (port,) = {p.vban_port for p in peers}
+    streams = [(p, p.stream_receive, p.incoming_source_name, f"{p.name} (VBAN, via Bragi)") for p in peers]
+    streams += [(p, stream, p.group_source_name(group), f"{p.name} {group} (VBAN, via Bragi)")
+                for p in peers for group, stream in sorted((p.group_streams or {}).items())]
     rules = "".join(f"""
-              {{ matches = [ {{ sess.name = "{p.stream_receive}"
+              {{ matches = [ {{ sess.name = "{stream}"
                                vban.ip = "{vban_sender(p)}" }} ]
                 actions = {{ create-stream = {{
-                    node.name = "{p.incoming_source_name}"
-                    node.description = "{p.name} (VBAN, via Bragi)"
+                    node.name = "{node}"
+                    node.description = "{description}"
                 }} }}
-              }}""" for p in peers)
+              }}""" for p, stream, node, description in streams)
     return f"""\
     {{ name = libpipewire-module-vban-recv
       flags = [ nofail ]
@@ -441,6 +456,36 @@ def set_lan_ip(name: str, lan_ip: str | None) -> bool:
         save_peers(peers)
         if _use_lan:
             _regenerate_managed_conf(peers)
+        return True
+
+
+def set_group_streams(name: str, streams: dict[str, str]) -> bool:
+    """Stores the audio groups a VBAN peer's tray app sends separately
+    (group -> stream name; empty for none). True when it changed; the
+    config is rewritten then, which restarts the peers' audio once."""
+    for group, stream in streams.items():
+        if group not in GROUPS:
+            raise ValueError(f"unknown audio group {group!r}")
+        if not isinstance(stream, str) or not _VBAN_STREAM_NAME.match(stream):
+            raise ValueError("VBAN stream names are 1-16 letters, digits, '-' or '_'")
+    with _lock:
+        peers = load_peers()
+        peer = next((p for p in peers if p.name == name), None)
+        if peer is None or not peer.managed or peer.protocol != "vban":
+            raise ValueError(f"{name} isn't a VBAN computer here")
+        # vban-recv looks a stream up by name alone: names must be unique.
+        taken = {p.stream_receive for p in peers if p.protocol == "vban"} | {
+            s for p in peers if p.name != name for s in (p.group_streams or {}).values()}
+        if clash := sorted(set(streams.values()) & taken):
+            raise ValueError(f"another stream is already called {clash[0]!r}")
+        if len(set(streams.values())) != len(streams):
+            raise ValueError("each group needs a stream name of its own")
+        wanted = dict(streams) or None
+        if peer.group_streams == wanted:
+            return False
+        peer.group_streams = wanted
+        save_peers(peers)
+        _regenerate_managed_conf(peers)
         return True
 
 

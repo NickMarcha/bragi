@@ -117,3 +117,44 @@ def test_the_form_adds_a_vban_peer_with_default_stream_names(session):
     assert (laptop.protocol, laptop.stream_send, laptop.stream_receive) == ("vban", "BragiMic", "LaptopAudio")
     assert client.post("/peers", data={"name": "tablet", "tailscale_ip": "100.64.0.22"}).status_code == 200
     assert next(p for p in peers_module.load_peers() if p.name == "tablet").protocol == "roc"
+
+
+def test_an_audio_group_gets_a_stream_and_a_node_of_its_own(session):
+    """bragi#93: the Windows tray app can send Discord (the "comms" group)
+    as a stream of its own; the hub makes it a node next to the main one."""
+    peers_module.sync_managed_conf()
+    assert peers_module.set_group_streams("desktop", {"comms": "DesktopComms"})
+    text = conf()
+    assert re.search(r'sess.name = "DesktopComms"\s+vban.ip = "100.64.0.13"', text)
+    assert 'node.name = "desktop-comms-incoming-source"' in text
+    assert 'node.name = "desktop-incoming-source"' in text  # the main stream stays
+    assert not peers_module.set_group_streams("desktop", {"comms": "DesktopComms"})  # unchanged: no rewrite
+
+    with pytest.raises(ValueError, match="unknown audio group"):
+        peers_module.set_group_streams("desktop", {"music": "DesktopMusic"})
+    with pytest.raises(ValueError, match="already called"):
+        peers_module.set_group_streams("desktop", {"comms": "DesktopAudio"})
+    with pytest.raises(ValueError, match="1-16"):
+        peers_module.set_group_streams("desktop", {"comms": "a name with spaces"})
+
+    assert peers_module.set_group_streams("desktop", {})
+    assert "DesktopComms" not in conf()
+    assert "group_streams" not in peers_module.PEERS_FILE.read_text()
+
+
+def test_a_peers_file_from_a_newer_bragi_still_loads(session):
+    raw = yaml.safe_load(peers_module.PEERS_FILE.read_text())
+    raw[0]["from_the_future"] = True
+    peers_module.PEERS_FILE.write_text(yaml.safe_dump(raw))
+    assert peers_module.load_peers()[0].name == raw[0]["name"]
+
+
+def test_a_tray_app_announces_its_audio_groups(session):
+    client = TestClient(app)
+    with client.websocket_connect("/ws/peer/desktop") as tray:
+        tray.receive_json()  # kvm
+        tray.send_json({"type": "audio_groups", "streams": {"comms": "DesktopComms"}})
+        tray.send_json({"type": "client_hello", "features": []})
+        tray.receive_json()  # hub: the groups message was handled before it
+    desktop = next(p for p in peers_module.load_peers() if p.name == "desktop")
+    assert desktop.group_streams == {"comms": "DesktopComms"}

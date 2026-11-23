@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.Versioning;
 using Avalonia.Controls;
 using Avalonia.Threading;
@@ -21,6 +22,12 @@ public sealed class AudioMenu
     private readonly NativeMenuItem _mic = new() { IsEnabled = false };
     private readonly NativeMenuItem _send = new() { IsEnabled = false };
     private readonly NativeMenuItem _note = new() { IsEnabled = false, IsVisible = false };
+    private readonly NativeMenuItem _comms = new() { IsEnabled = false, IsVisible = false };
+    private readonly NativeMenuItem _commsNote = new() { IsEnabled = false, IsVisible = false };
+    private readonly NativeMenuItem _commsToggle = new()
+    {
+        Header = "Send Discord on its own (mono)", ToggleType = MenuItemToggleType.CheckBox,
+    };
     private readonly NativeMenu _playback = new();
     private readonly NativeMenu _capture = new();
 
@@ -34,10 +41,14 @@ public sealed class AudioMenu
             _mic,
             _send,
             _note,
+            _comms,
+            _commsNote,
             new NativeMenuItemSeparator(),
             new NativeMenuItem { Header = "Play the headset mic on", Menu = _playback },
             new NativeMenuItem { Header = "Send to the headset", Menu = _capture },
+            _commsToggle,
         };
+        _commsToggle.Click += (_, _) => Save(_link.Devices with { SendCommsSeparately = !_link.Devices.SendCommsSeparately });
         menu.Opening += (_, _) => Refresh();
         Item = new NativeMenuItem { Header = "Audio", Menu = menu };
         _link.Changed += () => Dispatcher.UIThread.Post(RenderStatus);
@@ -89,8 +100,34 @@ public sealed class AudioMenu
         return (mic, send, note);
     }
 
+    /// <summary>The Discord stream's status line and note (bragi#93); nulls when it's off.</summary>
+    public static (string? Line, string? Note) CommsLines(LinkReport r)
+    {
+        if (r.Comms is not { } c)
+        {
+            return (null, null);
+        }
+        // Playing on the device the desktop stream captures, or into
+        // Voicemeeter (which passes it on), it reaches the headset twice.
+        var twice = c.PlayingOn.FirstOrDefault(d => (r.Devices.CaptureIsLoopback && d.Id == r.Devices.Capture)
+            || d.Name.StartsWith("Voicemeeter", StringComparison.OrdinalIgnoreCase));
+        var note = twice is not null
+            ? $"Discord also plays on {twice.Name}, so it's in the desktop stream too: set Discord's output to a device nothing else sends"
+            : c.Problem;
+        var line = !c.Running ? "Discord: not running"
+            : c.Level >= 0.0005f ? $"Discord {VbanLink.Bars(c.Level)} on its own"
+            : "Discord: silent";
+        return (line, note);
+    }
+
     private void RenderStatus()
     {
+        var (commsLine, commsNote) = CommsLines(_link.Report);
+        _comms.Header = commsLine ?? "";
+        _comms.IsVisible = commsLine is not null;
+        _commsNote.Header = commsNote ?? "";
+        _commsNote.IsVisible = commsNote is not null;
+        _commsToggle.IsChecked = _link.Devices.SendCommsSeparately;
         var (mic, send, note) = StatusLines(_link.Report, VoicemeeterRunning());
         _mic.Header = mic;
         _send.Header = send;
