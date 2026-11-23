@@ -1,9 +1,12 @@
 using System;
 using System.IO;
+using System.Net.Http;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Bragi.Client.Config;
 
 namespace Bragi.Client.Tray;
 
@@ -19,6 +22,12 @@ namespace Bragi.Client.Tray;
 /// server sends the gamepad status and, on the computer that claimed the
 /// controllers, their input; the client sends gamepad_claim and
 /// gamepad_release (app/peer_control.py, app/gamepad.py).
+///
+/// When the hub can't be reached over Tailscale (two tries in a row), it
+/// connects to the hub's LAN socket instead (app/lan_peer.py, bragi#90),
+/// pinning the certificate and sending the token the hub gave it earlier.
+/// While on the LAN it checks the Tailscale address every 30 s and moves
+/// back once that answers.
 /// </summary>
 public sealed class PeerPresenceClient : IDisposable
 {
@@ -63,6 +72,19 @@ public sealed class PeerPresenceClient : IDisposable
         _cts = null;
     }
 
+    /// <summary>The hub's LAN socket, read when it's needed; null when there's none.</summary>
+    public Func<LanEndpoint?>? LanEndpoint { get; set; }
+
+    /// <summary>True while connected over the LAN rather than Tailscale.</summary>
+    public bool ViaLan => _viaLan;
+    private volatile bool _viaLan;
+
+    private static readonly TimeSpan PrimaryCheckInterval = TimeSpan.FromSeconds(30);
+
+    /// <summary>Whether a certificate is the pinned one: SHA-256 of its DER bytes, lowercase hex.</summary>
+    public static bool Pinned(byte[] der, string sha256) =>
+        string.Equals(Convert.ToHexStringLower(SHA256.HashData(der)), sha256, StringComparison.Ordinal);
+
     /// <summary>A JSON message from the server, e.g. the gamepad status (app/peer_control.py). Raised on the socket's thread.</summary>
     public event Action<JsonElement>? MessageReceived;
     /// <summary>The socket closed or dropped.</summary>
@@ -100,11 +122,22 @@ public sealed class PeerPresenceClient : IDisposable
         var delay = TimeSpan.FromSeconds(2);
         var buffer = new byte[4096];
         var message = new MemoryStream();
+        var primaryFailures = 0;
         while (!token.IsCancellationRequested)
         {
+            var lan = primaryFailures >= 2 ? LanEndpoint?.Invoke() : null;
+            var primaryBack = false;
+            using var watch = CancellationTokenSource.CreateLinkedTokenSource(token);
             try
             {
                 using var socket = new ClientWebSocket();
+                if (lan is not null)
+                {
+                    socket.Options.SetRequestHeader("X-Bragi-Lan-Token", lan.Token);
+                    var pin = lan.CertSha256;
+                    socket.Options.RemoteCertificateValidationCallback = (_, cert, _, _) =>
+                        cert is not null && Pinned(cert.GetRawCertData(), pin);
+                }
                 // Without a ping timeout a dead hub isn't noticed: on Linux
                 // the kernel retries an unanswered connection for about 15
                 // minutes, so the LAN fallback (LanFallbackService) never
@@ -122,7 +155,7 @@ public sealed class PeerPresenceClient : IDisposable
                     connectTimeout.CancelAfter(TimeSpan.FromSeconds(10));
                     try
                     {
-                        await socket.ConnectAsync(uri, connectTimeout.Token);
+                        await socket.ConnectAsync(lan?.Uri ?? uri, connectTimeout.Token);
                     }
                     catch (OperationCanceledException) when (!token.IsCancellationRequested)
                     {
@@ -130,7 +163,17 @@ public sealed class PeerPresenceClient : IDisposable
                     }
                 }
                 _socket = socket;
+                _viaLan = lan is not null;
                 delay = TimeSpan.FromSeconds(2); // reset backoff after a successful connect
+                if (lan is null)
+                {
+                    primaryFailures = 0;
+                }
+                else
+                {
+                    Console.Error.WriteLine($"Bragi: the hub isn't reachable over Tailscale; connected over the LAN ({lan.Uri.Host})");
+                    _ = WatchPrimaryAsync(uri, () => { primaryBack = true; socket.Abort(); }, watch.Token);
+                }
                 while (!token.IsCancellationRequested && socket.State == WebSocketState.Open)
                 {
                     // The connection's lifetime is the heartbeat; messages
@@ -155,6 +198,15 @@ public sealed class PeerPresenceClient : IDisposable
             }
             catch
             {
+                if (lan is null)
+                {
+                    primaryFailures++;
+                }
+                else if (!primaryBack)
+                {
+                    // The LAN didn't work either: Tailscale gets the next try.
+                    primaryFailures = 1;
+                }
                 // Connection failed/dropped, timed out included. An aborted
                 // socket (keepalive timeout) can throw OperationCanceledException
                 // without our token being cancelled; before 0.1.32 that ended
@@ -163,7 +215,14 @@ public sealed class PeerPresenceClient : IDisposable
             }
             finally
             {
+                watch.Cancel();
+                if (primaryBack)
+                {
+                    primaryFailures = 0;
+                    Console.Error.WriteLine("Bragi: the hub answers over Tailscale again; moving back");
+                }
                 _socket = null;
+                _viaLan = false;
                 message.SetLength(0);
                 Disconnected?.Invoke();
             }
@@ -177,6 +236,36 @@ public sealed class PeerPresenceClient : IDisposable
                 break;
             }
             delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 30));
+        }
+    }
+
+    /// <summary>While on the LAN: calls back() once the hub's Tailscale
+    /// address answers HTTP at all (any status), checked every 30 s.</summary>
+    private static async Task WatchPrimaryAsync(Uri primary, Action back, CancellationToken token)
+    {
+        var probe = new UriBuilder(primary) { Scheme = primary.Scheme == "ws" ? "http" : "https", Path = "/" };
+        if (primary.IsDefaultPort)
+        {
+            probe.Port = -1;
+        }
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(PrimaryCheckInterval, token);
+                using var response = await http.GetAsync(probe.Uri, HttpCompletionOption.ResponseHeadersRead, token);
+                back();
+                return;
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                // Still not reachable over Tailscale.
+            }
         }
     }
 

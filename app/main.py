@@ -39,6 +39,7 @@ from . import updates
 from . import setup_checks
 from . import hub_info
 from . import lan_fallback
+from . import lan_peer
 from . import headset_choice
 from . import second_headset
 from . import backup
@@ -84,6 +85,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(microphone.supervise()),
         asyncio.create_task(hub_info.refresh()),
         asyncio.create_task(lan_fallback.supervise()),
+        asyncio.create_task(lan_peer.serve(app)),
         asyncio.create_task(headset_choice.supervise()),
         asyncio.create_task(second_headset.supervise()),
         asyncio.create_task(mic_monitor.supervise()),

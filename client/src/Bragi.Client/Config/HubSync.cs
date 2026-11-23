@@ -8,7 +8,15 @@ using System.Text.RegularExpressions;
 namespace Bragi.Client.Config;
 
 /// <summary>Where the Bragi hub is, as it says in its "hub" message (app/hub_info.py).</summary>
-public sealed record HubInfo(string? WsUrl, string? TailscaleIp, string? LanIp, IReadOnlyList<string> DeskflowHosts);
+public sealed record HubInfo(string? WsUrl, string? TailscaleIp, string? LanIp, IReadOnlyList<string> DeskflowHosts,
+    LanPeerInfo? LanPeer = null);
+
+/// <summary>The hub's peer socket on the LAN (app/lan_peer.py, bragi#90): its
+/// port, the SHA-256 of its certificate to pin, and this computer's token.</summary>
+public sealed record LanPeerInfo(int Port, string CertSha256, string Token);
+
+/// <summary>Where to reach the peer socket over the LAN while Tailscale is down.</summary>
+public sealed record LanEndpoint(Uri Uri, string CertSha256, string Token);
 
 /// <summary>
 /// Keeps this computer's settings pointing at the hub (bragi#61). The hub
@@ -30,7 +38,41 @@ public static partial class HubSync
                 .Where(h => h is not null && IsHost(h)).Select(h => h!).ToList()
             : new List<string>();
         return new HubInfo(String(message, "ws_url"), Ipv4(String(message, "tailscale_ip")),
-            Ipv4(String(message, "lan_ip")), hosts);
+            Ipv4(String(message, "lan_ip")), hosts, ParseLanPeer(message));
+    }
+
+    private static LanPeerInfo? ParseLanPeer(JsonElement message)
+    {
+        if (!message.TryGetProperty("lan_peer", out var lan) || lan.ValueKind != JsonValueKind.Object
+            || !lan.TryGetProperty("port", out var portElement) || portElement.ValueKind != JsonValueKind.Number
+            || !portElement.TryGetInt32(out var port) || port is < 1 or > 65535)
+        {
+            return null;
+        }
+        var cert = String(lan, "cert_sha256");
+        var token = String(lan, "token");
+        return cert is not null && token is not null && Hex64().IsMatch(cert) && Hex64().IsMatch(token)
+            ? new LanPeerInfo(port, cert, token) : null;
+    }
+
+    [GeneratedRegex("^[0-9a-f]{64}$")]
+    private static partial Regex Hex64();
+
+    /// <summary>The LAN endpoint from the env file's remembered values, or null
+    /// when the hub never offered one (an older hub, or this app hasn't heard
+    /// its "hub" message yet).</summary>
+    public static LanEndpoint? LanEndpointFrom(IReadOnlyDictionary<string, string>? values, string? peerName)
+    {
+        if (values is null || string.IsNullOrEmpty(peerName)
+            || !values.TryGetValue("BRAGI_HUB_LAN_IP", out var ip) || Ipv4(ip) is null
+            || !values.TryGetValue("BRAGI_HUB_LAN_PORT", out var portText) || !int.TryParse(portText, out var port)
+            || port is < 1 or > 65535
+            || !values.TryGetValue("BRAGI_HUB_LAN_CERT", out var cert) || !Hex64().IsMatch(cert)
+            || !values.TryGetValue("BRAGI_HUB_LAN_TOKEN", out var token) || !Hex64().IsMatch(token))
+        {
+            return null;
+        }
+        return new LanEndpoint(new Uri($"wss://{ip}:{port}/ws/peer/{Uri.EscapeDataString(peerName)}"), cert, token);
     }
 
     /// <summary>The new hub's peer-socket URL from a "hub_moved" message, or null.</summary>
@@ -72,14 +114,26 @@ public static partial class HubSync
     }
 
     /// <summary>Remembers the hub's LAN address (BRAGI_HUB_LAN_IP) for when
-    /// Tailscale is down (bragi#81, Tray/LanFallbackService.cs). Nothing
-    /// reads it at start, so changing it restarts nothing.</summary>
+    /// Tailscale is down (bragi#81, Tray/LanFallbackService.cs), and its LAN
+    /// peer socket (BRAGI_HUB_LAN_PORT, _CERT, _TOKEN; bragi#90). Nothing
+    /// reads them at start, so changing them restarts nothing.</summary>
     public static Dictionary<string, string?> RememberChanges(IReadOnlyDictionary<string, string> current, HubInfo hub)
     {
         var changes = new Dictionary<string, string?>();
         if (hub.LanIp is { } lan && (!current.TryGetValue("BRAGI_HUB_LAN_IP", out var now) || now != lan))
         {
             changes["BRAGI_HUB_LAN_IP"] = lan;
+        }
+        if (hub.LanPeer is { } peer)
+        {
+            foreach (var (key, value) in new[] { ("BRAGI_HUB_LAN_PORT", peer.Port.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                         ("BRAGI_HUB_LAN_CERT", peer.CertSha256), ("BRAGI_HUB_LAN_TOKEN", peer.Token) })
+            {
+                if (!current.TryGetValue(key, out var stored) || stored != value)
+                {
+                    changes[key] = value;
+                }
+            }
         }
         return changes;
     }

@@ -248,6 +248,23 @@ The hub switches its own side only when it has no Tailscale address itself
 Audio over the LAN isn't encrypted. Logic in `Config/LanFallback.cs`,
 effects in `Tray/LanFallbackService.cs`.
 
+### The peer socket over the LAN (0.1.35+, hub 0.3.34+)
+
+The peer socket itself moves to the LAN too, so the KVM menu, controllers
+and display reports keep working. The hub's `hub` message carries
+`lan_peer`: a port (8443), the SHA-256 of the hub's self-signed certificate,
+and a token for this computer's name (`app/lan_peer.py`). The tray keeps
+them as `BRAGI_HUB_LAN_PORT`, `BRAGI_HUB_LAN_CERT` and `BRAGI_HUB_LAN_TOKEN`.
+
+After two failed tries over Tailscale the tray connects to
+`wss://<BRAGI_HUB_LAN_IP>:8443/ws/peer/<name>`. It accepts only the pinned
+certificate and sends the token as `X-Bragi-Lan-Token`. While on the LAN it
+asks the Tailscale address over HTTPS every 30 s, and drops the LAN
+connection once that answers, so the next connect goes back over
+Tailscale. Messages that arrive over the LAN don't count as Tailscale being
+back, and the `hub` message is ignored there, so it can't rewrite where the
+audio or Deskflow go. Logic in `Tray/PeerPresenceClient.cs`.
+
 ## Client tests
 
 ```bash
