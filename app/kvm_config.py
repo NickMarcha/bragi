@@ -442,6 +442,13 @@ def _hotkey_actions() -> dict:
     return hotkey_actions.load()
 
 
+def computers() -> list[dict]:
+    """The computers in the server config (name and aliases), not the host."""
+    sections = _sections()
+    primary = _primary(sections)
+    return [c for c in _computers(sections) if c["name"] != primary]
+
+
 def read() -> dict:
     """Everything the KVM setup shows."""
     sections = _sections()

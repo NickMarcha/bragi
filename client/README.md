@@ -141,6 +141,13 @@ it the keyboard and mouse. The host sends the state (`kvm`) on the peer
 socket at connect and on every change, and the app sends `kvm_switch`; a
 refused switch shows in the menu's title until the next change.
 
+When Deskflow is set up as a client here (`remoteHost=` in Deskflow.conf),
+the app's `client_hello` lists `deskflow` (0.1.36+). The dashboard's KVM
+bar then shows "<computer>: start Deskflow" while the tray app is connected
+but Deskflow isn't, and the button sends `deskflow_start`: the app starts
+Deskflow, or restarts it if it runs without being connected (through
+systemd on Linux, `C:\Program Files\Deskflow\deskflow.exe` on Windows).
+
 ## Game controllers
 
 A controller paired with the Bragi host (over Bluetooth, see

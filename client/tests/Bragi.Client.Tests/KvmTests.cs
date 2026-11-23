@@ -71,7 +71,7 @@ public class KvmTests
     {
         var keyboard = new FakeKeyboard();
         var sent = new List<string>();
-        var keys = new KeyPresser(() => keyboard) { Send = m => { sent.Add(JsonSerializer.Serialize(m)); return Task.FromResult(true); } };
+        var keys = new KeyPresser(() => keyboard) { Send = m => { sent.Add(JsonSerializer.Serialize(m)); return Task.FromResult(true); }, DeskflowSetUp = () => false };
 
         keys.OnMessage(Json("""{"type":"kvm","available":true,"active":"sage","computers":["sage"]}"""));
         keys.OnMessage(Json("""{"type":"kvm","available":true,"active":"sage","computers":["sage"]}"""));
@@ -86,9 +86,19 @@ public class KvmTests
     public void Without_a_keyboard_here_the_host_hears_so()
     {
         var sent = new List<string>();
-        var keys = new KeyPresser(null) { Send = m => { sent.Add(JsonSerializer.Serialize(m)); return Task.FromResult(true); } };
+        var keys = new KeyPresser(null) { Send = m => { sent.Add(JsonSerializer.Serialize(m)); return Task.FromResult(true); }, DeskflowSetUp = () => false };
         keys.OnMessage(Json("""{"type":"kvm","available":true,"active":null,"computers":[]}"""));
         Assert.Equal(["""{"type":"client_hello","features":[]}"""], sent);
+    }
+
+    [Fact]
+    public void With_deskflow_set_up_here_the_dashboard_may_start_it()
+    {
+        // bragi#92: the hub offers "start Deskflow" only to tray apps that say so.
+        var sent = new List<string>();
+        var keys = new KeyPresser(null) { Send = m => { sent.Add(JsonSerializer.Serialize(m)); return Task.FromResult(true); }, DeskflowSetUp = () => true };
+        keys.OnMessage(Json("""{"type":"kvm","available":true,"active":null,"computers":[]}"""));
+        Assert.Equal(["""{"type":"client_hello","features":["deskflow"]}"""], sent);
     }
 
     [Fact]
