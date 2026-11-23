@@ -131,6 +131,19 @@ public partial class App : Application
             _audio = new Audio.VbanLink(config.BragiHostIp, port, fromHost, toHost);
             _audio.Apply(Audio.AudioDevices.Load());
             audioItem = new AudioMenu(_audio).Item;
+            // Which audio groups go as streams of their own (bragi#93): told
+            // to the hub after each "hub" message and whenever it changes.
+            var link = _audio;
+            var groupsPresence = _presenceClient;
+            void SendGroups() => _ = groupsPresence.SendAsync(new { type = "audio_groups", streams = link.GroupStreams });
+            link.GroupsChanged += SendGroups;
+            groupsPresence.MessageReceived += m =>
+            {
+                if (m.TryGetProperty("type", out var t) && t.ValueKind == System.Text.Json.JsonValueKind.String && t.GetString() == "hub")
+                {
+                    SendGroups();
+                }
+            };
         }
         _trayIconManager = new TrayIconManager(_statusService!, _gamepads, _kvm, audioItem);
         _trayIconManager.SetupRequested += ShowSetup;

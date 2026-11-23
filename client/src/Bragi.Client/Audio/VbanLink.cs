@@ -14,8 +14,9 @@ using NAudio.Wave.SampleProviders;
 
 namespace Bragi.Client.Audio;
 
-/// <summary>Which Windows devices the link uses; null means that direction is off.</summary>
-public sealed record AudioDevices(string? Playback, string? Capture, bool CaptureIsLoopback)
+/// <summary>Which Windows devices the link uses; null means that direction is off.
+/// SendCommsSeparately: Discord goes as a stream of its own (bragi#93).</summary>
+public sealed record AudioDevices(string? Playback, string? Capture, bool CaptureIsLoopback, bool SendCommsSeparately = false)
 {
     public static readonly AudioDevices Off = new(null, null, false);
 
@@ -52,7 +53,12 @@ public sealed record LinkReport(
     float ReceiveLevel,
     float SendLevel,
     float SourceLevel,
-    string? Problem);
+    string? Problem,
+    CommsReport? Comms = null);
+
+/// <summary>The Discord stream (bragi#93): whether Discord runs, its level,
+/// the devices it plays on, and why capturing failed if it did.</summary>
+public sealed record CommsReport(bool Running, float Level, IReadOnlyList<AudioEndpoint> PlayingOn, string? Problem);
 
 /// <summary>
 /// The Windows tray app's own audio link to the Bragi host, instead of
@@ -89,8 +95,22 @@ public sealed class VbanLink : IDisposable
     private DateTime _retryAt = DateTime.MaxValue;
     private int _stuck;
     private int _stuckRestarts; // in a row, without sound getting through in between
-    private float _receiveLevel, _sendLevel, _sourceLevel;
+    private float _receiveLevel, _sendLevel, _sourceLevel, _commsLevel;
+    private AppCapture? _comms;
     private bool _disposed;
+
+    /// <summary>The audio groups sent as streams of their own, group -> VBAN
+    /// stream name, for the hub (audio_groups, bragi#93).</summary>
+    public IReadOnlyDictionary<string, string> GroupStreams => _comms is { } c
+        ? new Dictionary<string, string> { ["comms"] = c.Stream }
+        : new Dictionary<string, string>();
+
+    /// <summary>Raised when GroupStreams changed.</summary>
+    public event Action? GroupsChanged;
+
+    /// <summary>The Discord stream's name: the main one's (cut to fit VBAN's 16 bytes) and "Comms".</summary>
+    public static string CommsStreamName(string sendStream) =>
+        (sendStream.Length > 11 ? sendStream[..11] : sendStream) + "Comms";
 
     public string? Problem { get; private set; }
     public AudioDevices Devices { get; private set; } = AudioDevices.Off;
@@ -115,7 +135,8 @@ public sealed class VbanLink : IDisposable
     public bool Receiving => _session is { } s && DateTime.UtcNow - s.LastReceived < TimeSpan.FromSeconds(2);
 
     public LinkReport Report => new(Devices, PlaybackName, CaptureName, Receiving,
-        _receiveLevel, _sendLevel, _sourceLevel, Problem);
+        _receiveLevel, _sendLevel, _sourceLevel, Problem,
+        _comms is { } c ? new CommsReport(c.ProcessId is not null, _commsLevel, c.PlayingOn, c.Problem) : null);
 
     public static IReadOnlyList<AudioEndpoint> Endpoints(DataFlow flow)
     {
@@ -127,6 +148,7 @@ public sealed class VbanLink : IDisposable
     /// <summary>Starts (or restarts) with these devices.</summary>
     public void Apply(AudioDevices devices)
     {
+        var groupsChanged = false;
         lock (_lock)
         {
             if (_disposed)
@@ -134,6 +156,7 @@ public sealed class VbanLink : IDisposable
                 return;
             }
             StopSession();
+            groupsChanged = SyncComms(devices.SendCommsSeparately);
             Devices = devices;
             Problem = null;
             _retryAt = DateTime.MaxValue;
@@ -143,6 +166,10 @@ public sealed class VbanLink : IDisposable
             if (devices.Playback is null && devices.Capture is null)
             {
                 Changed?.Invoke();
+                if (groupsChanged)
+                {
+                    GroupsChanged?.Invoke();
+                }
                 return;
             }
             var session = new Session(this);
@@ -165,6 +192,31 @@ public sealed class VbanLink : IDisposable
             }
         }
         Changed?.Invoke();
+        if (groupsChanged)
+        {
+            GroupsChanged?.Invoke();
+        }
+    }
+
+    /// <summary>Starts or stops the Discord stream. True when that changed.
+    /// Kept across restarts of the main link: it has its own socket.</summary>
+    private bool SyncComms(bool wanted)
+    {
+        if (wanted == (_comms is not null))
+        {
+            return false;
+        }
+        if (wanted)
+        {
+            _comms = new AppCapture("Discord", CommsStreamName(_sendStream), 1, () => _host, _port);
+        }
+        else
+        {
+            _comms!.Dispose();
+            _comms = null;
+            _commsLevel = 0;
+        }
+        return true;
     }
 
     private static string? NameOf(string id)
@@ -206,11 +258,13 @@ public sealed class VbanLink : IDisposable
             {
                 return;
             }
-            var before = (Bars(_receiveLevel), Bars(_sendLevel), Bars(_sourceLevel), Receiving);
+            var before = (Bars(_receiveLevel), Bars(_sendLevel), Bars(_sourceLevel), Receiving, Bars(_commsLevel),
+                _comms?.ProcessId, _comms?.PlayingOn.Count, _comms?.Problem);
             var session = _session;
             _receiveLevel = session?.TakeReceivePeak() ?? 0;
             _sendLevel = session?.TakeSendPeak() ?? 0;
             _sourceLevel = SourcePeak();
+            _commsLevel = _comms?.TakePeak() ?? 0;
 
             // Sound on the captured device, nothing reaching us: the capture
             // is stuck on a device that was reopened. Start it again.
@@ -242,7 +296,8 @@ public sealed class VbanLink : IDisposable
             {
                 restart = Devices;
             }
-            changed = before != (Bars(_receiveLevel), Bars(_sendLevel), Bars(_sourceLevel), Receiving);
+            changed = before != (Bars(_receiveLevel), Bars(_sendLevel), Bars(_sourceLevel), Receiving, Bars(_commsLevel),
+                _comms?.ProcessId, _comms?.PlayingOn.Count, _comms?.Problem);
         }
         if (restart is not null)
         {
@@ -294,6 +349,8 @@ public sealed class VbanLink : IDisposable
         {
             _disposed = true;
             StopSession();
+            _comms?.Dispose();
+            _comms = null;
             _meterDevice?.Dispose();
             _meterDevice = null;
         }

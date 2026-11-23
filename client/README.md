@@ -86,6 +86,22 @@ The settings live in `%APPDATA%\bragi-client\link.env`, in the same
 `KEY=VALUE` format as Linux. The audio goes through WASAPI (NAudio) and is
 sent as VBAN.
 
+### Discord as a stream of its own (0.1.37+, hub 0.3.37+)
+
+"Send Discord on its own (mono)" in the Audio submenu captures Discord by
+process (Windows' process loopback, Windows 10 2004+) and sends it as a
+second VBAN stream, `<main stream>Comms`, mono to halve the bandwidth
+(about 0.8 Mbit/s). The tray tells the hub with `audio_groups`, and the hub
+makes it a node of its own, `<computer>-comms-incoming-source`, which plays
+on the headset like the main stream. It's off by default; one stream is
+what goes unless you ask for more.
+
+Process loopback hears Discord before the device's volume, on whichever
+device it plays. So set Discord's output (Discord > Voice & Video) to a
+device nothing else sends to the headset, or it arrives twice: once in the
+desktop stream, once on its own. The menu says so when Discord plays on the
+captured device or into Voicemeeter. Logic in `Audio/AppCapture.cs`.
+
 ## Components
 
 - `src/Bragi.Client/` is the Avalonia tray app. `Config/LinkSetup.cs` and

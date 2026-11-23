@@ -171,6 +171,16 @@ def _desktop_message(name: str, raw: str) -> None:
             message = {**message, 'lan_peer': lan}
         send(name, message)
         return
+    if message.get('type') == 'audio_groups':
+        # The audio groups this Windows tray app sends as streams of their
+        # own, e.g. {"comms": "SageAudioComms"} (bragi#93).
+        streams = message.get('streams')
+        if isinstance(streams, dict):
+            try:
+                peers.set_group_streams(name, streams)
+            except (ValueError, peers.ConfigWriteError) as exc:
+                logger.info("audio groups from %s not stored: %s", name, exc)
+        return
     if message.get('type') == 'peer_lan':
         # This computer's home-network address, for when this hub's
         # Tailscale is down (app/lan_fallback.py, bragi#81).
