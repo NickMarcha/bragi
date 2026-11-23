@@ -157,6 +157,10 @@ button:focus-visible {
   border-left: 1px solid var(--border);
 }
 
+.kvm-computer.off {
+  font-style: italic;
+}
+
 .kvm-computer.active {
   background: var(--accent);
   color: var(--bg);

@@ -150,7 +150,7 @@ templates.env.filters["datetimeformat"] = lambda ts: time.strftime("%Y-%m-%d %H:
 def dashboard(request: Request):
     state = views.build_state()
     return templates.TemplateResponse(request, "index.html", {**state, "password_set": auth.password_set(),
-                                                              "kvm": kvm.read_view(), "modules": modules.enabled(),
+                                                              **_kvm_context(), "modules": modules.enabled(),
                                                               "updates": updates.status(),
                                                               "downloads": downloads.links()})
 
@@ -327,8 +327,28 @@ def _bluetooth() -> bluetooth.Manager:
 _ADDRESS = r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$"
 
 
-def _kvm_bar(request: Request, error: str | None = None):
-    return templates.TemplateResponse(request, "_kvm.html", {"kvm": kvm.read_view(), "kvm_error": error})
+def _kvm_off(view: dict) -> list[str]:
+    """KVM computers whose Deskflow isn't connected but whose tray app is and
+    can start it (bragi#92). On 2026-11-21 sage-dev's Deskflow was down and
+    only a keyboard plugged into sage-dev could start it again."""
+    if not view["available"]:
+        return []
+    try:
+        computers = kvm_config.computers()
+    except kvm_config.ConfigError:
+        return []
+    return [c["name"] for c in computers if c["name"] not in view["computers"]
+            and (peer := peer_control.peer_for_computer(c["name"], computers)) is not None
+            and peer_control.has_feature(peer, "deskflow")]
+
+
+def _kvm_context(error: str | None = None, note: str | None = None) -> dict:
+    view = kvm.read_view()
+    return {"kvm": view, "kvm_off": _kvm_off(view), "kvm_error": error, "kvm_note": note}
+
+
+def _kvm_bar(request: Request, error: str | None = None, note: str | None = None):
+    return templates.TemplateResponse(request, "_kvm.html", _kvm_context(error, note))
 
 
 @app.get("/kvm", response_class=HTMLResponse)
@@ -343,6 +363,21 @@ async def kvm_switch(request: Request, computer: str = Form(..., max_length=64))
     except kvm.KvmError as exc:
         return _kvm_bar(request, str(exc))
     return _kvm_bar(request)
+
+
+@app.post("/kvm/start-deskflow", response_class=HTMLResponse)
+def kvm_start_deskflow(request: Request, computer: str = Form(..., max_length=64)):
+    """Asks a computer's tray app to start Deskflow (or restart it, if it
+    runs but isn't connected)."""
+    try:
+        computers = kvm_config.computers()
+    except kvm_config.ConfigError as exc:
+        return _kvm_bar(request, str(exc))
+    peer = peer_control.peer_for_computer(computer, computers)
+    if peer is None or not peer_control.has_feature(peer, "deskflow"):
+        return _kvm_bar(request, f"{computer}'s tray app isn't connected, or is too old to start Deskflow.")
+    peer_control.send(peer, {"type": "deskflow_start"})
+    return _kvm_bar(request, note=f"Asked {computer} to start Deskflow.")
 
 
 @app.post("/kvm/identify")

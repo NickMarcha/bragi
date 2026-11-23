@@ -98,7 +98,8 @@ def broadcast_desktop(message: dict) -> None:
 
 
 # What each connected tray app can do besides audio, from its client_hello:
-# "keys" = it presses keys on its own computer (press_keys).
+# "keys" = it presses keys on its own computer (press_keys);
+# "deskflow" = it starts Deskflow on its computer when asked (deskflow_start).
 _features: dict[str, set[str]] = {}
 
 
@@ -159,7 +160,9 @@ def _desktop_message(name: str, raw: str) -> None:
         _kvm_switch(name, raw)
         return
     if message.get('type') == 'client_hello' and isinstance(message.get('features'), list):
-        _features[name] = {f for f in message['features'] if f in ('keys',)}
+        _features[name] = {f for f in message['features'] if f in ('keys', 'deskflow')}
+        # The KVM bar offers "start Deskflow" only to tray apps that can.
+        ws.manager.broadcast_nowait({'type': 'kvm', **kvm.read_view()})
         # Where this hub is, so the tray app can fix stale addresses (bragi#61).
         # From the cache hub_info.refresh() keeps warm, so this never blocks.
         message = hub_info.message()
@@ -311,7 +314,8 @@ async def endpoint(socket: WebSocket, name: str) -> None:
             statuses.pop(name, None)
             seen_addresses.pop(name, None)
             peer_presence.connected_peers.discard(name)
-            _features.pop(name, None)
+            if 'deskflow' in _features.pop(name, set()):
+                ws.manager.broadcast_nowait({'type': 'kvm', **kvm.read_view()})
             if gamepad.hub is not None:
                 gamepad.hub.forget(name)
             ws.manager.broadcast_nowait({'type': 'peer_presence', 'name': name, 'connected': False})

@@ -203,3 +203,26 @@ def test_identify_asks_each_tray_app_to_show_its_computer(engine, monkeypatch, s
         assert deck.receive_json() == {"type": "kvm_identify", "computer": "sagedeck", "peer": "deck"}
         assert laptop.receive_json() == {"type": "kvm_identify", "computer": None, "peer": "laptop"}
     assert answer == {"shown": {"deck": "sagedeck", "laptop": None}, "missing": ["sage", "sage-dev"]}
+
+
+def test_a_computer_whose_deskflow_is_off_gets_a_start_button(engine, monkeypatch, session):
+    """bragi#92: sage-dev's Deskflow was down and only a keyboard plugged into
+    sage-dev could start it. Its tray app was connected the whole time."""
+    from app import kvm_config
+    monkeypatch.setattr(kvm_config, "computers", lambda: [
+        {"name": "sage", "aliases": []}, {"name": "sagedeck", "aliases": ["deck"]},
+        {"name": "sage-dev", "aliases": []}, {"name": "laptop", "aliases": []}])
+    (engine / "status.json").write_text(json.dumps({**STATUS, "clients": STATUS["clients"][:1]}))  # only sage
+    client = TestClient(app)
+    with client.websocket_connect("/ws/peer/sage-dev") as dev, client.websocket_connect("/ws/peer/deck") as deck:
+        dev.receive_json(), deck.receive_json()  # the "kvm" view on connect
+        dev.send_json({"type": "client_hello", "features": ["deskflow"]})
+        deck.send_json({"type": "client_hello", "features": []})  # an older tray app
+        dev.receive_json(), deck.receive_json()  # "hub"
+        bar = client.get("/kvm").text
+        assert "sage-dev: start Deskflow" in bar
+        assert "sagedeck: start" not in bar and "laptop: start" not in bar  # too old; no tray app
+        assert "Asked sage-dev to start Deskflow" in client.post("/kvm/start-deskflow", data={"computer": "sage-dev"}).text
+        assert dev.receive_json() == {"type": "deskflow_start"}
+        assert "too old to start Deskflow" in client.post("/kvm/start-deskflow", data={"computer": "sagedeck"}).text
+    assert "start Deskflow" not in client.get("/kvm").text  # the tray app left

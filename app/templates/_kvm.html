@@ -1,16 +1,24 @@
 {# The KVM bar in the top bar (app/kvm.py): the computers that share the
    desk's keyboard and mouse, the active one highlighted. Click to switch.
+   Computers whose Deskflow isn't connected, but whose tray app is, come
+   last with a button to start it (kvm_off, bragi#92).
    Reloaded on "kvm" broadcasts. #}
-{% if kvm.available and kvm.computers %}
+{% if kvm.available and (kvm.computers or kvm_off) %}
 <div class="kvm-computers" role="group" aria-label="Keyboard and mouse go to">
   {% for name in kvm.computers %}
   <button type="button" class="kvm-computer{{ ' active' if kvm.active == name }}"
           {% if kvm.active == name %}aria-pressed="true" title="{{ name }} has the keyboard and mouse"{% else %}aria-pressed="false" title="Give {{ name }} the keyboard and mouse"{% endif %}
           hx-post="/kvm/switch" hx-vals='{"computer": "{{ name }}"}' hx-target="#kvm-bar" hx-swap="innerHTML">{{ name }}</button>
   {% endfor %}
+  {% for name in kvm_off %}
+  <button type="button" class="kvm-computer off" title="Deskflow isn't running on {{ name }}: start it"
+          hx-post="/kvm/start-deskflow" hx-vals='{"computer": "{{ name }}"}' hx-target="#kvm-bar" hx-swap="innerHTML"
+          hx-disabled-elt="this">{{ name }}: start Deskflow</button>
+  {% endfor %}
 </div>
 <button type="button" class="kvm-setup-open" data-open-kvm-setup title="KVM setup: computers, layout, hotkeys">&#9881;</button>
 {% if kvm_error %}<span class="form-error kvm-error">{{ kvm_error }}</span>{% endif %}
+{% if kvm_note %}<span class="form-note kvm-error">{{ kvm_note }}</span>{% endif %}
 {% elif kvm.available %}
 <span class="form-note" title="No computer is connected to the KVM">No computers</span>
 {% endif %}

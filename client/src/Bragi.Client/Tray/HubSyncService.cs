@@ -153,6 +153,32 @@ public static class DeskflowClient
         RestartApp();
     }
 
+    /// <summary>Whether Deskflow is set up as a client on this computer.</summary>
+    public static bool SetUpAsClient()
+    {
+        try
+        {
+            return File.Exists(ConfPath) && File.ReadAllText(ConfPath).Contains("remoteHost=", StringComparison.Ordinal);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>The dashboard's "start Deskflow" (deskflow_start, bragi#92):
+    /// starts the Deskflow app, or restarts it if it runs but isn't connected.
+    /// Raised on the socket's thread.</summary>
+    public static void OnMessage(System.Text.Json.JsonElement message)
+    {
+        if (message.TryGetProperty("type", out var type) && type.ValueKind == System.Text.Json.JsonValueKind.String
+            && type.GetString() == "deskflow_start" && SetUpAsClient())
+        {
+            Console.Error.WriteLine("Bragi: the dashboard asked to start Deskflow");
+            _ = Task.Run(() => RestartApp(start: true));
+        }
+    }
+
     /// <summary>The unit systemd-xdg-autostart-generator makes from Deskflow's
     /// autostart entry on Linux.</summary>
     private const string AutostartUnit = "app-org.deskflow.deskflow@autostart.service";
@@ -220,8 +246,9 @@ public static class DeskflowClient
     }
 
     /// <summary>Restarts the Deskflow app (not its background service on
-    /// Windows): it reads remoteHost at start and hands it to the client.</summary>
-    private static void RestartApp()
+    /// Windows): it reads remoteHost at start and hands it to the client.
+    /// With start, a Windows app that isn't running is started too.</summary>
+    private static void RestartApp(bool start = false)
     {
         var running = Process.GetProcessesByName("deskflow");
         string? exe = null;
@@ -242,7 +269,7 @@ public static class DeskflowClient
             _ = StartLinuxAsync(exe);
             return;
         }
-        if (exe is null && OperatingSystem.IsWindows() && Process.GetProcessesByName("deskflow-daemon").Length > 0)
+        if (exe is null && OperatingSystem.IsWindows() && (start || Process.GetProcessesByName("deskflow-daemon").Length > 0))
         {
             // In service mode the app may be closed; the service keeps the old
             // address until the app tells it the new one.

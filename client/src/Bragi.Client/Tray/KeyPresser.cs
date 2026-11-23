@@ -59,6 +59,9 @@ public sealed class KeyPresser : IDisposable
 
     public bool Supported { get; }
 
+    /// <summary>Whether Deskflow is set up as a client here (tests replace it).</summary>
+    public Func<bool> DeskflowSetUp { get; init; } = DeskflowClient.SetUpAsClient;
+
     public void OnMessage(JsonElement message)
     {
         if (!message.TryGetProperty("type", out var type))
@@ -72,7 +75,17 @@ public sealed class KeyPresser : IDisposable
                 _helloSent = true;
                 // Made now, so the compositor has seen the device before the first press.
                 var ready = Supported && _keyboard.Value is not null;
-                _ = Send(new { type = "client_hello", features = ready ? new[] { "keys" } : Array.Empty<string>() });
+                var features = new System.Collections.Generic.List<string>();
+                if (ready)
+                {
+                    features.Add("keys");
+                }
+                if (DeskflowSetUp())
+                {
+                    // The dashboard can ask it to start Deskflow (bragi#92).
+                    features.Add("deskflow");
+                }
+                _ = Send(new { type = "client_hello", features });
                 break;
             case "press_keys":
                 if (Codes(message) is { Count: > 0 } codes && _keyboard.Value is { } keyboard)

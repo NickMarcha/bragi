@@ -87,6 +87,7 @@ public partial class App : Application
         _presenceClient.Disconnected += _kvm.OnDisconnected;
         // "Identify" in the dashboard's KVM setup: this computer's name on its screens.
         _presenceClient.MessageReceived += IdentifyOverlay.OnMessage;
+        _presenceClient.MessageReceived += DeskflowClient.OnMessage;
         // "Press keys on computers" from the host, pressed here (Linux: uinput).
         _keys = new KeyPresser(OperatingSystem.IsLinux() ? () => new UinputKeyboard() : null) { Send = _presenceClient.SendAsync };
         _presenceClient.MessageReceived += _keys.OnMessage;
